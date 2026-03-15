@@ -18,13 +18,15 @@ complete -c repos-manager -f
 # Top-level commands
 complete -c repos-manager -n "__fish_use_subcommand" -a "github"  -d "GitHub (gh)"
 complete -c repos-manager -n "__fish_use_subcommand" -a "gitlab"  -d "GitLab (glab)"
+complete -c repos-manager -n "__fish_use_subcommand" -a "forgejo" -d "Forgejo/Gitea (tea)"
+complete -c repos-manager -n "__fish_use_subcommand" -a "gitea"   -d "Alias for forgejo"
 complete -c repos-manager -n "__fish_use_subcommand" -a "sync"    -d "Sync repositories"
 complete -c repos-manager -n "__fish_use_subcommand" -a "version" -d "Show version"
 complete -c repos-manager -n "__fish_use_subcommand" -a "help"    -d "Show help"
 
 # Provider subcommands
-complete -c repos-manager -n "__fish_seen_subcommand_from github gitlab" -a "login" -d "Authenticate with provider"
-complete -c repos-manager -n "__fish_seen_subcommand_from github gitlab" -a "sync"  -d "Sync repositories"
+complete -c repos-manager -n "__fish_seen_subcommand_from github gitlab forgejo gitea" -a "login" -d "Authenticate with provider"
+complete -c repos-manager -n "__fish_seen_subcommand_from github gitlab forgejo gitea" -a "sync"  -d "Sync repositories"
 
 # Flags (after sync)
 complete -c repos-manager -n "__fish_seen_subcommand_from sync" -l all      -d "Sync all providers"
