@@ -1,4 +1,4 @@
-name: ShellCheck
+name: Lint
 
 on:
   push:
@@ -8,16 +8,31 @@ on:
 
 jobs:
   shellcheck:
-    name: ShellCheck
+    name: ShellCheck (bash)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          scandir: .
-          additional_files: sourceme.bash
-          ignore_paths: sourceme.zsh sourceme.fish
-        env:
-          SHELLCHECK_OPTS: -x
+        run: shellcheck -x repos-manager.sh lib/*.sh sourceme.bash
+
+  zsh-syntax:
+    name: Syntax check (zsh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check zsh syntax
+        run: zsh -n sourceme.zsh
+
+  fish-syntax:
+    name: Syntax check (fish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fish
+        run: sudo apt-get update && sudo apt-get install -y fish
+
+      - name: Check fish syntax
+        run: fish --no-execute sourceme.fish
