@@ -18,5 +18,6 @@ jobs:
         with:
           scandir: .
           additional_files: sourceme.bash
+          ignore_paths: sourceme.zsh sourceme.fish
         env:
           SHELLCHECK_OPTS: -x
