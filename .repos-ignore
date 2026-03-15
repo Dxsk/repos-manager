@@ -1,0 +1,8 @@
+# repos-manager ignore file
+# Repos matching any pattern below will be excluded from sync.
+# Applied after .repos-filter.
+#
+# Examples:
+#   my-user/old-project   ignore a specific repo
+#   test-org/*            ignore all repos from an owner
+#   */tmp-*               glob pattern

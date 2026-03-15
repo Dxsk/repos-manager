@@ -1,0 +1,8 @@
+# repos-manager filter file
+# Only repos matching at least one pattern below will be synced.
+# Remove this file to sync everything.
+#
+# Examples:
+#   my-user/*              sync all repos from my-user
+#   my-org/specific-repo   sync a single repo
+#   my-group/*             also matches subgroups (my-group/sub/repo)
