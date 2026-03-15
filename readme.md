@@ -26,7 +26,7 @@ Each workspace has its own `.repos-filter`, `.repos-ignore`, and `flake.nix`. Co
 |----------|-----|--------|
 | GitHub | `gh` | Done |
 | GitLab | `glab` | Done |
-| Forgejo / Gitea | `tea` | Planned |
+| Forgejo / Gitea | `tea` | Done |
 
 ## Features
 
@@ -39,7 +39,7 @@ Each workspace has its own `.repos-filter`, `.repos-ignore`, and `flake.nix`. Co
 - SSH and HTTPS support
 - Filter by owner or specific repo (`--filter`)
 - Exclude repos via `.repos-ignore`
-- Whitelist repos via `.repos-filter`
+- Filter repos via `.repos-filter`
 - Shell completions for bash, zsh and fish
 - `NO_COLOR` support
 
@@ -134,6 +134,7 @@ Each provider uses its own CLI for authentication:
 ```bash
 repos-manager github login
 repos-manager gitlab login
+repos-manager forgejo login
 ```
 
 ### Syncing repos
@@ -174,6 +175,10 @@ repos-manager sync --all --dry-run
 # GitLab self-hosted
 repos-manager gitlab sync --host gitlab.self-hosted.com
 
+# Forgejo / Gitea
+repos-manager forgejo sync
+repos-manager forgejo sync --host forgejo.self-hosted.com
+
 # Custom base directory
 repos-manager sync --all --base-dir /path/to/repos
 ```
@@ -192,7 +197,7 @@ repos-manager sync --all --base-dir /path/to/repos
 ## Filter and ignore files
 
 <details>
-<summary>.repos-filter -- whitelist</summary>
+<summary>.repos-filter -- filterlist</summary>
 
 Edit `.repos-filter` in your workspace to sync **only** repos that match at least one pattern. If the file contains only comments, all repos are synced.
 
@@ -207,7 +212,7 @@ other-org/some-project
 </details>
 
 <details>
-<summary>.repos-ignore -- blacklist</summary>
+<summary>.repos-ignore -- ignorelist</summary>
 
 Edit `.repos-ignore` in your workspace to exclude repos from syncing. Applied **after** `.repos-filter`.
 
@@ -252,6 +257,7 @@ When not using Nix, you need these installed:
 - `jq`
 - `gh` for GitHub
 - `glab` for GitLab
+- `tea` for Forgejo / Gitea
 
 With Nix, all dependencies are provided automatically.
 

@@ -14,7 +14,7 @@ repos-manager() {
 # ── Completion ──────────────────────────────────────────────────────────────────
 
 _repos_manager_complete_zsh() {
-    local -a providers=("github:GitHub (gh)" "gitlab:GitLab (glab)")
+    local -a providers=("github:GitHub (gh)" "gitlab:GitLab (glab)" "forgejo:Forgejo/Gitea (tea)" "gitea:Alias for forgejo")
     local -a commands=("login:Authenticate with provider" "sync:Sync repositories")
     local -a global_cmds=("sync:Sync repositories" "version:Show version" "help:Show help")
     local -a flags=(
@@ -33,7 +33,7 @@ _repos_manager_complete_zsh() {
             ;;
         3)
             case "${words[2]}" in
-                github|gitlab)
+                github|gitlab|forgejo|gitea)
                     _describe 'command' commands
                     ;;
                 sync)

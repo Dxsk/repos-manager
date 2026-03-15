@@ -19,6 +19,8 @@ source "${REPOS_MANAGER_LIB}/match.sh"
 source "${REPOS_MANAGER_LIB}/github.sh"
 # shellcheck source=lib/gitlab.sh
 source "${REPOS_MANAGER_LIB}/gitlab.sh"
+# shellcheck source=lib/forgejo.sh
+source "${REPOS_MANAGER_LIB}/forgejo.sh"
 # shellcheck source=lib/sync.sh
 source "${REPOS_MANAGER_LIB}/sync.sh"
 
@@ -52,7 +54,7 @@ validate_base_dir() {
 
 # ── Commands ────────────────────────────────────────────────────────────────────
 
-readonly VALID_PROVIDERS="github gitlab"
+readonly VALID_PROVIDERS="github gitlab forgejo"
 
 validate_provider() {
     local provider="$1"
@@ -78,8 +80,9 @@ cmd_sync() {
 
     local host
     case "$provider" in
-        github) host="github.com" ;;
-        gitlab) host="${HOST:-gitlab.com}" ;;
+        github)  host="github.com" ;;
+        gitlab)  host="${HOST:-gitlab.com}" ;;
+        forgejo) host="${HOST:-gitea.com}" ;;
         *) echo "Unknown provider: $provider" >&2; exit 1 ;;
     esac
 
@@ -89,7 +92,7 @@ cmd_sync() {
 cmd_sync_all() {
     parse_flags "$@"
 
-    local -a providers=("github:github.com" "gitlab:${HOST:-gitlab.com}")
+    local -a providers=("github:github.com" "gitlab:${HOST:-gitlab.com}" "forgejo:${HOST:-gitea.com}")
 
     for entry in "${providers[@]}"; do
         local provider="${entry%%:*}"
@@ -97,8 +100,9 @@ cmd_sync_all() {
 
         local cli
         case "$provider" in
-            github) cli="gh" ;;
-            gitlab) cli="glab" ;;
+            github)  cli="gh" ;;
+            gitlab)  cli="glab" ;;
+            forgejo) cli="tea" ;;
         esac
 
         if ! command -v "$cli" &>/dev/null; then
@@ -124,6 +128,8 @@ ${BOLD}Usage:${RESET}
 ${BOLD}Providers:${RESET}
   github    GitHub (uses gh CLI)
   gitlab    GitLab (uses glab CLI)
+  forgejo   Forgejo / Gitea (uses tea CLI)
+  gitea     Alias for forgejo
 
 ${BOLD}Commands:${RESET}
   login     Authenticate with the provider
@@ -135,7 +141,7 @@ ${BOLD}Flags:${RESET}
   --https              Use HTTPS instead of SSH
   --prune              Remove local repos not on remote
   --dry-run            Show what would be done without making changes
-  --host <host>        Custom host (for self-hosted GitLab)
+  --host <host>        Custom host (for self-hosted GitLab/Forgejo)
 
 ${BOLD}Filter file:${RESET}
   Create \$BASE_DIR/.repos-filter to sync ONLY matching repos:
@@ -157,6 +163,8 @@ ${BOLD}Examples:${RESET}
   repos-manager github sync --filter Dxsk/git-chronicles
   repos-manager github sync --filter YouUser/YouRepos
   repos-manager gitlab sync --host gitlab.self-hosted.com
+  repos-manager forgejo sync
+  repos-manager forgejo sync --host forgejo.self-hosted.com
   repos-manager sync --all --prune
 EOF
 }
@@ -182,6 +190,14 @@ main() {
                 login) cmd_login "gitlab" ;;
                 sync)  shift; cmd_sync "gitlab" "$@" ;;
                 *)     echo "Usage: repos-manager gitlab <login|sync>" >&2; exit 1 ;;
+            esac
+            ;;
+        forgejo|gitea)
+            shift
+            case "${1:-}" in
+                login) cmd_login "forgejo" ;;
+                sync)  shift; cmd_sync "forgejo" "$@" ;;
+                *)     echo "Usage: repos-manager forgejo <login|sync>" >&2; exit 1 ;;
             esac
             ;;
         sync)

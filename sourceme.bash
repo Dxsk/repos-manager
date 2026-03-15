@@ -19,11 +19,11 @@ _repos_manager_complete() {
 
     case "$COMP_CWORD" in
         1)
-            mapfile -t COMPREPLY < <(compgen -W "github gitlab sync version help" -- "$cur")
+            mapfile -t COMPREPLY < <(compgen -W "github gitlab forgejo gitea sync version help" -- "$cur")
             ;;
         2)
             case "$prev" in
-                github|gitlab)
+                github|gitlab|forgejo|gitea)
                     mapfile -t COMPREPLY < <(compgen -W "login sync" -- "$cur")
                     ;;
                 sync)
