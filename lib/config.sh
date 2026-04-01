@@ -5,25 +5,35 @@
 REPOS_MANAGER_CONFIG="${REPOS_MANAGER_CONFIG:-$HOME/.config/repos-manager/config.json}"
 
 load_config() {
-    [[ ! -f "$REPOS_MANAGER_CONFIG" ]] && return
+    [[ ! -f "$REPOS_MANAGER_CONFIG" ]] && return 0
 
     local val
 
     # Base directory
-    val=$(jq -r '.base_dir // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null)
-    [[ -n "$val" ]] && BASE_DIR="${val/#\~/$HOME}"
+    val=$(jq -r '.base_dir // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ -n "$val" ]]; then
+        BASE_DIR="${val/#\~/$HOME}"
+    fi
 
     # Default parallel jobs
-    val=$(jq -r '.parallel // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null)
-    [[ -n "$val" ]] && PARALLEL="$val"
+    val=$(jq -r '.parallel // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ -n "$val" ]]; then
+        PARALLEL="$val"
+    fi
 
     # Default protocol
-    val=$(jq -r '.protocol // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null)
-    [[ "$val" == "https" ]] && USE_HTTPS=true
+    val=$(jq -r '.protocol // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ "$val" == "https" ]]; then
+        USE_HTTPS=true
+    fi
 
     # Custom hosts
-    val=$(jq -r '.hosts.gitlab // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null)
-    [[ -n "$val" && -z "$HOST" ]] && HOST="$val"
+    val=$(jq -r '.hosts.gitlab // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ -n "$val" && -z "$HOST" ]]; then
+        HOST="$val"
+    fi
+
+    return 0
 }
 
 init_config() {
@@ -33,7 +43,7 @@ init_config() {
 
     if [[ -f "$REPOS_MANAGER_CONFIG" ]]; then
         log_warn "Config already exists: $REPOS_MANAGER_CONFIG"
-        return
+        return 0
     fi
 
     cat > "$REPOS_MANAGER_CONFIG" <<'JSON'
@@ -53,8 +63,6 @@ JSON
 
 generate_sourceme() {
     local host_dir="$1"
-    local host_name
-    host_name=$(basename "$host_dir")
 
     cat > "$host_dir/sourceme" <<SOURCEME
 #!/bin/bash
