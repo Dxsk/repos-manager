@@ -9,6 +9,8 @@ A single CLI tool to clone and sync all your Git repositories, no matter the pro
 | GitHub | `gh` | Done |
 | GitLab | `glab` | Done |
 | Forgejo / Gitea | `tea` | Done |
+| Bitbucket | `bitbucket` or API | Done |
+| Radicle | `rad` | Done |
 
 ## Features
 
@@ -25,6 +27,8 @@ A single CLI tool to clone and sync all your Git repositories, no matter the pro
 - Parallel sync (default: 4 jobs, configurable with `--parallel`)
 - Status overview: dirty, ahead, behind, diverged repos
 - Universal login: authenticate all detected providers at once
+- Config file (`~/.config/repos-manager/config.json`) for defaults
+- Auto-generated sourceme files per host directory
 - Shell completions for bash, zsh and fish
 - `NO_COLOR` support
 
@@ -98,6 +102,27 @@ nix develop
 
 ## Usage
 
+### Configuration
+
+Generate a default config file:
+
+```bash
+repos-manager init
+# Creates ~/.config/repos-manager/config.json
+```
+
+```json
+{
+  "base_dir": "~/Documents",
+  "parallel": 4,
+  "protocol": "ssh",
+  "hosts": {
+    "gitlab": "gitlab.com",
+    "forgejo": "gitea.com"
+  }
+}
+```
+
 ### Authentication
 
 ```bash
@@ -108,6 +133,8 @@ repos-manager login
 repos-manager github login
 repos-manager gitlab login
 repos-manager forgejo login
+repos-manager bitbucket login
+repos-manager radicle login
 ```
 
 ### Syncing repos
@@ -178,6 +205,12 @@ repos-manager sync --all --base-dir /path/to/repos
 | `--host <host>` | Custom host for self-hosted instances |
 | `--parallel <n>` | Number of parallel sync jobs (default: 4) |
 
+## Auto-generated sourceme files
+
+After syncing, repos-manager generates `sourceme`, `sourceme.zsh`, and `sourceme.fish` files in each host directory (e.g. `~/Documents/github.com/`). These files provide the `repos-manager` function when you `cd` into the directory.
+
+If you use the [sourceme auto-loader](https://github.com/Dxsk/dotenv), the function is loaded/unloaded automatically as you navigate.
+
 ## Filter and ignore files
 
 ### .repos-filter
@@ -226,6 +259,8 @@ test-org/*
 - `gh` for GitHub
 - `glab` for GitLab
 - `tea` for Forgejo / Gitea
+- `bitbucket` for Bitbucket (optional, can use API fallback)
+- `rad` for Radicle
 
 ## License
 
