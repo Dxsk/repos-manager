@@ -42,5 +42,5 @@ jobs:
       - name: Check links in built site
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --verbose --no-progress 'site/_site/**/*.html'
+          args: --verbose --no-progress --root-dir site/_site 'site/_site/**/*.html'
           fail: true
