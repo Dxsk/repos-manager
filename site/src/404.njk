@@ -1,0 +1,28 @@
+---
+layout: layouts/base.njk
+title: "404"
+permalink: /404.html
+eleventyExcludeFromCollections: true
+---
+
+<div class="not-found">
+  <div class="terminal-demo" style="max-width:500px;margin:4em auto">
+    <div class="terminal-titlebar">
+      <div class="terminal-dot red"></div>
+      <div class="terminal-dot yellow"></div>
+      <div class="terminal-dot green"></div>
+      <span class="terminal-title">bash</span>
+    </div>
+    <div class="terminal-body" style="padding:2em;text-align:left;line-height:2">
+      <div><span style="color:var(--accent-green)">$</span> <span style="color:var(--accent)">cat</span> this-page</div>
+      <div style="color:var(--accent-red)">cat: this-page: No such file or directory</div>
+      <div style="color:var(--accent-orange)">exit code: 404</div>
+      <div style="margin-top:0.5em"><span style="color:var(--accent-green)">$</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+  <p style="color:var(--text-secondary);margin:2em 0">This page doesn't exist. Maybe it was moved or deleted.</p>
+  <div style="display:flex;gap:1em;justify-content:center">
+    <a href="/" class="btn btn-primary">Back to home</a>
+    <a href="/docs/getting-started/" class="btn btn-secondary">Read the docs</a>
+  </div>
+</div>
