@@ -31,6 +31,8 @@ source "${REPOS_MANAGER_LIB}/radicle.sh"
 source "${REPOS_MANAGER_LIB}/sync.sh"
 # shellcheck source=lib/status.sh
 source "${REPOS_MANAGER_LIB}/status.sh"
+# shellcheck source=lib/update.sh
+source "${REPOS_MANAGER_LIB}/update.sh"
 
 # ── Load config ─────────────────────────────────────────────────────────────────
 
@@ -211,6 +213,7 @@ ${BOLD}Commands:${RESET}
   sync --all         Sync all providers
   status             Show dirty/ahead/behind repos across all providers
   init               Create default config file
+  update             Check for updates and self-update
 
 ${BOLD}Provider commands:${RESET}
   <provider> login   Authenticate with a specific provider
@@ -302,6 +305,9 @@ main() {
             ;;
         init)
             cmd_init
+            ;;
+        update)
+            self_update
             ;;
         version|--version|-v)
             echo "repos-manager ${VERSION}"
