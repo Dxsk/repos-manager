@@ -1,6 +1,39 @@
 #!/usr/bin/env bash
 # Core sync engine
 
+sync_repo() {
+    local provider="$1" local_path="$2" clone_url="$3" full_name="$4"
+
+    if [[ -d "$local_path/.git" ]]; then
+        # Existing repo: check for uncommitted changes
+        if [[ -n "$(git -C "$local_path" status --porcelain 2>/dev/null)" ]]; then
+            log_warn "${full_name} (dirty, skipped)" >&2
+            echo "skipped"
+        else
+            local err
+            if err=$(git -C "$local_path" fetch --all --quiet 2>&1) && \
+               err=$(git -C "$local_path" pull --ff-only --quiet 2>&1); then
+                log_success "${full_name} (updated)" >&2
+                echo "updated"
+            else
+                log_error "${full_name} (update failed): ${err}" >&2
+                echo "errored"
+            fi
+        fi
+    else
+        # New repo: clone it
+        mkdir -p "$(dirname "$local_path")"
+        local err
+        if err=$(git clone --quiet "$clone_url" "$local_path" 2>&1); then
+            log_success "${full_name} (cloned)" >&2
+            echo "cloned"
+        else
+            log_error "${full_name} (clone failed): ${err}" >&2
+            echo "errored"
+        fi
+    fi
+}
+
 sync_provider() {
     local provider="$1" host="$2"
 
@@ -17,6 +50,10 @@ sync_provider() {
     local provider_dir="$BASE_DIR/$host"
     local cloned=0 updated=0 skipped=0 errored=0
     local -a synced_paths=()
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    local running=0
 
     while IFS= read -r repo; do
         local full_name
@@ -54,35 +91,33 @@ sync_provider() {
             continue
         fi
 
-        if [[ -d "$local_path/.git" ]]; then
-            # Existing repo: check for uncommitted changes
-            if [[ -n "$(git -C "$local_path" status --porcelain 2>/dev/null)" ]]; then
-                log_warn "${full_name} (dirty, skipped)"
-                skipped=$((skipped + 1))
-            else
-                local err
-                if err=$(git -C "$local_path" fetch --all --quiet 2>&1) && \
-                   err=$(git -C "$local_path" pull --ff-only --quiet 2>&1); then
-                    log_success "${full_name} (updated)"
-                    updated=$((updated + 1))
-                else
-                    log_error "${full_name} (update failed): ${err}"
-                    errored=$((errored + 1))
-                fi
-            fi
-        else
-            # New repo: clone it
-            mkdir -p "$(dirname "$local_path")"
-            local err
-            if err=$(git clone --quiet "$clone_url" "$local_path" 2>&1); then
-                log_success "${full_name} (cloned)"
-                cloned=$((cloned + 1))
-            else
-                log_error "${full_name} (clone failed): ${err}"
-                errored=$((errored + 1))
-            fi
+        # Run sync in background with job limiting
+        (
+            result=$(sync_repo "$provider" "$local_path" "$clone_url" "$full_name")
+            echo "$result" > "$tmpdir/$(echo "$full_name" | tr '/' '_')"
+        ) &
+        running=$((running + 1))
+
+        if [[ $running -ge $PARALLEL ]]; then
+            wait -n 2>/dev/null || true
+            running=$((running - 1))
         fi
     done < <(echo "$repos_json" | jq -c '.[]')
+
+    # Wait for remaining jobs
+    wait
+
+    # Count results
+    for f in "$tmpdir"/*; do
+        [[ -f "$f" ]] || continue
+        case "$(cat "$f")" in
+            cloned)  cloned=$((cloned + 1)) ;;
+            updated) updated=$((updated + 1)) ;;
+            skipped) skipped=$((skipped + 1)) ;;
+            errored) errored=$((errored + 1)) ;;
+        esac
+    done
+    rm -rf "$tmpdir"
 
     # Prune repos no longer on remote
     if $PRUNE; then

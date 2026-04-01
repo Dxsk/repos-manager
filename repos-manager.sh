@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 BASE_DIR="${REPOS_MANAGER_BASE_DIR:-$HOME/Documents}"
 
-# Resolve lib directory (overridable for Nix packaging)
+# Resolve lib directory (overridable for packaging)
 REPOS_MANAGER_LIB="${REPOS_MANAGER_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib}"
 
 # ── Source modules ──────────────────────────────────────────────────────────────
@@ -13,6 +13,8 @@ REPOS_MANAGER_LIB="${REPOS_MANAGER_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" &&
 source "${REPOS_MANAGER_LIB}/log.sh"
 # shellcheck source=lib/flags.sh
 source "${REPOS_MANAGER_LIB}/flags.sh"
+# shellcheck source=lib/config.sh
+source "${REPOS_MANAGER_LIB}/config.sh"
 # shellcheck source=lib/match.sh
 source "${REPOS_MANAGER_LIB}/match.sh"
 # shellcheck source=lib/github.sh
@@ -21,8 +23,20 @@ source "${REPOS_MANAGER_LIB}/github.sh"
 source "${REPOS_MANAGER_LIB}/gitlab.sh"
 # shellcheck source=lib/forgejo.sh
 source "${REPOS_MANAGER_LIB}/forgejo.sh"
+# shellcheck source=lib/bitbucket.sh
+source "${REPOS_MANAGER_LIB}/bitbucket.sh"
+# shellcheck source=lib/radicle.sh
+source "${REPOS_MANAGER_LIB}/radicle.sh"
 # shellcheck source=lib/sync.sh
 source "${REPOS_MANAGER_LIB}/sync.sh"
+# shellcheck source=lib/status.sh
+source "${REPOS_MANAGER_LIB}/status.sh"
+# shellcheck source=lib/update.sh
+source "${REPOS_MANAGER_LIB}/update.sh"
+
+# ── Load config ─────────────────────────────────────────────────────────────────
+
+load_config
 
 # ── Dependency check ────────────────────────────────────────────────────────────
 
@@ -52,9 +66,22 @@ validate_base_dir() {
     }
 }
 
+# ── Provider detection ─────────────────────────────────────────────────────────
+
+detect_providers() {
+    local -a found=()
+    command -v gh &>/dev/null && found+=("github")
+    command -v glab &>/dev/null && found+=("gitlab")
+    command -v tea &>/dev/null && found+=("forgejo")
+    command -v bitbucket &>/dev/null && found+=("bitbucket")
+    [[ -f "$HOME/.config/repos-manager/bitbucket-creds" ]] && [[ ! " ${found[*]} " =~ " bitbucket " ]] && found+=("bitbucket")
+    command -v rad &>/dev/null && found+=("radicle")
+    echo "${found[@]}"
+}
+
 # ── Commands ────────────────────────────────────────────────────────────────────
 
-readonly VALID_PROVIDERS="github gitlab forgejo"
+readonly VALID_PROVIDERS="github gitlab forgejo bitbucket radicle"
 
 validate_provider() {
     local provider="$1"
@@ -67,9 +94,23 @@ validate_provider() {
 }
 
 cmd_login() {
-    local provider="$1"
-    validate_provider "$provider"
-    "${provider}_login"
+    local provider="${1:-}"
+
+    if [[ -z "$provider" ]]; then
+        local providers
+        providers=$(detect_providers)
+        if [[ -z "$providers" ]]; then
+            log_error "No provider CLIs found (gh, glab, tea, bitbucket, rad)"
+            exit 1
+        fi
+        for p in $providers; do
+            printf "\n${BOLD}=== Login %s ===${RESET}\n\n" "$p"
+            "${p}_login" || true
+        done
+    else
+        validate_provider "$provider"
+        "${provider}_login"
+    fi
 }
 
 cmd_sync() {
@@ -80,19 +121,33 @@ cmd_sync() {
 
     local host
     case "$provider" in
-        github)  host="github.com" ;;
-        gitlab)  host="${HOST:-gitlab.com}" ;;
-        forgejo) host="${HOST:-gitea.com}" ;;
+        github)    host="github.com" ;;
+        gitlab)    host="${HOST:-gitlab.com}" ;;
+        forgejo)   host="${HOST:-gitea.com}" ;;
+        bitbucket) host="${HOST:-bitbucket.org}" ;;
+        radicle)   host="radicle" ;;
         *) echo "Unknown provider: $provider" >&2; exit 1 ;;
     esac
 
     sync_provider "$provider" "$host"
+
+    # Generate sourceme files in host directory
+    local host_dir="$BASE_DIR/$host"
+    if [[ -d "$host_dir" ]]; then
+        generate_sourceme "$host_dir"
+    fi
 }
 
 cmd_sync_all() {
     parse_flags "$@"
 
-    local -a providers=("github:github.com" "gitlab:${HOST:-gitlab.com}" "forgejo:${HOST:-gitea.com}")
+    local -a providers=(
+        "github:github.com"
+        "gitlab:${HOST:-gitlab.com}"
+        "forgejo:${HOST:-gitea.com}"
+        "bitbucket:${HOST:-bitbucket.org}"
+        "radicle:radicle"
+    )
 
     for entry in "${providers[@]}"; do
         local provider="${entry%%:*}"
@@ -100,19 +155,39 @@ cmd_sync_all() {
 
         local cli
         case "$provider" in
-            github)  cli="gh" ;;
-            gitlab)  cli="glab" ;;
-            forgejo) cli="tea" ;;
+            github)    cli="gh" ;;
+            gitlab)    cli="glab" ;;
+            forgejo)   cli="tea" ;;
+            bitbucket) cli="bitbucket" ;;
+            radicle)   cli="rad" ;;
         esac
 
         if ! command -v "$cli" &>/dev/null; then
-            log_warn "Skipping ${provider}: ${cli} not found"
-            continue
+            # Bitbucket fallback: check for API creds
+            if [[ "$provider" == "bitbucket" && -f "$HOME/.config/repos-manager/bitbucket-creds" ]]; then
+                : # proceed with API fallback
+            else
+                continue
+            fi
         fi
 
         printf "\n${BOLD}=== Syncing %s ===${RESET}\n\n" "$provider"
         sync_provider "$provider" "$host" || true
+
+        local host_dir="$BASE_DIR/$host"
+        if [[ -d "$host_dir" ]]; then
+            generate_sourceme "$host_dir"
+        fi
     done
+}
+
+cmd_status() {
+    parse_flags "$@"
+    status_all
+}
+
+cmd_init() {
+    init_config
 }
 
 # ── Usage ───────────────────────────────────────────────────────────────────────
@@ -123,17 +198,26 @@ ${BOLD}repos-manager${RESET} - Multi-provider Git repository manager
 
 ${BOLD}Usage:${RESET}
   repos-manager <provider> <command> [flags]
-  repos-manager sync --all [flags]
+  repos-manager <command> [flags]
 
 ${BOLD}Providers:${RESET}
-  github    GitHub (uses gh CLI)
-  gitlab    GitLab (uses glab CLI)
-  forgejo   Forgejo / Gitea (uses tea CLI)
-  gitea     Alias for forgejo
+  github      GitHub (uses gh CLI)
+  gitlab      GitLab (uses glab CLI)
+  forgejo     Forgejo / Gitea (uses tea CLI)
+  gitea       Alias for forgejo
+  bitbucket   Bitbucket (uses bitbucket CLI or API)
+  radicle     Radicle (uses rad CLI)
 
 ${BOLD}Commands:${RESET}
-  login     Authenticate with the provider
-  sync      Sync repositories
+  login [provider]   Authenticate (all detected providers if none specified)
+  sync --all         Sync all providers
+  status             Show dirty/ahead/behind repos across all providers
+  init               Create default config file
+  update             Check for updates and self-update
+
+${BOLD}Provider commands:${RESET}
+  <provider> login   Authenticate with a specific provider
+  <provider> sync    Sync repositories from a provider
 
 ${BOLD}Flags:${RESET}
   --filter <pattern>   Filter repos by pattern (e.g., Dxsk/* or Dxsk/project)
@@ -142,30 +226,17 @@ ${BOLD}Flags:${RESET}
   --prune              Remove local repos not on remote
   --dry-run            Show what would be done without making changes
   --host <host>        Custom host (for self-hosted GitLab/Forgejo)
+  --parallel <n>       Number of parallel sync jobs (default: 4)
 
-${BOLD}Filter file:${RESET}
-  Create \$BASE_DIR/.repos-filter to sync ONLY matching repos:
-    Dxsk/*
-    my-org/specific-repo
-
-${BOLD}Ignore file:${RESET}
-  Create \$BASE_DIR/.repos-ignore to exclude repos:
-    owner/repo-name
-    org/*
-
-${BOLD}Environment:${RESET}
-  REPOS_MANAGER_BASE_DIR   Override default base directory
+${BOLD}Config:${RESET}
+  ~/.config/repos-manager/config.json
 
 ${BOLD}Examples:${RESET}
+  repos-manager init
+  repos-manager login
   repos-manager github sync
-  repos-manager github sync --filter Dxsk/*
-  repos-manager github sync --filter YouUser/*
-  repos-manager github sync --filter Dxsk/git-chronicles
-  repos-manager github sync --filter YouUser/YouRepos
-  repos-manager gitlab sync --host gitlab.self-hosted.com
-  repos-manager forgejo sync
-  repos-manager forgejo sync --host forgejo.self-hosted.com
-  repos-manager sync --all --prune
+  repos-manager sync --all --parallel 8
+  repos-manager status
 EOF
 }
 
@@ -200,6 +271,26 @@ main() {
                 *)     echo "Usage: repos-manager forgejo <login|sync>" >&2; exit 1 ;;
             esac
             ;;
+        bitbucket)
+            shift
+            case "${1:-}" in
+                login) cmd_login "bitbucket" ;;
+                sync)  shift; cmd_sync "bitbucket" "$@" ;;
+                *)     echo "Usage: repos-manager bitbucket <login|sync>" >&2; exit 1 ;;
+            esac
+            ;;
+        radicle)
+            shift
+            case "${1:-}" in
+                login) cmd_login "radicle" ;;
+                sync)  shift; cmd_sync "radicle" "$@" ;;
+                *)     echo "Usage: repos-manager radicle <login|sync>" >&2; exit 1 ;;
+            esac
+            ;;
+        login)
+            shift
+            cmd_login "${1:-}"
+            ;;
         sync)
             shift
             if [[ "${1:-}" != "--all" ]]; then
@@ -207,6 +298,16 @@ main() {
                 exit 1
             fi
             cmd_sync_all "$@"
+            ;;
+        status)
+            shift
+            cmd_status "$@"
+            ;;
+        init)
+            cmd_init
+            ;;
+        update)
+            self_update
             ;;
         version|--version|-v)
             echo "repos-manager ${VERSION}"
