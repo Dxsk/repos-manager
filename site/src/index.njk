@@ -1,0 +1,356 @@
+---
+layout: layouts/base.njk
+title: repos-manager
+description: A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.
+---
+
+<section class="hero animate">
+  <h1>repos-manager</h1>
+  <p class="tagline">One CLI to sync them all. Clone, update, and manage your Git repositories across every provider.</p>
+
+  <div class="install-cmd" data-copy="git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install">
+    <span class="prompt">$_</span> <span id="typing-target"></span><span class="cursor"></span>
+  </div>
+
+  <div class="buttons">
+    <a href="#quickstart" class="btn btn-primary">Quick Start</a>
+    <a href="/docs/getting-started/" class="btn btn-secondary">Docs</a>
+  </div>
+</section>
+
+<section class="container">
+  <div class="terminal-demo animate" id="terminal-demo">
+    <div class="terminal-titlebar">
+      <div class="terminal-dot red"></div>
+      <div class="terminal-dot yellow"></div>
+      <div class="terminal-dot green"></div>
+      <span class="terminal-title">repos-manager</span>
+    </div>
+    <div class="terminal-body" id="terminal">
+    </div>
+  </div>
+</section>
+
+<script>
+(function() {
+  // Collect all elements to animate
+  var targets = [];
+
+  document.querySelectorAll('.animate').forEach(function(el) {
+    el.classList.add('will-animate');
+    targets.push(el);
+  });
+
+  document.querySelectorAll('.animate-stagger').forEach(function(parent) {
+    Array.from(parent.children).forEach(function(child, i) {
+      child.classList.add('will-animate');
+      child.style.transitionDelay = (i * 0.08) + 's';
+      targets.push(child);
+    });
+  });
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        if (entry.target.id === 'terminal-demo') {
+          startTerminalDemo();
+        }
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0 });
+
+  targets.forEach(function(el) { observer.observe(el); });
+
+  // Typing animation for install command
+  var typingTarget = document.getElementById('typing-target');
+  if (typingTarget) {
+    var cmd = 'git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install';
+    var i = 0;
+    function typeChar() {
+      if (i < cmd.length) {
+        typingTarget.textContent += cmd.charAt(i);
+        i++;
+        var delay = 50 + Math.random() * 120;
+        var ch = cmd.charAt(i - 1);
+        // Pauses comme si on reflechit
+        if (ch === ' ') delay += 80 + Math.random() * 180;
+        if (ch === '&') delay += 50 + Math.random() * 80;
+        if (ch === '.' || ch === ':' || ch === '/') delay += 40 + Math.random() * 70;
+        if (ch === '@') delay += 100 + Math.random() * 150;
+        // Parfois une longue hesitation
+        if (Math.random() < 0.05) delay += 300 + Math.random() * 400;
+        // Burst rapide (mots familiers)
+        if (Math.random() < 0.2) delay = 20 + Math.random() * 30;
+        setTimeout(typeChar, delay);
+      }
+    }
+    setTimeout(typeChar, 1200);
+
+  }
+
+
+  // Terminal demo
+  var terminalStarted = false;
+  function startTerminalDemo() {
+    if (terminalStarted) return;
+    terminalStarted = true;
+
+    var lines = [
+      { type: 'cmd', text: '$ repos-manager sync --all', delay: 300 },
+      { type: 'info', text: 'Fetching repository list from github.com...', delay: 900 },
+      { type: 'info', text: 'Found 23 repositories', delay: 1300 },
+      { type: 'output', text: '', delay: 1500 },
+      { type: 'success', text: '  &#10003; Dxsk/dotenv (updated)', delay: 1700 },
+      { type: 'success', text: '  &#10003; Dxsk/repos-manager (updated)', delay: 1900 },
+      { type: 'success', text: '  &#10003; Dxsk/mtd (cloned)', delay: 2100 },
+      { type: 'warn', text: '  &#9888; Dxsk/infra (dirty, skipped)', delay: 2300 },
+      { type: 'success', text: '  &#10003; work-org/api (updated)', delay: 2500 },
+      { type: 'output', text: '', delay: 2700 },
+      { type: 'info', text: 'Done: 1 cloned, 3 updated, 1 skipped, 0 errors', delay: 2900 },
+      { type: 'output', text: '', delay: 3300 },
+      { type: 'cmd', text: '$ repos-manager status', delay: 3500 },
+      { type: 'info', text: 'Scanning repos in ~/Documents...', delay: 4100 },
+      { type: 'output', text: '', delay: 4300 },
+      { type: 'warn', text: '  Dxsk/infra dirty', delay: 4500 },
+      { type: 'success', text: '  Dxsk/mtd ahead (+1)', delay: 4700 },
+      { type: 'output', text: '', delay: 4900 },
+      { type: 'info', text: 'Total: 23 repos - 21 clean, 1 dirty, 1 ahead', delay: 5100 },
+    ];
+
+    var terminal = document.getElementById('terminal');
+    if (!terminal) return;
+
+    lines.forEach(function(line) {
+      setTimeout(function() {
+        var div = document.createElement('div');
+        div.className = 'terminal-line';
+        if (line.type === 'cmd') {
+          div.innerHTML = '<span class="terminal-prompt">' + line.text.substring(0, 2) + '</span><span class="terminal-cmd">' + line.text.substring(2) + '</span>';
+        } else {
+          div.className += ' terminal-' + line.type;
+          div.innerHTML = line.text;
+        }
+        terminal.appendChild(div);
+        terminal.scrollTop = terminal.scrollHeight;
+      }, line.delay);
+    });
+  }
+})();
+</script>
+
+<section class="providers">
+  <div class="container">
+    <h2 class="section-title">Every provider, one tool</h2>
+    <p class="subtitle">Sync repositories from 5 Git forges with a single command</p>
+
+    <div class="provider-grid animate-stagger">
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-green)"></span> github.com</div>
+        <div class="provider-body">
+          <h3>GitHub</h3>
+          <p class="cli">gh auth login</p>
+          <span class="badge">READY</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-orange)"></span> gitlab.com</div>
+        <div class="provider-body">
+          <h3>GitLab</h3>
+          <p class="cli">glab auth login</p>
+          <span class="badge">READY</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-purple)"></span> forgejo</div>
+        <div class="provider-body">
+          <h3>Forgejo / Gitea</h3>
+          <p class="cli">tea login add</p>
+          <span class="badge">READY</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent)"></span> bitbucket.org</div>
+        <div class="provider-body">
+          <h3>Bitbucket</h3>
+          <p class="cli">bitbucket auth login</p>
+          <span class="badge">BETA</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-red)"></span> radicle</div>
+        <div class="provider-body">
+          <h3>Radicle</h3>
+          <p class="cli">rad auth</p>
+          <span class="badge">BETA</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="container">
+    <h2 class="section-title">Features</h2>
+    <div class="feature-grid animate-stagger">
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+          parallel.sh
+        </div>
+        <div class="feature-body">
+          <h3>Parallel sync</h3>
+          <p>Sync repos in parallel with configurable job count. Default: 4 concurrent operations.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
+          status.sh
+        </div>
+        <div class="feature-body">
+          <h3>Status overview</h3>
+          <p>See dirty, ahead, behind, and diverged repos across all providers at a glance.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
+          namespace.sh
+        </div>
+        <div class="feature-body">
+          <h3>Namespace mirroring</h3>
+          <p>Repos are organized as <code>provider/owner/repo</code> matching the remote structure.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
+          filter.sh
+        </div>
+        <div class="feature-body">
+          <h3>Filter and ignore</h3>
+          <p>Fine-grained control with <code>.repos-filter</code> and <code>.repos-ignore</code> pattern files.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+          protocol.sh
+        </div>
+        <div class="feature-body">
+          <h3>SSH and HTTPS</h3>
+          <p>Choose your protocol. SSH by default, HTTPS with a flag.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
+          update.sh
+        </div>
+        <div class="feature-body">
+          <h3>Self-update</h3>
+          <p>Built-in update command checks for new versions and updates in-place.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="quickstart" id="quickstart">
+  <div class="container">
+    <h2 class="section-title">Quick start</h2>
+
+    <div class="quickstart-grid animate-stagger">
+      <div class="qs-terminal" data-copy="git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install">
+        <div class="qs-titlebar">
+          <span class="dot" style="background:var(--accent-red)"></span>
+          <span class="dot" style="background:var(--accent-orange)"></span>
+          <span class="dot" style="background:var(--accent-green)"></span>
+          <span class="qs-title">step-1 ~ install</span>
+        </div>
+        <div class="qs-body">
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">git clone</span> git@github.com:Dxsk/repos-manager.git</div>
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">cd</span> repos-manager <span class="qs-op">&&</span> <span class="qs-cmd">make</span> install</div>
+          <div class="qs-output">Installed to ~/.local/bin/repos-manager</div>
+        </div>
+      </div>
+
+      <div class="qs-terminal" data-copy="repos-manager login">
+        <div class="qs-titlebar">
+          <span class="dot" style="background:var(--accent-red)"></span>
+          <span class="dot" style="background:var(--accent-orange)"></span>
+          <span class="dot" style="background:var(--accent-green)"></span>
+          <span class="qs-title">step-2 ~ authenticate</span>
+        </div>
+        <div class="qs-body">
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> login</div>
+          <div class="qs-output"></div>
+          <div class="qs-output"><span style="color:var(--accent)">===</span> Login github <span style="color:var(--accent)">===</span></div>
+          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> Logged in to github.com</div>
+          <div class="qs-output"><span style="color:var(--accent)">===</span> Login gitlab <span style="color:var(--accent)">===</span></div>
+          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> Logged in to gitlab.com</div>
+        </div>
+      </div>
+
+      <div class="qs-terminal" data-copy="repos-manager sync --all">
+        <div class="qs-titlebar">
+          <span class="dot" style="background:var(--accent-red)"></span>
+          <span class="dot" style="background:var(--accent-orange)"></span>
+          <span class="dot" style="background:var(--accent-green)"></span>
+          <span class="qs-title">step-3 ~ sync</span>
+        </div>
+        <div class="qs-body">
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> sync --all</div>
+          <div class="qs-output"></div>
+          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> user/dotenv (updated)</div>
+          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> user/project (cloned)</div>
+          <div class="qs-output"><span style="color:var(--accent-orange)">&#9888;</span> user/infra (dirty, skipped)</div>
+          <div class="qs-output"></div>
+          <div class="qs-output" style="color:var(--accent)">Done: 1 cloned, 1 updated, 1 skipped</div>
+        </div>
+      </div>
+
+      <div class="qs-terminal" data-copy="repos-manager status">
+        <div class="qs-titlebar">
+          <span class="dot" style="background:var(--accent-red)"></span>
+          <span class="dot" style="background:var(--accent-orange)"></span>
+          <span class="dot" style="background:var(--accent-green)"></span>
+          <span class="qs-title">step-4 ~ status</span>
+        </div>
+        <div class="qs-body">
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> status</div>
+          <div class="qs-output"></div>
+          <div class="qs-output">  github.com/user/infra <span style="color:var(--accent-orange)">dirty</span></div>
+          <div class="qs-output">  github.com/user/project <span style="color:var(--accent-green)">ahead</span> <span style="color:var(--text-secondary)">(+1)</span></div>
+          <div class="qs-output">  gitlab.com/work/api <span style="color:var(--accent)">behind</span> <span style="color:var(--text-secondary)">(-3)</span></div>
+          <div class="qs-output"></div>
+          <div class="qs-output" style="color:var(--accent)">Total: 23 repos - 20 clean, 1 dirty, 1 ahead, 1 behind</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+document.querySelectorAll('[data-copy]').forEach(function(el) {
+  el.style.cursor = 'pointer';
+  el.title = 'Click to copy';
+  el.onclick = function() {
+    var ta = document.createElement('textarea');
+    ta.value = el.getAttribute('data-copy');
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    var t = document.createElement('div');
+    t.className = 'copy-toast visible';
+    t.textContent = 'Copied to clipboard';
+    document.body.appendChild(t);
+    setTimeout(function() { t.classList.remove('visible'); }, 2000);
+    setTimeout(function() { t.remove(); }, 2300);
+  };
+});
+</script>

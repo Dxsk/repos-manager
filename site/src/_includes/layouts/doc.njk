@@ -1,0 +1,63 @@
+---
+layout: layouts/base.njk
+---
+
+<div class="doc-layout container">
+  <aside class="doc-sidebar">
+    <nav>
+      {%- for doc in collections.sortedDocs %}
+        <a href="{{ doc.url }}" {% if doc.url == page.url %}class="active"{% endif %}>
+          {{ doc.data.title }}
+        </a>
+      {%- endfor %}
+    </nav>
+    <div class="font-controls">
+      <button onclick="changeFontSize(-1)" title="Smaller">A-</button>
+      <span class="size-label" id="size-label">16</span>
+      <button onclick="changeFontSize(1)" title="Larger">A+</button>
+      <button onclick="resetFontSize()" title="Reset">R</button>
+    </div>
+  </aside>
+
+  <article class="doc-content" id="doc-content">
+    <h1>{{ title }}</h1>
+    {{ content | safe }}
+  </article>
+</div>
+
+<a href="#" class="back-to-top" id="back-to-top" title="Back to top">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+</a>
+
+<script>
+(function() {
+  var content = document.getElementById('doc-content');
+  var label = document.getElementById('size-label');
+  var stored = localStorage.getItem('doc-font-size');
+  var size = stored ? parseInt(stored) : 16;
+  apply(size);
+
+  window.changeFontSize = function(delta) {
+    size = Math.max(12, Math.min(24, size + delta));
+    apply(size);
+    localStorage.setItem('doc-font-size', size);
+  };
+
+  window.resetFontSize = function() {
+    size = 16;
+    apply(size);
+    localStorage.removeItem('doc-font-size');
+  };
+
+  function apply(s) {
+    content.style.fontSize = s + 'px';
+    label.textContent = s;
+  }
+
+  // Back to top
+  var btn = document.getElementById('back-to-top');
+  window.addEventListener('scroll', function() {
+    btn.classList.toggle('visible', window.scrollY > 400);
+  });
+})();
+</script>

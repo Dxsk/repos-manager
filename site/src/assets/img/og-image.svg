@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0d1117"/>
+
+  <!-- Terminal window -->
+  <rect x="100" y="80" width="1000" height="470" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Titlebar -->
+  <rect x="100" y="80" width="1000" height="40" rx="12" fill="#21262d"/>
+  <rect x="100" y="108" width="1000" height="12" fill="#21262d"/>
+  <circle cx="130" cy="100" r="7" fill="#f85149"/>
+  <circle cx="155" cy="100" r="7" fill="#d29922"/>
+  <circle cx="180" cy="100" r="7" fill="#3fb950"/>
+  <text x="600" y="105" text-anchor="middle" font-family="monospace" font-size="14" fill="#8b949e">repos-manager</text>
+
+  <!-- Terminal content -->
+  <text x="140" y="165" font-family="monospace" font-size="20" fill="#3fb950">$</text>
+  <text x="165" y="165" font-family="monospace" font-size="20" fill="#58a6ff">repos-manager</text>
+  <text x="380" y="165" font-family="monospace" font-size="20" fill="#e6edf3">sync --all</text>
+
+  <text x="140" y="205" font-family="monospace" font-size="16" fill="#58a6ff">Fetching repository list from github.com...</text>
+  <text x="140" y="235" font-family="monospace" font-size="16" fill="#58a6ff">Found 23 repositories</text>
+
+  <text x="160" y="275" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/dotenv (updated)</text>
+  <text x="160" y="305" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/repos-manager (updated)</text>
+  <text x="160" y="335" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/mtd (cloned)</text>
+  <text x="160" y="365" font-family="monospace" font-size="16" fill="#d29922">&#x26A0; user/infra (dirty, skipped)</text>
+  <text x="160" y="395" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; work-org/api (updated)</text>
+
+  <text x="140" y="440" font-family="monospace" font-size="16" fill="#58a6ff">Done: 1 cloned, 3 updated, 1 skipped, 0 errors</text>
+
+  <!-- Prompt -->
+  <text x="140" y="480" font-family="monospace" font-size="20" fill="#3fb950">$</text>
+  <rect x="165" y="464" width="10" height="20" fill="#3fb950"/>
+
+  <!-- Title -->
+  <text x="600" y="590" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#8b949e">repos-manager.dxscloud.fr</text>
+  <text x="600" y="618" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#58a6ff">One CLI to sync them all</text>
+</svg>

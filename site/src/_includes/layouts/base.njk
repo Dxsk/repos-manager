@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title | default("repos-manager") }} - {{ site.description }}</title>
+  <meta name="description" content="{{ description | default(site.description) }}">
+  <meta name="keywords" content="git, repository manager, github, gitlab, forgejo, gitea, bitbucket, radicle, sync repos, clone repos, clone all repos, clone all github repos, clone all gitlab repos, sync github gitlab, multi-provider git, git workspace, mirror repos, manage repositories, git repo sync tool, git backup, git cli tool, bash script, shell script, linux, debian, ubuntu, fedora, arch linux, cachyos, manjaro, opensuse, alpine, gentoo, void linux, macos, homebrew, nix, devops, developer tools, open source, sysadmin, git automation, parallel git clone, git status all repos, git multi account, git organization sync, self-hosted git, namespace mirror, repository mirror, git pull all, fetch all repos, git workflow, productivity">
+  <link rel="canonical" href="{{ site.url }}{{ page.url }}">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <meta name="author" content="{{ site.author }}">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0d1117">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ title | default(site.name) }} - Multi-Provider Git Repository Manager">
+  <meta property="og:description" content="{{ description | default(site.description) }}">
+  <meta property="og:url" content="{{ site.url }}{{ page.url }}">
+  <meta property="og:image" content="{{ site.url }}/assets/img/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="{{ site.name }}">
+  <meta property="og:locale" content="en_US">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{ site.url }}/assets/img/og-image.png">
+  <meta name="twitter:title" content="{{ title | default(site.name) }} - Multi-Provider Git Repository Manager">
+  <meta name="twitter:description" content="{{ description | default(site.description) }}">
+
+  <link rel="stylesheet" href="/assets/css/prism.css">
+  <link rel="stylesheet" href="/assets/css/style.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "repos-manager",
+    "description": "{{ site.description }}",
+    "url": "{{ site.url }}",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS",
+    "programmingLanguage": "Bash",
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "{{ site.repo }}",
+    "softwareVersion": "{{ site.version }}",
+    "author": {
+      "@type": "Person",
+      "name": "{{ site.author }}",
+      "url": "https://github.com/{{ site.author }}"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  {% if tags and "docs" in tags %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "{{ title }}",
+    "description": "{{ description | default(site.description) }}",
+    "url": "{{ site.url }}{{ page.url }}",
+    "author": {
+      "@type": "Person",
+      "name": "{{ site.author }}"
+    },
+    "publisher": {
+      "@type": "Person",
+      "name": "{{ site.author }}"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{ site.url }}/" },
+      { "@type": "ListItem", "position": 2, "name": "Docs", "item": "{{ site.url }}/docs/getting-started/" },
+      { "@type": "ListItem", "position": 3, "name": "{{ title }}", "item": "{{ site.url }}{{ page.url }}" }
+    ]
+  }
+  </script>
+  {% endif %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="logo"><span class="logo-prompt">$_</span> repos-manager<span class="logo-cursor">|</span></a>
+      <nav>
+        <a href="/docs/getting-started/">Docs</a>
+        <a href="{{ site.repo }}" target="_blank" rel="noopener" title="GitHub"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg></a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    {{ content | safe }}
+  </main>
+
+  <footer class="site-footer">
+    <p><a href="{{ site.repo }}/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a> - v{{ site.version }}</p>
+    <p>Made by <a href="https://github.com/{{ site.author }}" target="_blank" rel="noopener">{{ site.author }}</a> with <svg class="heart" viewBox="0 0 24 24" fill="var(--accent-red)" width="14" height="14"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></p>
+  </footer>
+</body>
+</html>
