@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 BASE_DIR="${REPOS_MANAGER_BASE_DIR:-$HOME/Documents}"
 
-# Resolve lib directory (overridable for Nix packaging)
+# Resolve lib directory (overridable for packaging)
 REPOS_MANAGER_LIB="${REPOS_MANAGER_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib}"
 
 # ── Source modules ──────────────────────────────────────────────────────────────
@@ -23,6 +23,8 @@ source "${REPOS_MANAGER_LIB}/gitlab.sh"
 source "${REPOS_MANAGER_LIB}/forgejo.sh"
 # shellcheck source=lib/sync.sh
 source "${REPOS_MANAGER_LIB}/sync.sh"
+# shellcheck source=lib/status.sh
+source "${REPOS_MANAGER_LIB}/status.sh"
 
 # ── Dependency check ────────────────────────────────────────────────────────────
 
@@ -52,6 +54,16 @@ validate_base_dir() {
     }
 }
 
+# ── Provider detection ─────────────────────────────────────────────────────────
+
+detect_providers() {
+    local -a found=()
+    command -v gh &>/dev/null && found+=("github")
+    command -v glab &>/dev/null && found+=("gitlab")
+    command -v tea &>/dev/null && found+=("forgejo")
+    echo "${found[@]}"
+}
+
 # ── Commands ────────────────────────────────────────────────────────────────────
 
 readonly VALID_PROVIDERS="github gitlab forgejo"
@@ -67,9 +79,24 @@ validate_provider() {
 }
 
 cmd_login() {
-    local provider="$1"
-    validate_provider "$provider"
-    "${provider}_login"
+    local provider="${1:-}"
+
+    if [[ -z "$provider" ]]; then
+        # Login all detected providers
+        local providers
+        providers=$(detect_providers)
+        if [[ -z "$providers" ]]; then
+            log_error "No provider CLIs found (gh, glab, tea)"
+            exit 1
+        fi
+        for p in $providers; do
+            printf "\n${BOLD}=== Login %s ===${RESET}\n\n" "$p"
+            "${p}_login" || true
+        done
+    else
+        validate_provider "$provider"
+        "${provider}_login"
+    fi
 }
 
 cmd_sync() {
@@ -115,6 +142,11 @@ cmd_sync_all() {
     done
 }
 
+cmd_status() {
+    parse_flags "$@"
+    status_all
+}
+
 # ── Usage ───────────────────────────────────────────────────────────────────────
 
 print_usage() {
@@ -123,7 +155,7 @@ ${BOLD}repos-manager${RESET} - Multi-provider Git repository manager
 
 ${BOLD}Usage:${RESET}
   repos-manager <provider> <command> [flags]
-  repos-manager sync --all [flags]
+  repos-manager <command> [flags]
 
 ${BOLD}Providers:${RESET}
   github    GitHub (uses gh CLI)
@@ -132,8 +164,13 @@ ${BOLD}Providers:${RESET}
   gitea     Alias for forgejo
 
 ${BOLD}Commands:${RESET}
-  login     Authenticate with the provider
-  sync      Sync repositories
+  login [provider]   Authenticate (all detected providers if none specified)
+  sync --all         Sync all providers
+  status             Show dirty/ahead/behind repos across all providers
+
+${BOLD}Provider commands:${RESET}
+  <provider> login   Authenticate with a specific provider
+  <provider> sync    Sync repositories from a provider
 
 ${BOLD}Flags:${RESET}
   --filter <pattern>   Filter repos by pattern (e.g., Dxsk/* or Dxsk/project)
@@ -142,6 +179,7 @@ ${BOLD}Flags:${RESET}
   --prune              Remove local repos not on remote
   --dry-run            Show what would be done without making changes
   --host <host>        Custom host (for self-hosted GitLab/Forgejo)
+  --parallel <n>       Number of parallel sync jobs (default: 4)
 
 ${BOLD}Filter file:${RESET}
   Create \$BASE_DIR/.repos-filter to sync ONLY matching repos:
@@ -157,15 +195,13 @@ ${BOLD}Environment:${RESET}
   REPOS_MANAGER_BASE_DIR   Override default base directory
 
 ${BOLD}Examples:${RESET}
+  repos-manager login
+  repos-manager github login
   repos-manager github sync
   repos-manager github sync --filter Dxsk/*
-  repos-manager github sync --filter YouUser/*
-  repos-manager github sync --filter Dxsk/git-chronicles
-  repos-manager github sync --filter YouUser/YouRepos
-  repos-manager gitlab sync --host gitlab.self-hosted.com
-  repos-manager forgejo sync
-  repos-manager forgejo sync --host forgejo.self-hosted.com
   repos-manager sync --all --prune
+  repos-manager status
+  repos-manager gitlab sync --host gitlab.self-hosted.com
 EOF
 }
 
@@ -200,6 +236,10 @@ main() {
                 *)     echo "Usage: repos-manager forgejo <login|sync>" >&2; exit 1 ;;
             esac
             ;;
+        login)
+            shift
+            cmd_login "${1:-}"
+            ;;
         sync)
             shift
             if [[ "${1:-}" != "--all" ]]; then
@@ -207,6 +247,10 @@ main() {
                 exit 1
             fi
             cmd_sync_all "$@"
+            ;;
+        status)
+            shift
+            cmd_status "$@"
             ;;
         version|--version|-v)
             echo "repos-manager ${VERSION}"
