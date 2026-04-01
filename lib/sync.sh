@@ -7,16 +7,16 @@ sync_repo() {
     if [[ -d "$local_path/.git" ]]; then
         # Existing repo: check for uncommitted changes
         if [[ -n "$(git -C "$local_path" status --porcelain 2>/dev/null)" ]]; then
-            log_warn "${full_name} (dirty, skipped)"
+            log_warn "${full_name} (dirty, skipped)" >&2
             echo "skipped"
         else
             local err
             if err=$(git -C "$local_path" fetch --all --quiet 2>&1) && \
                err=$(git -C "$local_path" pull --ff-only --quiet 2>&1); then
-                log_success "${full_name} (updated)"
+                log_success "${full_name} (updated)" >&2
                 echo "updated"
             else
-                log_error "${full_name} (update failed): ${err}"
+                log_error "${full_name} (update failed): ${err}" >&2
                 echo "errored"
             fi
         fi
@@ -25,10 +25,10 @@ sync_repo() {
         mkdir -p "$(dirname "$local_path")"
         local err
         if err=$(git clone --quiet "$clone_url" "$local_path" 2>&1); then
-            log_success "${full_name} (cloned)"
+            log_success "${full_name} (cloned)" >&2
             echo "cloned"
         else
-            log_error "${full_name} (clone failed): ${err}"
+            log_error "${full_name} (clone failed): ${err}" >&2
             echo "errored"
         fi
     fi
