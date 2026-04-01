@@ -262,6 +262,27 @@ test-org/*
 - `bitbucket` for Bitbucket (optional, can use API fallback)
 - `rad` for Radicle
 
+## Glossary
+
+### Providers
+
+| Provider | Description | CLI | Documentation |
+|----------|-------------|-----|---------------|
+| [GitHub](https://github.com) | The most popular Git hosting platform | [`gh`](https://cli.github.com/) | [GitHub CLI Manual](https://cli.github.com/manual/) |
+| [GitLab](https://gitlab.com) | DevOps platform with built-in CI/CD | [`glab`](https://gitlab.com/gitlab-org/cli) | [GLab Documentation](https://gitlab.com/gitlab-org/cli/-/blob/main/README.md) |
+| [Forgejo](https://forgejo.org) | Community-driven self-hosted Git forge (Gitea fork) | [`tea`](https://forgejo.org/docs/latest/user/cli/) | [Forgejo Documentation](https://forgejo.org/docs/latest/) |
+| [Gitea](https://gitea.com) | Lightweight self-hosted Git service | [`tea`](https://gitea.com/gitea/tea) | [Gitea Documentation](https://docs.gitea.com/) |
+| [Bitbucket](https://bitbucket.org) | Atlassian's Git platform (Cloud & Server) | [`bitbucket`](https://crates.io/crates/bitbucket-cli) | [Bitbucket API](https://developer.atlassian.com/cloud/bitbucket/rest/intro/) |
+| [Radicle](https://radicle.xyz) | Sovereign peer-to-peer code forge built on Git | [`rad`](https://radicle.xyz/guides/user) | [Radicle User Guide](https://radicle.xyz/guides/user) |
+
+### Tools
+
+| Tool | Description | Documentation |
+|------|-------------|---------------|
+| [Git](https://git-scm.com) | Distributed version control system | [Git Reference](https://git-scm.com/docs) |
+| [jq](https://jqlang.github.io/jq/) | Lightweight CLI JSON processor | [jq Manual](https://jqlang.github.io/jq/manual/) |
+| [GNU Stow](https://www.gnu.org/software/stow/) | Symlink farm manager (used for dotfiles) | [Stow Manual](https://www.gnu.org/software/stow/manual/) |
+
 ## License
 
 [MIT](LICENSE)
