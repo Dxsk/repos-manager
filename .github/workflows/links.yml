@@ -3,21 +3,44 @@ name: Check Links
 on:
   push:
     branches: [main, develop]
-    paths: ['**.md']
+    paths: ['**.md', 'site/**']
   pull_request:
     branches: [main, develop]
-    paths: ['**.md']
+    paths: ['**.md', 'site/**']
   schedule:
-    - cron: '0 9 * * 1'  # Every Monday at 9:00 UTC
+    - cron: '0 8 * * 1'  # Every Monday at 10:00 Europe/Paris
 
 jobs:
-  check-links:
+  check-markdown:
+    name: Markdown links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check links
+      - name: Check links in markdown
         uses: lycheeverse/lychee-action@v2
         with:
           args: --verbose --no-progress '**/*.md'
+          fail: true
+
+  check-site:
+    name: Site links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+        working-directory: site
+
+      - run: npm run build
+        working-directory: site
+
+      - name: Check links in built site
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --verbose --no-progress 'site/_site/**/*.html'
           fail: true
