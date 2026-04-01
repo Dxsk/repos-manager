@@ -1,0 +1,16 @@
+{
+  "name": "repos-manager-site",
+  "private": true,
+  "scripts": {
+    "dev": "npx eleventy --serve",
+    "build": "NODE_ENV=production npx eleventy"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.0.0",
+    "html-minifier-terser": "^7.2.0"
+  },
+  "dependencies": {
+    "@11ty/eleventy-plugin-syntaxhighlight": "^5.0.2",
+    "clean-css": "^5.3.3"
+  }
+}
