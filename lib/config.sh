@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Configuration file support
 # Reads ~/.config/repos-manager/config.json
+# shellcheck disable=SC2034  # Variables used in other sourced files
 
 REPOS_MANAGER_CONFIG="${REPOS_MANAGER_CONFIG:-$HOME/.config/repos-manager/config.json}"
 
