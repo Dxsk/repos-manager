@@ -53,7 +53,7 @@ Supports pagination for large instances. Works with GitLab.com and self-hosted.
 
 ## Forgejo / Gitea
 
-**CLI:** [`tea`](https://forgejo.org/docs/latest/user/cli/) ([docs](https://forgejo.org/docs/latest/))
+**CLI:** [`tea`](https://forgejo.org/docs/latest/) ([docs](https://forgejo.org/docs/latest/))
 
 ```bash
 # Install

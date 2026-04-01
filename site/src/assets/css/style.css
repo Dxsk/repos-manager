@@ -478,6 +478,18 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 .site-footer a:hover { color: var(--accent); }
 .site-footer .heart { vertical-align: -2px; display: inline-block; }
 
+.social-links {
+  display: flex;
+  justify-content: center;
+  gap: 1em;
+  margin-top: 0.8em;
+}
+.social-links a {
+  color: var(--text-secondary);
+  transition: color 0.2s;
+}
+.social-links a:hover { color: var(--accent); }
+
 /* ── Back to top ─────────────────────────────────────── */
 
 .back-to-top {
