@@ -9,20 +9,23 @@ USE_HTTPS=false
 PRUNE=false
 DRY_RUN=false
 HOST=""
+PARALLEL=4
 
 parse_flags() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --filter)     FILTER="$2"; shift 2 ;;
-            --filter=*)   FILTER="${1#--filter=}"; shift ;;
-            --base-dir)   BASE_DIR="$2"; shift 2 ;;
-            --base-dir=*) BASE_DIR="${1#--base-dir=}"; shift ;;
-            --https)      USE_HTTPS=true; shift ;;
-            --prune)      PRUNE=true; shift ;;
-            --dry-run)    DRY_RUN=true; shift ;;
-            --host)       HOST="$2"; shift 2 ;;
-            --host=*)     HOST="${1#--host=}"; shift ;;
-            --all)        shift ;; # consumed by caller
+            --filter)       FILTER="$2"; shift 2 ;;
+            --filter=*)     FILTER="${1#--filter=}"; shift ;;
+            --base-dir)     BASE_DIR="$2"; shift 2 ;;
+            --base-dir=*)   BASE_DIR="${1#--base-dir=}"; shift ;;
+            --https)        USE_HTTPS=true; shift ;;
+            --prune)        PRUNE=true; shift ;;
+            --dry-run)      DRY_RUN=true; shift ;;
+            --host)         HOST="$2"; shift 2 ;;
+            --host=*)       HOST="${1#--host=}"; shift ;;
+            --parallel)     PARALLEL="$2"; shift 2 ;;
+            --parallel=*)   PARALLEL="${1#--parallel=}"; shift ;;
+            --all)          shift ;; # consumed by caller
             *) echo "Unknown flag: $1" >&2; exit 1 ;;
         esac
     done

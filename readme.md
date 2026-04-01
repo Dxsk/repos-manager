@@ -2,24 +2,6 @@
 
 A single CLI tool to clone and sync all your Git repositories, no matter the provider.
 
-This project is a **template**. Each workspace is an independent instance of repos-manager tied to a specific directory. You can create as many workspaces as you need: one for personal projects, one for work, one per client, one per team -- whatever fits your workflow.
-
-```bash
-# Personal repos
-mkdir ~/personal && cd ~/personal
-nix flake init -t github:Dxsk/repos-manager
-
-# Work repos
-mkdir ~/work && cd ~/work
-nix flake init -t github:Dxsk/repos-manager
-
-# Client project
-mkdir ~/clients/acme && cd ~/clients/acme
-nix flake init -t github:Dxsk/repos-manager
-```
-
-Each workspace has its own `.repos-filter`, `.repos-ignore`, and `flake.nix`. Configure them independently to sync exactly what you need, where you need it.
-
 ## Supported providers
 
 | Provider | CLI | Status |
@@ -40,6 +22,9 @@ Each workspace has its own `.repos-filter`, `.repos-ignore`, and `flake.nix`. Co
 - Filter by owner or specific repo (`--filter`)
 - Exclude repos via `.repos-ignore`
 - Filter repos via `.repos-filter`
+- Parallel sync (default: 4 jobs, configurable with `--parallel`)
+- Status overview: dirty, ahead, behind, diverged repos
+- Universal login: authenticate all detected providers at once
 - Shell completions for bash, zsh and fish
 - `NO_COLOR` support
 
@@ -48,10 +33,9 @@ Each workspace has its own `.repos-filter`, `.repos-ignore`, and `flake.nix`. Co
 After syncing, your workspace looks like this:
 
 ```
-my-workspace/
+~/Documents/
   .repos-filter
   .repos-ignore
-  flake.nix
   github.com/
     dxsk/
       my-project/
@@ -67,46 +51,21 @@ my-workspace/
 
 ## Installation
 
-<details>
-<summary>Nix (recommended)</summary>
-
-Copy a ready-to-use workspace into any directory:
-
-```bash
-mkdir ~/my-repos && cd ~/my-repos
-nix flake init -t github:Dxsk/repos-manager
-```
-
-Enter the dev shell and start syncing:
-
-```bash
-nix develop
-repos-manager github login
-repos-manager github sync
-```
-
-The dev shell provides `repos-manager` with all its dependencies and sets `BASE_DIR` to the current directory automatically.
-
-</details>
-
-<details>
-<summary>Nix (one-off)</summary>
-
-Run it directly without setting up a workspace:
-
-```bash
-nix run github:Dxsk/repos-manager -- github sync
-```
-
-</details>
-
-<details>
-<summary>Manual</summary>
+### Arch / CachyOS
 
 ```bash
 git clone git@github.com:Dxsk/repos-manager.git
 cd repos-manager
+make install
 ```
+
+This installs to `~/.local/bin/repos-manager`. To change the prefix:
+
+```bash
+make install PREFIX=/usr/local
+```
+
+### Manual (any distro)
 
 Source the file matching your shell:
 
@@ -121,17 +80,31 @@ source sourceme.zsh
 source sourceme.fish
 ```
 
-You can add the `source` line to your shell config (`.bashrc`, `.zshrc`, `config.fish`) to make it persistent.
+You can add the `source` line to your shell config to make it persistent.
 
-</details>
+### Nix
+
+```bash
+nix run github:Dxsk/repos-manager -- github sync
+```
+
+Or use as a flake template:
+
+```bash
+mkdir ~/my-repos && cd ~/my-repos
+nix flake init -t github:Dxsk/repos-manager
+nix develop
+```
 
 ## Usage
 
 ### Authentication
 
-Each provider uses its own CLI for authentication:
-
 ```bash
+# Login all detected providers at once
+repos-manager login
+
+# Or login a specific provider
 repos-manager github login
 repos-manager gitlab login
 repos-manager forgejo login
@@ -148,6 +121,17 @@ repos-manager gitlab sync
 
 # Sync all configured providers at once
 repos-manager sync --all
+
+# Parallel sync with 8 jobs
+repos-manager sync --all --parallel 8
+```
+
+### Status
+
+Check which repos have uncommitted changes, are ahead/behind, or diverged:
+
+```bash
+repos-manager status
 ```
 
 ### Filtering
@@ -176,7 +160,6 @@ repos-manager sync --all --dry-run
 repos-manager gitlab sync --host gitlab.self-hosted.com
 
 # Forgejo / Gitea
-repos-manager forgejo sync
 repos-manager forgejo sync --host forgejo.self-hosted.com
 
 # Custom base directory
@@ -188,18 +171,18 @@ repos-manager sync --all --base-dir /path/to/repos
 | Flag | Description |
 |------|-------------|
 | `--filter <pattern>` | Filter repos by pattern (e.g. `Dxsk/*` or `Dxsk/project`) |
-| `--base-dir <path>` | Base directory for repos (default: current directory with Nix, `~/Documents` otherwise) |
+| `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
 | `--https` | Use HTTPS clone URLs instead of SSH |
 | `--prune` | Remove local repos not found on the remote |
 | `--dry-run` | Show what would be done without making any changes |
 | `--host <host>` | Custom host for self-hosted instances |
+| `--parallel <n>` | Number of parallel sync jobs (default: 4) |
 
 ## Filter and ignore files
 
-<details>
-<summary>.repos-filter -- filterlist</summary>
+### .repos-filter
 
-Edit `.repos-filter` in your workspace to sync **only** repos that match at least one pattern. If the file contains only comments, all repos are synced.
+Sync **only** repos matching at least one pattern. If the file is empty or missing, all repos are synced.
 
 ```
 # Only sync repos from Dxsk
@@ -209,12 +192,9 @@ Dxsk/*
 other-org/some-project
 ```
 
-</details>
+### .repos-ignore
 
-<details>
-<summary>.repos-ignore -- ignorelist</summary>
-
-Edit `.repos-ignore` in your workspace to exclude repos from syncing. Applied **after** `.repos-filter`.
+Exclude repos from syncing. Applied **after** `.repos-filter`.
 
 ```
 # Ignore a specific repo
@@ -222,44 +202,30 @@ Dxsk/old-project
 
 # Ignore all repos from an owner
 test-org/*
-
-# Glob pattern
-*/tmp-*
 ```
 
-</details>
-
-<details>
-<summary>Pattern syntax</summary>
-
-Both files use the same syntax:
+### Pattern syntax
 
 - Glob wildcards: `*`, `?`
 - `owner/*` also matches nested paths (e.g. `group/subgroup/project`)
 - Lines starting with `#` are comments
 - Empty lines are ignored
 
-</details>
-
 ## Environment variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REPOS_MANAGER_BASE_DIR` | Base directory for all repos | Current directory (Nix) or `~/Documents` |
+| `REPOS_MANAGER_BASE_DIR` | Base directory for all repos | `~/Documents` |
 | `REPOS_MANAGER_LIB` | Path to lib modules | Auto-detected |
 | `NO_COLOR` | Disable colored output when set | Unset |
 
 ## Requirements
-
-When not using Nix, you need these installed:
 
 - `git`
 - `jq`
 - `gh` for GitHub
 - `glab` for GitLab
 - `tea` for Forgejo / Gitea
-
-With Nix, all dependencies are provided automatically.
 
 ## License
 
