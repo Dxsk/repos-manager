@@ -3,12 +3,13 @@ name: Check Links
 on:
   push:
     branches: [main, develop]
-    paths: ['**.md', 'site/**']
+    paths: ['**.md', 'site/**', '.github/workflows/links.yml']
   pull_request:
     branches: [main, develop]
     paths: ['**.md', 'site/**']
   schedule:
     - cron: '0 8 * * 1'  # Every Monday at 10:00 Europe/Paris
+  workflow_dispatch:
 
 jobs:
   check-markdown:
