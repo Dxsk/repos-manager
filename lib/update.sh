@@ -33,9 +33,6 @@ self_update() {
     fi
 
     # Running from git repo
-    local current_branch
-    current_branch=$(git -C "$script_dir" branch --show-current 2>/dev/null)
-
     git -C "$script_dir" fetch --quiet origin main 2>/dev/null || {
         log_error "Failed to fetch updates"
         return 1
