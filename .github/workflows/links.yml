@@ -1,0 +1,23 @@
+name: Check Links
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['**.md']
+  pull_request:
+    branches: [main]
+    paths: ['**.md']
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9:00 UTC
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --verbose --no-progress '**/*.md'
+          fail: true
