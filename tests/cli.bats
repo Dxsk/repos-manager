@@ -26,10 +26,10 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/repos-manager.sh"
     [[ "$output" =~ "Unknown command" ]]
 }
 
-@test "cli: github without subcommand fails" {
+@test "cli: github without subcommand shows help" {
     run bash "$SCRIPT" github
-    [[ "$status" -ne 0 ]]
-    [[ "$output" =~ "Usage:" ]]
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "repos-manager github" ]]
 }
 
 @test "cli: sync without --all fails" {
