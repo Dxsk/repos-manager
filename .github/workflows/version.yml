@@ -1,0 +1,84 @@
+name: Auto Version
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    # Skip if the push was from this workflow (avoid infinite loop)
+    if: "!contains(github.event.head_commit.message, 'chore: bump version')"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: tag
+        run: |
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Determine bump type from commits
+        id: bump
+        run: |
+          latest="${{ steps.tag.outputs.latest }}"
+          commits=$(git log "$latest"..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          bump="none"
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qiE '^feat(\(.*\))?!:|BREAKING CHANGE'; then
+              bump="major"
+              break
+            elif echo "$msg" | grep -qiE '^feat(\(.*\))?:'; then
+              if [[ "$bump" != "major" ]]; then
+                bump="minor"
+              fi
+            elif echo "$msg" | grep -qiE '^fix(\(.*\))?:'; then
+              if [[ "$bump" == "none" ]]; then
+                bump="patch"
+              fi
+            fi
+          done <<< "$commits"
+
+          echo "type=$bump" >> "$GITHUB_OUTPUT"
+
+      - name: Compute new version
+        id: version
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          current="${{ steps.tag.outputs.latest }}"
+          current="${current#v}"
+          IFS='.' read -r major minor patch <<< "$current"
+
+          case "${{ steps.bump.outputs.type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          echo "new=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version files
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          version="${{ steps.version.outputs.new }}"
+          sed -i "s/^VERSION=\".*\"/VERSION=\"${version}\"/" repos-manager.sh
+          sed -i "s/\"version\": \".*\"/\"version\": \"${version}\"/" site/src/_data/site.json
+          sed -i "s/repos-manager [0-9]\+\.[0-9]\+\.[0-9]\+/repos-manager ${version}/" tests/cli.bats
+
+      - name: Commit and tag
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          version="${{ steps.version.outputs.new }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add repos-manager.sh site/src/_data/site.json tests/cli.bats
+          git commit -m "chore: bump version to v${version}"
+          git tag "v${version}"
+          git push origin main --tags
