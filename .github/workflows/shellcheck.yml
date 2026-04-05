@@ -11,7 +11,7 @@ jobs:
     name: ShellCheck (bash)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Run ShellCheck
         run: shellcheck -x repos-manager.sh lib/*.sh sourceme.bash
@@ -20,7 +20,7 @@ jobs:
     name: Syntax check (zsh)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install zsh
         run: sudo apt-get update && sudo apt-get install -y zsh
@@ -32,7 +32,7 @@ jobs:
     name: Syntax check (fish)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install fish
         run: sudo apt-get update && sudo apt-get install -y fish
