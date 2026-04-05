@@ -2,9 +2,8 @@ PREFIX ?= ~/.local
 
 install:
 	@mkdir -p $(PREFIX)/bin $(PREFIX)/lib/repos-manager
-	@cp lib/*.sh $(PREFIX)/lib/repos-manager/
-	@cp repos-manager.sh $(PREFIX)/bin/repos-manager
-	@chmod +x $(PREFIX)/bin/repos-manager
+	@cp -f lib/*.sh $(PREFIX)/lib/repos-manager/
+	@install -m 755 repos-manager.sh $(PREFIX)/bin/repos-manager
 	@sed -i 's|REPOS_MANAGER_LIB:-.*}|REPOS_MANAGER_LIB:-$(PREFIX)/lib/repos-manager}|' $(PREFIX)/bin/repos-manager
 	@echo "Installed to $(PREFIX)/bin/repos-manager"
 
