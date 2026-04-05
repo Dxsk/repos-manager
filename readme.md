@@ -25,6 +25,8 @@ A single CLI tool to clone and sync all your Git repositories, no matter the pro
 - Exclude repos via `.repos-ignore`
 - Filter repos via `.repos-filter`
 - Parallel sync (default: 4 jobs, configurable with `--parallel`)
+- Lockfile to prevent concurrent syncs on the same base directory
+- Verbose (`--verbose`) and quiet (`--quiet`) output modes
 - Status overview: dirty, ahead, behind, diverged repos
 - Universal login: authenticate all detected providers at once
 - Config file (`~/.config/repos-manager/config.json`) for defaults
@@ -67,6 +69,14 @@ This installs to `~/.local/bin/repos-manager`. To change the prefix:
 
 ```bash
 make install PREFIX=/usr/local
+```
+
+Run lint and tests:
+
+```bash
+make check   # lint + tests
+make lint    # shellcheck + zsh/fish syntax
+make test    # bats tests
 ```
 
 ### Manual (any distro)
@@ -204,6 +214,8 @@ repos-manager sync --all --base-dir /path/to/repos
 | `--dry-run` | Show what would be done without making any changes |
 | `--host <host>` | Custom host for self-hosted instances |
 | `--parallel <n>` | Number of parallel sync jobs (default: 4) |
+| `--verbose`, `-v` | Show debug output |
+| `--quiet`, `-q` | Suppress info/success messages (errors still shown) |
 
 ## Auto-generated sourceme files
 
@@ -250,6 +262,8 @@ test-org/*
 |----------|-------------|---------|
 | `REPOS_MANAGER_BASE_DIR` | Base directory for all repos | `~/Documents` |
 | `REPOS_MANAGER_LIB` | Path to lib modules | Auto-detected |
+| `REPOS_MANAGER_PARALLEL` | Default parallel jobs | `4` |
+| `REPOS_MANAGER_PROTOCOL` | Default protocol (`ssh` or `https`) | `ssh` |
 | `NO_COLOR` | Disable colored output when set | Unset |
 
 ## Requirements

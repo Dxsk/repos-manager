@@ -41,6 +41,14 @@ This installs to `~/.local/bin/repos-manager`. Change the prefix with:
 make install PREFIX=/usr/local
 ```
 
+Run lint and tests:
+
+```bash
+make check   # lint + tests
+make lint    # shellcheck + zsh/fish syntax
+make test    # bats tests
+```
+
 ### Manual
 
 Source the file for your shell:

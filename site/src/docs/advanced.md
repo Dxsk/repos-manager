@@ -22,6 +22,10 @@ Or set it in your config file:
 
 For large organizations (100+ repos), higher parallelism helps. For slow connections, lower it to avoid timeouts.
 
+## Concurrent sync protection
+
+repos-manager uses a lockfile (`BASE_DIR/.repos-manager.lock`) to prevent multiple syncs from running at the same time on the same directory. If a previous sync was interrupted, the lockfile is automatically cleaned up when the holding process is no longer running.
+
 ## Self-update
 
 repos-manager can update itself:
