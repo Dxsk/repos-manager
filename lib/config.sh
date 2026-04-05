@@ -10,22 +10,28 @@ load_config() {
 
     local val
 
-    # Base directory
-    val=$(jq -r '.base_dir // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
-    if [[ -n "$val" ]]; then
-        BASE_DIR="${val/#\~/$HOME}"
+    # Base directory (only override if no env var was set)
+    if [[ -z "${REPOS_MANAGER_BASE_DIR:-}" ]]; then
+        val=$(jq -r '.base_dir // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+        if [[ -n "$val" ]]; then
+            BASE_DIR="${val/#\~/$HOME}"
+        fi
     fi
 
-    # Default parallel jobs
-    val=$(jq -r '.parallel // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
-    if [[ -n "$val" ]]; then
-        PARALLEL="$val"
+    # Default parallel jobs (only if not already set by env)
+    if [[ -z "${REPOS_MANAGER_PARALLEL:-}" ]]; then
+        val=$(jq -r '.parallel // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+        if [[ -n "$val" ]]; then
+            PARALLEL="$val"
+        fi
     fi
 
-    # Default protocol
-    val=$(jq -r '.protocol // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
-    if [[ "$val" == "https" ]]; then
-        USE_HTTPS=true
+    # Default protocol (only if not already set by env)
+    if [[ -z "${REPOS_MANAGER_PROTOCOL:-}" ]]; then
+        val=$(jq -r '.protocol // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+        if [[ "$val" == "https" ]]; then
+            USE_HTTPS=true
+        fi
     fi
 
     # Custom hosts
