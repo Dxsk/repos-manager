@@ -4,22 +4,24 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'site/package*.json'
+      - 'site/package.json'
+      - 'site/package-lock.json'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'site/package*.json'
+      - 'site/package.json'
+      - 'site/package-lock.json'
   schedule:
-    - cron: '0 8 * * *'  # Every day at 10:00 Europe/Paris (UTC+2)
+    - cron: '0 8 * * *'
 
 jobs:
   audit:
     name: npm audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642195b5e65ec0cc5acb848 # v4
         with:
           node-version: 22
 
