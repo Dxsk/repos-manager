@@ -64,9 +64,8 @@ self_update() {
 
     # Check for local changes
     if [[ -n "$(git -C "$script_dir" status --porcelain 2>/dev/null)" ]]; then
-        log_warn "You have local changes. Stashing..."
-        git -C "$script_dir" stash --quiet
-        local stashed=true
+        log_error "You have local changes. Please commit or stash them first."
+        return 1
     fi
 
     if git -C "$script_dir" pull --ff-only --quiet origin main 2>/dev/null; then
@@ -75,9 +74,5 @@ self_update() {
         log_success "Updated to ${new_version}"
     else
         log_error "Update failed (non-fast-forward). Run manually: git -C $script_dir pull"
-    fi
-
-    if [[ "${stashed:-false}" == true ]]; then
-        git -C "$script_dir" stash pop --quiet 2>/dev/null || log_warn "Failed to restore stash"
     fi
 }
