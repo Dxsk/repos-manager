@@ -10,6 +10,8 @@ PRUNE=false
 DRY_RUN=false
 HOST=""
 PARALLEL=4
+VERBOSE=false
+QUIET=false
 
 parse_flags() {
     while [[ $# -gt 0 ]]; do
@@ -25,6 +27,8 @@ parse_flags() {
             --host=*)       HOST="${1#--host=}"; shift ;;
             --parallel)     PARALLEL="$2"; shift 2 ;;
             --parallel=*)   PARALLEL="${1#--parallel=}"; shift ;;
+            --verbose|-v)   VERBOSE=true; shift ;;
+            --quiet|-q)     QUIET=true; shift ;;
             --all)          shift ;; # consumed by caller
             *) echo "Unknown flag: $1" >&2; exit 1 ;;
         esac

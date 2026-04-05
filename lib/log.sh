@@ -15,8 +15,9 @@ else
     RED="" GREEN="" YELLOW="" BLUE="" GRAY="" BOLD="" RESET=""
 fi
 
-log_info()    { printf "%s%s%s\n" "$BLUE" "$*" "$RESET"; }
-log_success() { printf "  %s✓ %s%s\n" "$GREEN" "$*" "$RESET"; }
+log_info()    { $QUIET && return; printf "%s%s%s\n" "$BLUE" "$*" "$RESET"; }
+log_success() { $QUIET && return; printf "  %s✓ %s%s\n" "$GREEN" "$*" "$RESET"; }
 log_warn()    { printf "  %s⚠ %s%s\n" "$YELLOW" "$*" "$RESET"; }
 log_error()   { printf "  %s✗ %s%s\n" "$RED" "$*" "$RESET"; }
-log_skip()    { printf "  %s⊘ %s%s\n" "$GRAY" "$*" "$RESET"; }
+log_skip()    { $QUIET && return; printf "  %s⊘ %s%s\n" "$GRAY" "$*" "$RESET"; }
+log_debug()   { $VERBOSE || return; printf "  %s[debug] %s%s\n" "$GRAY" "$*" "$RESET"; }

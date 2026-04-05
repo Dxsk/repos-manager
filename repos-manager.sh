@@ -227,6 +227,8 @@ ${BOLD}Flags:${RESET}
   --dry-run            Show what would be done without making changes
   --host <host>        Custom host (for self-hosted GitLab/Forgejo)
   --parallel <n>       Number of parallel sync jobs (default: 4)
+  --verbose, -v        Show debug output
+  --quiet, -q          Suppress info/success messages (errors still shown)
 
 ${BOLD}Config:${RESET}
   ~/.config/repos-manager/config.json
@@ -309,7 +311,7 @@ main() {
         update)
             self_update
             ;;
-        version|--version|-v)
+        version|--version)
             echo "repos-manager ${VERSION}"
             ;;
         help|--help|-h|"")
