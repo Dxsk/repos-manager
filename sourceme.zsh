@@ -14,9 +14,9 @@ repos-manager() {
 # ── Completion ──────────────────────────────────────────────────────────────────
 
 _repos_manager_complete_zsh() {
-    local -a providers=("github:GitHub (gh)" "gitlab:GitLab (glab)" "forgejo:Forgejo/Gitea (tea)" "gitea:Alias for forgejo")
+    local -a providers=("github:GitHub (gh)" "gitlab:GitLab (glab)" "forgejo:Forgejo/Gitea (tea)" "gitea:Alias for forgejo" "bitbucket:Bitbucket (bitbucket-cli or API)" "radicle:Radicle (rad)")
     local -a commands=("login:Authenticate with provider" "sync:Sync repositories")
-    local -a global_cmds=("sync:Sync repositories" "version:Show version" "help:Show help")
+    local -a global_cmds=("sync:Sync repositories" "version:Show version" "help:Show help" "login:Authenticate with providers" "status:Show repo status" "init:Create default config" "update:Self-update")
     local -a flags=(
         "--filter:Filter repos by pattern"
         "--base-dir:Base directory for repos"
@@ -24,6 +24,9 @@ _repos_manager_complete_zsh() {
         "--prune:Remove local repos not on remote"
         "--dry-run:Show what would be done without making changes"
         "--host:Custom host for self-hosted instances"
+        "--parallel:Number of parallel sync jobs"
+        "--verbose:Show debug output"
+        "--quiet:Suppress info/success messages"
     )
 
     case "$CURRENT" in
@@ -33,7 +36,7 @@ _repos_manager_complete_zsh() {
             ;;
         3)
             case "${words[2]}" in
-                github|gitlab|forgejo|gitea)
+                github|gitlab|forgejo|gitea|bitbucket|radicle)
                     _describe 'command' commands
                     ;;
                 sync)
