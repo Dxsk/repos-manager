@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=""
+VERSION="0.3.0"
 BASE_DIR="${REPOS_MANAGER_BASE_DIR:-$HOME/Documents}"
 
 # Resolve lib directory (overridable for packaging)

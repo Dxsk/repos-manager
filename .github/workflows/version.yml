@@ -3,6 +3,10 @@ name: Auto Version
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'site/**'
+      - 'docs/**'
 
 permissions:
   contents: write
@@ -11,7 +15,6 @@ jobs:
   bump:
     name: Bump version and tag
     runs-on: ubuntu-latest
-    # Skip if the push was from this workflow (avoid infinite loop)
     if: "!contains(github.event.head_commit.message, 'chore: bump version')"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -21,25 +24,41 @@ jobs:
       - name: Get latest tag
         id: tag
         run: |
-          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          tag=$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)
+          if [[ -z "$tag" ]]; then
+            # No tags exist: read version from script as baseline
+            tag="v$(grep '^VERSION=' repos-manager.sh | cut -d'"' -f2)"
+            echo "baseline=true" >> "$GITHUB_OUTPUT"
+          fi
           echo "latest=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Determine bump type from commits
         id: bump
         run: |
           latest="${{ steps.tag.outputs.latest }}"
-          commits=$(git log "$latest"..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          if [[ "${{ steps.tag.outputs.baseline }}" == "true" ]]; then
+            # No previous tag: check all unreleased commits
+            commits=$(git log --pretty=format:"%s")
+          else
+            commits=$(git log "$latest"..HEAD --pretty=format:"%s")
+          fi
+
+          if [[ -z "$commits" ]]; then
+            echo "type=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           bump="none"
           while IFS= read -r msg; do
-            if echo "$msg" | grep -qiE '^feat(\(.*\))?!:|BREAKING CHANGE'; then
+            if echo "$msg" | grep -qE '^feat(\(.*\))?!:|BREAKING CHANGE'; then
               bump="major"
               break
-            elif echo "$msg" | grep -qiE '^feat(\(.*\))?:'; then
+            elif echo "$msg" | grep -qE '^feat(\(.*\))?:'; then
               if [[ "$bump" != "major" ]]; then
                 bump="minor"
               fi
-            elif echo "$msg" | grep -qiE '^fix(\(.*\))?:'; then
+            elif echo "$msg" | grep -qE '^fix(\(.*\))?:'; then
               if [[ "$bump" == "none" ]]; then
                 bump="patch"
               fi
