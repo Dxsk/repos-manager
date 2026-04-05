@@ -1,0 +1,10 @@
+# Exclude from release archives (git archive / GitHub release tarballs)
+site/           export-ignore
+tests/          export-ignore
+docs/           export-ignore
+.github/        export-ignore
+CONTRIBUTING.md export-ignore
+SECURITY.md     export-ignore
+.repos-filter   export-ignore
+.repos-ignore   export-ignore
+.gitattributes  export-ignore
