@@ -66,3 +66,31 @@ load test_helper
     # Should not error
     [[ "$?" -eq 0 ]]
 }
+
+@test "--verbose sets VERBOSE=true" {
+    parse_flags --verbose
+    [[ "$VERBOSE" == true ]]
+}
+
+@test "--quiet sets QUIET=true" {
+    parse_flags --quiet
+    [[ "$QUIET" == true ]]
+}
+
+@test "-v sets VERBOSE=true" {
+    parse_flags -v
+    [[ "$VERBOSE" == true ]]
+}
+
+@test "-q sets QUIET=true" {
+    parse_flags -q
+    [[ "$QUIET" == true ]]
+}
+
+@test "default VERBOSE is false" {
+    [[ "$VERBOSE" == false ]]
+}
+
+@test "default QUIET is false" {
+    [[ "$QUIET" == false ]]
+}
