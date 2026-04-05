@@ -38,9 +38,13 @@ If running from a git clone, it fetches and fast-forward pulls from `origin/main
 
 ## Auto-generated sourceme files
 
-After each sync, repos-manager generates `sourceme`, `sourceme.zsh`, and `sourceme.fish` files in each host directory. These provide the `repos-manager` function when you `cd` into the directory.
+After each sync, repos-manager generates `sourceme`, `sourceme.zsh`, and `sourceme.fish` files in each host directory. These provide the `repos-manager` function and full tab completions (providers, commands, flags) when you `cd` into the directory.
 
 Combined with a [sourceme auto-loader](https://github.com/Dxsk/dotenv), the function loads and unloads automatically as you navigate your workspace.
+
+## Security
+
+The config directory (`~/.config/repos-manager/`) is created with `chmod 700` (owner-only access). Bitbucket API credentials stored in `bitbucket-creds` are set to `chmod 600`.
 
 ## Nix flake
 

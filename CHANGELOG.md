@@ -9,6 +9,11 @@
 - Add automated GitHub release on tag push
 - Fix env vars (`REPOS_MANAGER_BASE_DIR`, `REPOS_MANAGER_PARALLEL`, `REPOS_MANAGER_PROTOCOL`) now override config file values
 - Fix `repos-manager update` aborts on dirty repo instead of auto-stashing
+- Add per-provider help (`repos-manager github --help`)
+- Add completions for all providers, commands and flags
+- Add completions to auto-generated sourceme files
+- Add auto version bump and tag on push to main
+- Secure config directory with chmod 700
 - Pin GitHub Actions to SHA for supply chain security
 
 ## v0.2.0

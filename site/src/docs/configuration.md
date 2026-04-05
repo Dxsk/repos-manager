@@ -41,6 +41,8 @@ This creates `~/.config/repos-manager/config.json`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `REPOS_MANAGER_BASE_DIR` | Override base directory | `~/Documents` |
+| `REPOS_MANAGER_PARALLEL` | Override parallel jobs | `4` |
+| `REPOS_MANAGER_PROTOCOL` | Override protocol (`ssh` or `https`) | `ssh` |
 | `REPOS_MANAGER_LIB` | Path to lib modules | Auto-detected |
 | `REPOS_MANAGER_CONFIG` | Path to config file | `~/.config/repos-manager/config.json` |
 | `NO_COLOR` | Disable colored output | Unset |

@@ -63,6 +63,16 @@ Check for updates and self-update:
 repos-manager update
 ```
 
+### help
+
+Each provider has its own help page:
+
+```bash
+repos-manager --help          # General help
+repos-manager github --help   # GitHub-specific help
+repos-manager gitlab --help   # GitLab-specific help
+```
+
 ## Flags
 
 | Flag | Description | Default |

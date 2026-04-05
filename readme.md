@@ -1,5 +1,10 @@
 # repos-manager
 
+[![Tests](https://github.com/Dxsk/repos-manager/actions/workflows/tests.yml/badge.svg)](https://github.com/Dxsk/repos-manager/actions/workflows/tests.yml)
+[![Lint](https://github.com/Dxsk/repos-manager/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/Dxsk/repos-manager/actions/workflows/shellcheck.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Dxsk/repos-manager)](https://github.com/Dxsk/repos-manager/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A single CLI tool to clone and sync all your Git repositories, no matter the provider.
 
 ## Supported providers
@@ -32,6 +37,7 @@ A single CLI tool to clone and sync all your Git repositories, no matter the pro
 - Config file (`~/.config/repos-manager/config.json`) for defaults
 - Auto-generated sourceme files per host directory
 - Shell completions for bash, zsh and fish
+- Per-provider help (`repos-manager github --help`)
 - `NO_COLOR` support
 
 ## Directory structure
