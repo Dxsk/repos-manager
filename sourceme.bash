@@ -19,20 +19,20 @@ _repos_manager_complete() {
 
     case "$COMP_CWORD" in
         1)
-            mapfile -t COMPREPLY < <(compgen -W "github gitlab forgejo gitea sync version help" -- "$cur")
+            mapfile -t COMPREPLY < <(compgen -W "github gitlab forgejo gitea bitbucket radicle sync version help login status init update" -- "$cur")
             ;;
         2)
             case "$prev" in
-                github|gitlab|forgejo|gitea)
+                github|gitlab|forgejo|gitea|bitbucket|radicle)
                     mapfile -t COMPREPLY < <(compgen -W "login sync" -- "$cur")
                     ;;
                 sync)
-                    mapfile -t COMPREPLY < <(compgen -W "--all --filter --base-dir --https --prune --dry-run" -- "$cur")
+                    mapfile -t COMPREPLY < <(compgen -W "--all --filter --base-dir --https --prune --dry-run --host --parallel --verbose --quiet" -- "$cur")
                     ;;
             esac
             ;;
         *)
-            mapfile -t COMPREPLY < <(compgen -W "--filter --base-dir --https --prune --dry-run --host" -- "$cur")
+            mapfile -t COMPREPLY < <(compgen -W "--filter --base-dir --https --prune --dry-run --host --parallel --verbose --quiet" -- "$cur")
             ;;
     esac
 }
