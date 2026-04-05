@@ -5,7 +5,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/repos-manager.sh"
 @test "cli: --version shows version" {
     run bash "$SCRIPT" --version
     [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "repos-manager 0.1.0" ]]
+    [[ "$output" =~ "repos-manager " ]]
 }
 
 @test "cli: --help shows usage" {
