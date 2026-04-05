@@ -65,6 +65,21 @@ JSON
     jq -e '.parallel' "$REPOS_MANAGER_CONFIG"
 }
 
+@test "env var BASE_DIR overrides config file" {
+    mkdir -p "$TEST_TEMP/env_dir"
+    mkdir -p "$(dirname "$REPOS_MANAGER_CONFIG")"
+    cat > "$REPOS_MANAGER_CONFIG" <<JSON
+{
+  "base_dir": "/tmp/from-config"
+}
+JSON
+
+    export REPOS_MANAGER_BASE_DIR="$TEST_TEMP/env_dir"
+    BASE_DIR="$REPOS_MANAGER_BASE_DIR"
+    load_config
+    [[ "$BASE_DIR" == "$TEST_TEMP/env_dir" ]]
+}
+
 @test "init_config: does not overwrite existing config" {
     REPOS_MANAGER_CONFIG="$TEST_TEMP/existing.json"
     echo '{"custom": true}' > "$REPOS_MANAGER_CONFIG"
