@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 # Core sync engine
 
+acquire_lock() {
+    local dir="$1"
+    local lockfile="$dir/.repos-manager.lock"
+
+    if [[ -f "$lockfile" ]]; then
+        local pid
+        pid=$(<"$lockfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            log_error "Another sync is running (PID $pid). Remove $lockfile if stale."
+            return 1
+        fi
+        # Stale lock from dead process
+        rm -f "$lockfile"
+    fi
+
+    echo "$$" > "$lockfile"
+}
+
+release_lock() {
+    local dir="$1"
+    rm -f "$dir/.repos-manager.lock"
+}
+
 sync_repo() {
     local provider="$1" local_path="$2" clone_url="$3" full_name="$4"
 
@@ -37,10 +60,15 @@ sync_repo() {
 sync_provider() {
     local provider="$1" host="$2"
 
+    acquire_lock "$BASE_DIR" || return 1
+
     log_info "Fetching repository list from ${host}..."
 
     local repos_json
-    repos_json=$("${provider}_list_repos") || return 1
+    if ! repos_json=$("${provider}_list_repos"); then
+        release_lock "$BASE_DIR"
+        return 1
+    fi
 
     local count
     count=$(echo "$repos_json" | jq 'length')
@@ -127,6 +155,8 @@ sync_provider() {
             prune_repos "$provider_dir" "${synced_paths[@]+${synced_paths[@]}}"
         fi
     fi
+
+    release_lock "$BASE_DIR"
 
     echo
     log_info "Done: ${cloned} cloned, ${updated} updated, ${skipped} skipped, ${errored} errors"
