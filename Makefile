@@ -13,4 +13,14 @@ uninstall:
 	@rm -rf $(PREFIX)/lib/repos-manager
 	@echo "Uninstalled"
 
-.PHONY: install uninstall
+lint:
+	shellcheck -x repos-manager.sh lib/*.sh sourceme.bash
+	zsh -n sourceme.zsh
+	fish --no-execute sourceme.fish
+
+test:
+	bats tests/*.bats
+
+check: lint test
+
+.PHONY: install uninstall lint test check
