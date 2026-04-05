@@ -74,3 +74,5 @@ repos-manager update
 | `--dry-run` | Preview without making changes | Off |
 | `--host <host>` | Custom host for self-hosted | Provider default |
 | `--parallel <n>` | Concurrent sync jobs | 4 |
+| `--verbose`, `-v` | Show debug output | Off |
+| `--quiet`, `-q` | Suppress info/success messages (errors still shown) | Off |

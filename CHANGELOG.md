@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.0
+
+- Add `--verbose` and `--quiet` flags for output control
+- Add lockfile to prevent concurrent syncs on the same base directory
+- Add `make lint`, `make test` and `make check` targets
+- Add multi-OS CI tests (Linux + macOS)
+- Add automated GitHub release on tag push
+- Fix env vars (`REPOS_MANAGER_BASE_DIR`, `REPOS_MANAGER_PARALLEL`, `REPOS_MANAGER_PROTOCOL`) now override config file values
+- Fix `repos-manager update` aborts on dirty repo instead of auto-stashing
+- Pin GitHub Actions to SHA for supply chain security
+
 ## v0.2.0
 
 - Add `repos-manager status` command (dirty, ahead, behind, diverged)
