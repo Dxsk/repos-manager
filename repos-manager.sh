@@ -242,6 +242,45 @@ ${BOLD}Examples:${RESET}
 EOF
 }
 
+print_provider_usage() {
+    local provider="$1"
+    local cli host
+    case "$provider" in
+        github)    cli="gh";        host="github.com" ;;
+        gitlab)    cli="glab";      host="${HOST:-gitlab.com}" ;;
+        forgejo)   cli="tea";       host="${HOST:-gitea.com}" ;;
+        bitbucket) cli="bitbucket"; host="${HOST:-bitbucket.org}" ;;
+        radicle)   cli="rad";       host="radicle" ;;
+    esac
+
+    cat <<EOF
+${BOLD}repos-manager ${provider}${RESET} - Manage ${provider} repositories
+
+${BOLD}Usage:${RESET}
+  repos-manager ${provider} <command> [flags]
+
+${BOLD}Commands:${RESET}
+  login   Authenticate with ${provider} (requires ${cli} CLI)
+  sync    Sync repositories from ${host}
+
+${BOLD}Flags:${RESET}
+  --filter <pattern>   Filter repos by pattern
+  --https              Use HTTPS instead of SSH
+  --prune              Remove local repos not on remote
+  --dry-run            Preview without making changes
+  --host <host>        Custom host (self-hosted instances)
+  --parallel <n>       Parallel sync jobs (default: 4)
+  --verbose, -v        Show debug output
+  --quiet, -q          Suppress info/success messages
+
+${BOLD}Examples:${RESET}
+  repos-manager ${provider} login
+  repos-manager ${provider} sync
+  repos-manager ${provider} sync --filter owner/*
+  repos-manager ${provider} sync --prune --parallel 8
+EOF
+}
+
 # ── Entry point ─────────────────────────────────────────────────────────────────
 
 main() {
@@ -254,7 +293,8 @@ main() {
             case "${1:-}" in
                 login) cmd_login "github" ;;
                 sync)  shift; cmd_sync "github" "$@" ;;
-                *)     echo "Usage: repos-manager github <login|sync>" >&2; exit 1 ;;
+                help|--help|-h|"") print_provider_usage "github" ;;
+                *)     print_provider_usage "github"; exit 1 ;;
             esac
             ;;
         gitlab)
@@ -262,7 +302,8 @@ main() {
             case "${1:-}" in
                 login) cmd_login "gitlab" ;;
                 sync)  shift; cmd_sync "gitlab" "$@" ;;
-                *)     echo "Usage: repos-manager gitlab <login|sync>" >&2; exit 1 ;;
+                help|--help|-h|"") print_provider_usage "gitlab" ;;
+                *)     print_provider_usage "gitlab"; exit 1 ;;
             esac
             ;;
         forgejo|gitea)
@@ -270,7 +311,8 @@ main() {
             case "${1:-}" in
                 login) cmd_login "forgejo" ;;
                 sync)  shift; cmd_sync "forgejo" "$@" ;;
-                *)     echo "Usage: repos-manager forgejo <login|sync>" >&2; exit 1 ;;
+                help|--help|-h|"") print_provider_usage "forgejo" ;;
+                *)     print_provider_usage "forgejo"; exit 1 ;;
             esac
             ;;
         bitbucket)
@@ -278,7 +320,8 @@ main() {
             case "${1:-}" in
                 login) cmd_login "bitbucket" ;;
                 sync)  shift; cmd_sync "bitbucket" "$@" ;;
-                *)     echo "Usage: repos-manager bitbucket <login|sync>" >&2; exit 1 ;;
+                help|--help|-h|"") print_provider_usage "bitbucket" ;;
+                *)     print_provider_usage "bitbucket"; exit 1 ;;
             esac
             ;;
         radicle)
@@ -286,7 +329,8 @@ main() {
             case "${1:-}" in
                 login) cmd_login "radicle" ;;
                 sync)  shift; cmd_sync "radicle" "$@" ;;
-                *)     echo "Usage: repos-manager radicle <login|sync>" >&2; exit 1 ;;
+                help|--help|-h|"") print_provider_usage "radicle" ;;
+                *)     print_provider_usage "radicle"; exit 1 ;;
             esac
             ;;
         login)
