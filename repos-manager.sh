@@ -113,54 +113,66 @@ cmd_login() {
     fi
 }
 
-cmd_sync() {
-    local provider="$1"
-    validate_provider "$provider"
-    shift
-    parse_flags "$@"
-
-    local host
-    case "$provider" in
-        github)    host="github.com" ;;
-        gitlab)    host="${HOST:-gitlab.com}" ;;
-        forgejo)   host="${HOST:-gitea.com}" ;;
-        bitbucket) host="${HOST:-bitbucket.org}" ;;
-        radicle)   host="radicle" ;;
-        *) echo "Unknown provider: $provider" >&2; exit 1 ;;
+_provider_cli() {
+    case "$1" in
+        github)    echo "gh" ;;
+        gitlab)    echo "glab" ;;
+        forgejo)   echo "tea" ;;
+        bitbucket) echo "bitbucket" ;;
+        radicle)   echo "rad" ;;
     esac
+}
 
-    sync_provider "$provider" "$host"
+# Sync one (provider, host) pair: runs sync_provider with CURRENT_HOST set so
+# provider modules can target the right backend, then regenerates sourceme.
+_sync_one() {
+    local provider="$1" host="$2"
+    CURRENT_HOST="$host" sync_provider "$provider" "$host"
 
-    # Generate sourceme files in host directory
     local host_dir="$BASE_DIR/$host"
     if [[ -d "$host_dir" ]]; then
         generate_sourceme "$host_dir"
     fi
 }
 
+cmd_sync() {
+    local provider="$1"
+    validate_provider "$provider"
+    shift
+    parse_flags "$@"
+
+    local -a hosts
+    if [[ -n "$HOST" ]]; then
+        # --host flag forces a single host, overriding config
+        hosts=("$HOST")
+    else
+        hosts=()
+        while IFS= read -r _h; do
+            [[ -n "$_h" ]] && hosts+=("$_h")
+        done < <(provider_hosts "$provider")
+    fi
+
+    if [[ ${#hosts[@]} -eq 0 ]]; then
+        log_error "No hosts configured for provider: $provider"
+        exit 1
+    fi
+
+    local host
+    for host in "${hosts[@]}"; do
+        if [[ ${#hosts[@]} -gt 1 ]]; then
+            printf "\n${BOLD}--- %s @ %s ---${RESET}\n\n" "$provider" "$host"
+        fi
+        _sync_one "$provider" "$host"
+    done
+}
+
 cmd_sync_all() {
     parse_flags "$@"
 
-    local -a providers=(
-        "github:github.com"
-        "gitlab:${HOST:-gitlab.com}"
-        "forgejo:${HOST:-gitea.com}"
-        "bitbucket:${HOST:-bitbucket.org}"
-        "radicle:radicle"
-    )
-
-    for entry in "${providers[@]}"; do
-        local provider="${entry%%:*}"
-        local host="${entry##*:}"
-
+    local provider
+    for provider in github gitlab forgejo bitbucket radicle; do
         local cli
-        case "$provider" in
-            github)    cli="gh" ;;
-            gitlab)    cli="glab" ;;
-            forgejo)   cli="tea" ;;
-            bitbucket) cli="bitbucket" ;;
-            radicle)   cli="rad" ;;
-        esac
+        cli=$(_provider_cli "$provider")
 
         if ! command -v "$cli" &>/dev/null; then
             # Bitbucket fallback: check for API creds
@@ -171,13 +183,18 @@ cmd_sync_all() {
             fi
         fi
 
-        printf "\n${BOLD}=== Syncing %s ===${RESET}\n\n" "$provider"
-        sync_provider "$provider" "$host" || true
+        local -a hosts
+        hosts=()
+        while IFS= read -r _h; do
+            [[ -n "$_h" ]] && hosts+=("$_h")
+        done < <(provider_hosts "$provider")
+        [[ ${#hosts[@]} -eq 0 ]] && continue
 
-        local host_dir="$BASE_DIR/$host"
-        if [[ -d "$host_dir" ]]; then
-            generate_sourceme "$host_dir"
-        fi
+        local host
+        for host in "${hosts[@]}"; do
+            printf "\n${BOLD}=== Syncing %s @ %s ===${RESET}\n\n" "$provider" "$host"
+            _sync_one "$provider" "$host" || true
+        done
     done
 }
 

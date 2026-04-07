@@ -133,11 +133,26 @@ repos-manager init
   "parallel": 4,
   "protocol": "ssh",
   "hosts": {
-    "gitlab": "gitlab.com",
-    "forgejo": "gitea.com"
+    "github":    ["github.com"],
+    "gitlab":    ["gitlab.com"],
+    "forgejo":   ["codeberg.org"],
+    "bitbucket": ["bitbucket.org"]
   }
 }
 ```
+
+Each `hosts.<provider>` key takes a **list** of hostnames, so you can sync several instances of the same provider — typically a SaaS one plus your self-hosted one:
+
+```json
+{
+  "hosts": {
+    "gitlab":  ["gitlab.com", "gitlab.example.org"],
+    "forgejo": ["codeberg.org", "forge.example.org"]
+  }
+}
+```
+
+`repos-manager` clones each instance under its own directory (`<base_dir>/<host>/...`). For self-hosted instances you must have a matching CLI login: `glab auth login --hostname <host>` for GitLab, `tea login add` for Forgejo. The legacy single-string form (`"gitlab": "gitlab.com"`) is still accepted.
 
 ### Authentication
 
@@ -274,6 +289,7 @@ test-org/*
 
 ## Requirements
 
+- `bash` ≥ 4.0 — macOS ships bash 3.2 by default; install a newer one with `brew install bash` and make sure it's first in your `PATH`. Older versions miss `mapfile`, associative arrays and other features the scripts rely on.
 - `git`
 - `jq`
 - `gh` for GitHub
