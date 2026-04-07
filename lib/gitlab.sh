@@ -10,8 +10,11 @@ gitlab_list_repos() {
         echo "glab CLI not found" >&2; return 1
     fi
 
+    # Target a specific GitLab instance via GITLAB_HOST when sync_provider
+    # passes a host (set as CURRENT_HOST). Default to gitlab.com.
     local raw
-    raw=$(glab api "projects?membership=true&per_page=100&simple=true" --paginate 2>/dev/null || echo "[]")
+    raw=$(GITLAB_HOST="${CURRENT_HOST:-gitlab.com}" \
+          glab api "projects?membership=true&per_page=100&simple=true" --paginate 2>/dev/null || echo "[]")
 
     # glab --paginate may return concatenated JSON arrays; slurp merges them
     echo "$raw" | jq -s 'add // []' | jq '[.[] | {

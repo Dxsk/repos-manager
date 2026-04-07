@@ -5,7 +5,39 @@
 
 REPOS_MANAGER_CONFIG="${REPOS_MANAGER_CONFIG:-$HOME/.config/repos-manager/config.json}"
 
+# Per-provider host lists, populated by load_config / defaults_hosts.
+# Each variable is a bash array of hostnames. Empty means "skip provider".
+HOSTS_GITHUB=()
+HOSTS_GITLAB=()
+HOSTS_FORGEJO=()
+HOSTS_BITBUCKET=()
+HOSTS_RADICLE=()
+
+# Read .hosts.<provider> from the config file as a list, normalizing
+# both legacy string form ("hosts.gitlab": "gitlab.com") and new array
+# form ("hosts.gitlab": ["gitlab.com", "gitlab.babel.coop"]).
+_load_hosts_for() {
+    local provider="$1"
+    jq -r --arg p "$provider" '
+        .hosts[$p]
+        | if . == null then empty
+          elif type == "string" then .
+          elif type == "array" then .[]
+          else empty end
+    ' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true
+}
+
+_default_hosts() {
+    HOSTS_GITHUB=("github.com")
+    HOSTS_GITLAB=("gitlab.com")
+    HOSTS_FORGEJO=("codeberg.org")
+    HOSTS_BITBUCKET=("bitbucket.org")
+    HOSTS_RADICLE=("radicle")
+}
+
 load_config() {
+    _default_hosts
+
     [[ ! -f "$REPOS_MANAGER_CONFIG" ]] && return 0
 
     local val
@@ -34,13 +66,36 @@ load_config() {
         fi
     fi
 
-    # Custom hosts
-    val=$(jq -r '.hosts.gitlab // empty' "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
-    if [[ -n "$val" && -z "$HOST" ]]; then
-        HOST="$val"
-    fi
+    # Per-provider host lists. Only override the defaults if the user
+    # actually declared hosts for that provider in the config.
+    local -a tmp
+    local p
+    for p in github gitlab forgejo bitbucket radicle; do
+        mapfile -t tmp < <(_load_hosts_for "$p")
+        if [[ ${#tmp[@]} -gt 0 ]]; then
+            case "$p" in
+                github)    HOSTS_GITHUB=("${tmp[@]}") ;;
+                gitlab)    HOSTS_GITLAB=("${tmp[@]}") ;;
+                forgejo)   HOSTS_FORGEJO=("${tmp[@]}") ;;
+                bitbucket) HOSTS_BITBUCKET=("${tmp[@]}") ;;
+                radicle)   HOSTS_RADICLE=("${tmp[@]}") ;;
+            esac
+        fi
+    done
 
     return 0
+}
+
+# Echo the configured hosts for a provider, one per line.
+provider_hosts() {
+    local provider="$1"
+    case "$provider" in
+        github)    printf '%s\n' "${HOSTS_GITHUB[@]+${HOSTS_GITHUB[@]}}" ;;
+        gitlab)    printf '%s\n' "${HOSTS_GITLAB[@]+${HOSTS_GITLAB[@]}}" ;;
+        forgejo)   printf '%s\n' "${HOSTS_FORGEJO[@]+${HOSTS_FORGEJO[@]}}" ;;
+        bitbucket) printf '%s\n' "${HOSTS_BITBUCKET[@]+${HOSTS_BITBUCKET[@]}}" ;;
+        radicle)   printf '%s\n' "${HOSTS_RADICLE[@]+${HOSTS_RADICLE[@]}}" ;;
+    esac
 }
 
 init_config() {
@@ -60,8 +115,10 @@ init_config() {
   "parallel": 4,
   "protocol": "ssh",
   "hosts": {
-    "gitlab": "gitlab.com",
-    "forgejo": "gitea.com"
+    "github":    ["github.com"],
+    "gitlab":    ["gitlab.com"],
+    "forgejo":   ["codeberg.org"],
+    "bitbucket": ["bitbucket.org"]
   }
 }
 JSON

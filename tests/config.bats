@@ -66,8 +66,8 @@ JSON
 }
 
 @test "env var BASE_DIR overrides config file" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/override.json"
     mkdir -p "$TEST_TEMP/env_dir"
-    mkdir -p "$(dirname "$REPOS_MANAGER_CONFIG")"
     cat > "$REPOS_MANAGER_CONFIG" <<JSON
 {
   "base_dir": "/tmp/from-config"
@@ -78,6 +78,46 @@ JSON
     BASE_DIR="$REPOS_MANAGER_BASE_DIR"
     load_config
     [[ "$BASE_DIR" == "$TEST_TEMP/env_dir" ]]
+}
+
+@test "load_config: parses hosts as array" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/multi.json"
+    cat > "$REPOS_MANAGER_CONFIG" <<'JSON'
+{
+  "hosts": {
+    "gitlab":  ["gitlab.com", "gitlab.babel.coop"],
+    "forgejo": ["codeberg.org", "forge.babel.coop"]
+  }
+}
+JSON
+    load_config
+    [[ "${#HOSTS_GITLAB[@]}" -eq 2 ]]
+    [[ "${HOSTS_GITLAB[0]}" == "gitlab.com" ]]
+    [[ "${HOSTS_GITLAB[1]}" == "gitlab.babel.coop" ]]
+    [[ "${#HOSTS_FORGEJO[@]}" -eq 2 ]]
+    [[ "${HOSTS_FORGEJO[1]}" == "forge.babel.coop" ]]
+}
+
+@test "load_config: accepts legacy string host form" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/legacy.json"
+    cat > "$REPOS_MANAGER_CONFIG" <<'JSON'
+{"hosts": {"gitlab": "gitlab.example.com"}}
+JSON
+    load_config
+    [[ "${#HOSTS_GITLAB[@]}" -eq 1 ]]
+    [[ "${HOSTS_GITLAB[0]}" == "gitlab.example.com" ]]
+}
+
+@test "provider_hosts: returns configured hosts" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/ph.json"
+    cat > "$REPOS_MANAGER_CONFIG" <<'JSON'
+{"hosts": {"forgejo": ["a.example", "b.example"]}}
+JSON
+    load_config
+    run provider_hosts forgejo
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"a.example"* ]]
+    [[ "$output" == *"b.example"* ]]
 }
 
 @test "init_config: does not overwrite existing config" {
