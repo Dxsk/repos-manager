@@ -146,7 +146,10 @@ cmd_sync() {
         # --host flag forces a single host, overriding config
         hosts=("$HOST")
     else
-        mapfile -t hosts < <(provider_hosts "$provider")
+        hosts=()
+        while IFS= read -r _h; do
+            [[ -n "$_h" ]] && hosts+=("$_h")
+        done < <(provider_hosts "$provider")
     fi
 
     if [[ ${#hosts[@]} -eq 0 ]]; then
@@ -181,7 +184,10 @@ cmd_sync_all() {
         fi
 
         local -a hosts
-        mapfile -t hosts < <(provider_hosts "$provider")
+        hosts=()
+        while IFS= read -r _h; do
+            [[ -n "$_h" ]] && hosts+=("$_h")
+        done < <(provider_hosts "$provider")
         [[ ${#hosts[@]} -eq 0 ]] && continue
 
         local host

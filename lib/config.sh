@@ -68,10 +68,14 @@ load_config() {
 
     # Per-provider host lists. Only override the defaults if the user
     # actually declared hosts for that provider in the config.
+    # NB: macOS ships bash 3.2 which has no `mapfile`, so read in a loop.
     local -a tmp
-    local p
+    local p line
     for p in github gitlab forgejo bitbucket radicle; do
-        mapfile -t tmp < <(_load_hosts_for "$p")
+        tmp=()
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && tmp+=("$line")
+        done < <(_load_hosts_for "$p")
         if [[ ${#tmp[@]} -gt 0 ]]; then
             case "$p" in
                 github)    HOSTS_GITHUB=("${tmp[@]}") ;;
