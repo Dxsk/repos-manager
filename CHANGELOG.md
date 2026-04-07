@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.2
+
+- Fix trigger ci version bump test
+
 ## v0.3.0
 
 - Add `--verbose` and `--quiet` flags for output control
