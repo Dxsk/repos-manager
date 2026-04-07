@@ -21,7 +21,7 @@
       {
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "repos-manager";
-          version = "0.4.1";
+          version = "0.4.2";
           src = ./.;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
