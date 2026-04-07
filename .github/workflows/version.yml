@@ -7,6 +7,7 @@ on:
       - '*.md'
       - 'site/**'
       - 'docs/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -126,3 +127,9 @@ jobs:
             --title "v${version}" \
             --notes "$changelog" \
             --generate-notes
+
+      - name: Trigger site deploy
+        if: steps.bump.outputs.type != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-site.yml --ref main
