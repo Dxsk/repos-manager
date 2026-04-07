@@ -1,4 +1,4 @@
-PREFIX ?= ~/.local
+PREFIX ?= $(HOME)/.local
 
 install:
 	@mkdir -p $(PREFIX)/bin $(PREFIX)/lib/repos-manager
