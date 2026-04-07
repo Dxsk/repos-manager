@@ -3,6 +3,6 @@
   "url": "https://repos-manager.dxscloud.fr",
   "repo": "https://github.com/Dxsk/repos-manager",
   "description": "A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "author": "Dxsk"
 }
