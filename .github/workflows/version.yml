@@ -92,13 +92,22 @@ jobs:
           sed -i "s/repos-manager [0-9]\+\.[0-9]\+\.[0-9]\+/repos-manager ${version}/" tests/cli.bats
           sed -i "s/version = \".*\";/version = \"${version}\";/" flake.nix
 
+      - name: Update CHANGELOG
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          since="${{ steps.tag.outputs.latest }}"
+          if [[ "${{ steps.tag.outputs.baseline }}" == "true" ]]; then
+            since="ROOT"
+          fi
+          .github/scripts/update-changelog.sh "${{ steps.version.outputs.new }}" "$since"
+
       - name: Commit and tag
         if: steps.bump.outputs.type != 'none'
         run: |
           version="${{ steps.version.outputs.new }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add repos-manager.sh site/src/_data/site.json tests/cli.bats flake.nix
+          git add repos-manager.sh site/src/_data/site.json tests/cli.bats flake.nix CHANGELOG.md
           git commit -m "chore: bump version to v${version}"
           git tag "v${version}"
           git push origin main --tags
