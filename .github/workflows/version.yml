@@ -102,3 +102,18 @@ jobs:
           git commit -m "chore: bump version to v${version}"
           git tag "v${version}"
           git push origin main --tags
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.type != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.new }}"
+          changelog=$(awk "/^## ${version}/,/^## [0-9]/" CHANGELOG.md | head -n -1)
+          if [[ -z "$changelog" ]]; then
+            changelog="Release v${version}"
+          fi
+          gh release create "v${version}" \
+            --title "v${version}" \
+            --notes "$changelog" \
+            --generate-notes
