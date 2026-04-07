@@ -2,7 +2,20 @@
 
 ## v0.4.2
 
-- Fix trigger ci version bump test
+- Fix CI version bump workflow now creates the GitHub release inline (the default `GITHUB_TOKEN` did not trigger `release.yml`)
+- Fix CI version bump workflow now triggers the site deploy after a bump
+- Auto-generate `CHANGELOG.md` entries during version bump via `.github/scripts/update-changelog.sh`
+- Add `workflow_dispatch` to the Auto Version workflow so it can be triggered manually
+
+## v0.4.1
+
+- Fix `make install` produced an invalid `REPOS_MANAGER_LIB` path: `~` is not expanded inside `${VAR:-default}`, so the installed script tried to source the literal `~/.local/lib/repos-manager/log.sh`. `PREFIX` now defaults to `$(HOME)/.local`.
+
+## v0.4.0
+
+- Add per-provider help (`repos-manager github --help`)
+- Add completions for all providers, commands and flags
+- Fix `flake.nix` version is now kept in sync by the auto-bump workflow
 
 ## v0.3.0
 
@@ -13,8 +26,6 @@
 - Add automated GitHub release on tag push
 - Fix env vars (`REPOS_MANAGER_BASE_DIR`, `REPOS_MANAGER_PARALLEL`, `REPOS_MANAGER_PROTOCOL`) now override config file values
 - Fix `repos-manager update` aborts on dirty repo instead of auto-stashing
-- Add per-provider help (`repos-manager github --help`)
-- Add completions for all providers, commands and flags
 - Add completions to auto-generated sourceme files
 - Add auto version bump and tag on push to main
 - Secure config directory with chmod 700
