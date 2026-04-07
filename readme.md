@@ -289,6 +289,7 @@ test-org/*
 
 ## Requirements
 
+- `bash` ≥ 4.0 — macOS ships bash 3.2 by default; install a newer one with `brew install bash` and make sure it's first in your `PATH`. Older versions miss `mapfile`, associative arrays and other features the scripts rely on.
 - `git`
 - `jq`
 - `gh` for GitHub
