@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.1
+
+- Fix parse squash-merge bodies and strip bullet prefixes
+
 ## v0.5.0
 
 ### Providers
