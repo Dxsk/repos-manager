@@ -2,11 +2,39 @@
 
 ## v0.5.0
 
-- Add multi-host support per provider (#3)
+### Providers
 
-## v0.5.0
+- Add multi-host support per provider: each `hosts.<provider>` key now accepts a list of hostnames so several GitLab or Forgejo instances can be synced side by side (#3)
+- Forgejo / Gitea provider now lists organization repositories. Listing talks to the Forgejo REST API directly using credentials read from `~/.config/tea/config.yml`, paginating `/api/v1/user/repos`, `/api/v1/user/orgs` and `/api/v1/orgs/{org}/repos` (#4)
+- Forgejo provider now requires `curl` and `yq` at runtime in addition to `jq`. Missing dependencies fail fast with a clear install hint (#4)
+- Hosts with no matching `tea` login are now skipped with a warning instead of aborting the whole sync (#4)
 
-- Add multi-host support per provider (#3)
+### Status
+
+- `repos-manager status` now prunes network and FUSE mount points under `base_dir` by default, parsing `/proc/self/mountinfo` to skip cloud drives (kDrive, Dropbox, sshfs), NFS, SMB/CIFS, davfs, Ceph and AFS shares. Set `scan_network_mounts: true` in the config file to opt back in (#4)
+- `status` prunes heavy vendored directories (`node_modules`, `.venv`, `venv`, `__pycache__`, `target`, `vendor`, `dist`, `build`, `.next`, `.cache`) so working copies that host large dependency trees do not bloat the scan (#4)
+- Add a live `[N] provider/owner/repo` progress indicator on stderr during the scan, auto-disabled when stderr is not a TTY or when `--quiet` is set (#4)
+- Drop the internal `sort -z` on the `find` output so the scan streams into the progress indicator instead of buffering until traversal completes (#4)
+
+### Update check
+
+- Add a non-blocking background update check: every invocation except `update`, `version` and `help` spawns a detached `curl` that caches the latest published version for 24h under `${XDG_CACHE_HOME:-~/.cache}/repos-manager/latest-version`. The next run prints a one-line yellow banner when a newer release is available (#4)
+- Add `check_updates` config option (default `true`) and `REPOS_MANAGER_NO_UPDATE_CHECK=1` environment variable to opt out of the background update check (#4)
+- Add `REPOS_MANAGER_UPDATE_TTL` and `REPOS_MANAGER_UPDATE_CACHE` environment variables to tune the cache interval and location (#4)
+
+### Fixes and portability
+
+- Fix `log_info`, `log_success`, `log_skip` and `log_debug` aborting callers under `set -e`: a bare `return` after the enable predicate propagated the predicate's exit status, so disabled helpers returned 1 and killed any caller that ran outside a conditional context (#4)
+- Fix `sync_provider` treating a provider list exit code of `2` as "skip this host" with a warning, instead of aborting the entire `sync --all` loop (#4)
+- Fix several bash 3.2 parser quirks so the bats suite runs cleanly on the macOS CI runner: avoid `$(expr)` inside awk scripts, drop outer quotes around optional array expansions, and build the `find` command in an array outside the process substitution (#4)
+- Install `curl`, `jq` and mikefarah `yq` explicitly on both Ubuntu and macOS CI runners so the Forgejo tests run with a consistent `yq` implementation (#4)
+
+### Documentation
+
+- Document the Forgejo API listing path, the update banner and its opt-outs, and the status network-mount skip in the getting-started, providers, configuration, usage and advanced docs (#4)
+- Add a "Bash portability notes" section to the contributing page listing the bash 3.2 gotchas the project hits on macOS CI (#4)
+- Refresh the contributing project tree to include `lib/update_check.sh`, `tests/update_check.bats` and `tests/lockfile.bats` (#4)
+- Add a "Fast, safe status scan" feature card on the landing page and expand the Self-update card to mention the passive banner (#4)
 
 ## v0.4.2
 
