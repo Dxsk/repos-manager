@@ -142,7 +142,7 @@ status_all() {
                 -o -name .next \
                 -o -name .cache \
             \) -prune \) \
-            "${extra_prune[@]+"${extra_prune[@]}"}" \
+            ${extra_prune[@]+"${extra_prune[@]}"} \
             -o -name ".git" -type d -print0 2>/dev/null
         # Note: intentionally NOT piping through `sort -z`. sort must
         # read its entire input before emitting the first line, which
