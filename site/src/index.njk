@@ -251,7 +251,17 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Self-update</h3>
-          <p>Built-in update command checks for new versions and updates in-place.</p>
+          <p>Built-in update command plus a passive background banner that tells you when a new version ships, with a 24h cache and zero overhead on the command in progress.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+          fast-scan.sh
+        </div>
+        <div class="feature-body">
+          <h3>Fast, safe status scan</h3>
+          <p>Status walks hundreds of repos in under a second. Vendored trees (<code>node_modules</code>, <code>.venv</code>, <code>target</code>) and network mounts (cloud drives, NFS, sshfs) are pruned by default, with a live progress indicator and an opt-in to scan mounts anyway.</p>
         </div>
       </div>
     </div>
