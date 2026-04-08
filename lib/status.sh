@@ -12,6 +12,7 @@ _STATUS_NETWORK_FSTYPES='^(fuse([.].*)?|nfs[0-9]*|cifs|smb[0-9]*|smbfs|afs|ceph|
 # emit one mount point per line for every entry whose filesystem type
 # matches the network pattern above and whose mount point is under
 # BASE_DIR. Portable to any mountinfo-compatible source.
+# shellcheck disable=SC2120  # $1 is an optional override used by tests
 _status_network_mount_points() {
     local source="${1:-/proc/self/mountinfo}"
     [[ -r "$source" ]] || return 0
