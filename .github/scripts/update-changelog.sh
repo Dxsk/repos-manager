@@ -29,25 +29,50 @@ if [[ -f CHANGELOG.md ]] && grep -qxF "## v${version}" CHANGELOG.md; then
     exit 0
 fi
 
-# %B prints the full commit message (subject + body). Use a NUL separator
-# between commits so multi-line bodies are safe to parse.
+# %B prints the full commit message (subject + body). We need a
+# between-commits separator that (a) never appears in a commit message
+# and (b) survives bash command substitution, which strips NUL bytes.
+# Use a fixed sentinel token surrounded by newlines; "<<<RM-COMMIT>>>"
+# is vanishingly unlikely to appear in a real commit body.
+sep='<<<RM-COMMIT-SEP>>>'
 if [[ "$since" == "ROOT" ]]; then
-    commit_blob=$(git log --pretty=format:'%B%x00')
+    commit_blob=$(git log --pretty=format:"%B${sep}")
 else
-    commit_blob=$(git log "${since}..HEAD" --pretty=format:'%B%x00')
+    commit_blob=$(git log "${since}..HEAD" --pretty=format:"%B${sep}")
 fi
 
 format_line() {
     local msg="$1"
+    # Strip GitHub squash-merge bullet prefixes ("* ", "- ") and any
+    # leading whitespace so "* feat(foo): bar" still matches the feat
+    # pattern below.
+    msg="${msg#"${msg%%[![:space:]]*}"}"
+    msg="${msg#\* }"
+    msg="${msg#- }"
+    msg="${msg#"${msg%%[![:space:]]*}"}"
+
+    local body
     case "$msg" in
         feat*!:*|*"BREAKING CHANGE"*)
             echo "- ${msg}"
+            return 0
             ;;
         feat*:*)
-            echo "- Add ${msg#*: }"
+            body="${msg#*: }"
+            # Avoid "Add add foo" when the commit already starts with "add".
+            case "$body" in
+                [Aa]dd\ *|[Aa]dds\ *|[Aa]dded\ *) echo "- ${body^}" ;;
+                *)                                echo "- Add ${body}" ;;
+            esac
+            return 0
             ;;
         fix*:*)
-            echo "- Fix ${msg#*: }"
+            body="${msg#*: }"
+            case "$body" in
+                [Ff]ix\ *|[Ff]ixes\ *|[Ff]ixed\ *) echo "- ${body^}" ;;
+                *)                                 echo "- Fix ${body}" ;;
+            esac
+            return 0
             ;;
         # Ignore chore/ci/docs/test/refactor/style noise.
         *) ;;
@@ -59,22 +84,24 @@ seen=$(mktemp)
 {
     echo "## v${version}"
     echo
-    # Split on NUL to iterate per commit, then iterate each line of the
-    # commit message so squash-merge bodies contribute too.
-    while IFS= read -r -d '' commit_msg; do
-        while IFS= read -r msg; do
-            [[ -z "$msg" ]] && continue
-            # Skip the bump commit itself.
-            [[ "$msg" == "chore: bump version"* ]] && continue
-            line=$(format_line "$msg")
-            [[ -z "$line" ]] && continue
-            # Deduplicate identical lines coming from both the merge subject
-            # and the original commits carried in the merge body.
-            if ! grep -qxF "$line" "$seen"; then
-                echo "$line" >> "$seen"
-                echo "$line"
-            fi
-        done <<< "$commit_msg"
+    # Walk every line of the aggregated commit blob. Lines containing
+    # only the sentinel separator are commit boundaries and are skipped.
+    # Parsing line-by-line across the whole blob works because format_line
+    # is a pure per-line filter: only lines that look like a conventional
+    # commit prefix contribute to the changelog, so interleaving is fine.
+    while IFS= read -r msg; do
+        [[ -z "$msg" ]] && continue
+        [[ "$msg" == "$sep" ]] && continue
+        # Skip the bump commit itself.
+        [[ "$msg" == "chore: bump version"* ]] && continue
+        line=$(format_line "$msg")
+        [[ -z "$line" ]] && continue
+        # Deduplicate identical lines coming from both the merge subject
+        # and the original commits carried in the merge body.
+        if ! grep -qxF -- "$line" "$seen"; then
+            echo "$line" >> "$seen"
+            echo "$line"
+        fi
     done <<< "$commit_blob"
     echo
 } > "$entry"
