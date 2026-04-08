@@ -7,10 +7,27 @@ status_all() {
     log_info "Scanning repos in ${BASE_DIR}..."
     echo
 
+    # Show a live "scanned N: <path>" indicator while we walk the tree.
+    # Only on a TTY and when not quiet, so logs/pipes stay clean.
+    local show_progress=false
+    if [[ -t 2 ]] && ! $QUIET; then
+        show_progress=true
+    fi
+
     while IFS= read -r -d '' git_dir; do
         local repo_dir="${git_dir%/.git}"
         local rel_path="${repo_dir#"$BASE_DIR"/}"
         total=$((total + 1))
+
+        if $show_progress; then
+            # \r + clear-to-end-of-line; truncate very long paths to 70 chars
+            # so we do not wrap on narrow terminals.
+            local display="$rel_path"
+            if (( ${#display} > 70 )); then
+                display="…${display: -69}"
+            fi
+            printf '\r  %s[%d]%s %s\033[K' "$GRAY" "$total" "$RESET" "$display" >&2
+        fi
 
         local flags=""
 
@@ -51,7 +68,31 @@ status_all() {
         else
             clean=$((clean + 1))
         fi
-    done < <(find "$BASE_DIR" -name ".git" -type d -print0 2>/dev/null | sort -z)
+    done < <(
+        # Prune heavy directories that never contain a tracked repo: huge
+        # dependency trees, build outputs, and VCS-internal mirrors. This
+        # keeps `status` fast on a BASE_DIR that also hosts working trees
+        # with vendored deps.
+        find "$BASE_DIR" \
+            \( -type d \( \
+                   -name node_modules \
+                -o -name .venv \
+                -o -name venv \
+                -o -name __pycache__ \
+                -o -name target \
+                -o -name vendor \
+                -o -name dist \
+                -o -name build \
+                -o -name .next \
+                -o -name .cache \
+            \) -prune \) \
+            -o -name ".git" -type d -print0 2>/dev/null \
+            | sort -z
+    )
+
+    if $show_progress; then
+        printf '\r\033[K' >&2  # clear progress line
+    fi
 
     echo
     log_info "Total: ${total} repos - ${GREEN}${clean} clean${RESET}, ${YELLOW}${dirty} dirty${RESET}, ${GREEN}${ahead} ahead${RESET}, ${BLUE}${behind} behind${RESET}, ${RED}${diverged} diverged${RESET}"

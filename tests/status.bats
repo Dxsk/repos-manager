@@ -36,6 +36,27 @@ source "$REPOS_MANAGER_LIB/status.sh"
     [[ "$output" =~ "1 dirty" ]]
 }
 
+@test "status: ignores repos nested under node_modules" {
+    # Host the vendored repo as a sibling of the real one so the parent
+    # repo does not become dirty from the node_modules/ directory itself.
+    mkdir -p "$BASE_DIR/workspace/node_modules/some-dep"
+    create_repo "$BASE_DIR/workspace/node_modules/some-dep"
+    create_repo "$BASE_DIR/github.com/user/real-repo"
+    run status_all
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "Total: 1 repos" ]]
+    [[ ! "$output" =~ "some-dep" ]]
+}
+
+@test "status: ignores repos nested under .venv" {
+    mkdir -p "$BASE_DIR/workspace/.venv/lib/pkg"
+    create_repo "$BASE_DIR/workspace/.venv/lib/pkg"
+    create_repo "$BASE_DIR/github.com/user/py-repo"
+    run status_all
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "Total: 1 repos" ]]
+}
+
 @test "status: empty base dir" {
     run status_all
     [[ "$status" -eq 0 ]]
