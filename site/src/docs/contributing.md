@@ -137,8 +137,9 @@ Update `readme.md`, `site/src/docs/providers.md`, and the glossary.
 │   ├── <span style="color:#3fb950">config.sh</span>            <span style="color:#8b949e"># Config file, sourceme gen</span>
 │   ├── <span style="color:#3fb950">match.sh</span>             <span style="color:#8b949e"># Pattern matching, filter/ignore</span>
 │   ├── <span style="color:#3fb950">sync.sh</span>              <span style="color:#8b949e"># Core sync engine (parallel)</span>
-│   ├── <span style="color:#3fb950">status.sh</span>            <span style="color:#8b949e"># Status command</span>
-│   ├── <span style="color:#3fb950">update.sh</span>            <span style="color:#8b949e"># Self-update</span>
+│   ├── <span style="color:#3fb950">status.sh</span>            <span style="color:#8b949e"># Status command (network-mount aware)</span>
+│   ├── <span style="color:#3fb950">update.sh</span>            <span style="color:#8b949e"># Interactive self-update</span>
+│   ├── <span style="color:#3fb950">update_check.sh</span>      <span style="color:#8b949e"># Background update check + banner</span>
 │   ├── <span style="color:#3fb950">github.sh</span>            <span style="color:#8b949e"># GitHub provider</span>
 │   ├── <span style="color:#3fb950">gitlab.sh</span>            <span style="color:#8b949e"># GitLab provider</span>
 │   ├── <span style="color:#3fb950">forgejo.sh</span>           <span style="color:#8b949e"># Forgejo/Gitea provider</span>
@@ -150,9 +151,11 @@ Update `readme.md`, `site/src/docs/providers.md`, and the glossary.
     ├── <span style="color:#d29922">flags.bats</span>           <span style="color:#8b949e"># Flag parsing tests</span>
     ├── <span style="color:#d29922">match.bats</span>           <span style="color:#8b949e"># Pattern matching tests</span>
     ├── <span style="color:#d29922">config.bats</span>          <span style="color:#8b949e"># Config tests</span>
-    ├── <span style="color:#d29922">providers.bats</span>       <span style="color:#8b949e"># Provider URL tests</span>
-    ├── <span style="color:#d29922">status.bats</span>          <span style="color:#8b949e"># Status tests</span>
-    └── <span style="color:#d29922">sync.bats</span>            <span style="color:#8b949e"># Sync tests</span></code></pre>
+    ├── <span style="color:#d29922">providers.bats</span>       <span style="color:#8b949e"># Provider URL + forgejo creds tests</span>
+    ├── <span style="color:#d29922">status.bats</span>          <span style="color:#8b949e"># Status tests (incl. mount pruning)</span>
+    ├── <span style="color:#d29922">sync.bats</span>            <span style="color:#8b949e"># Sync tests</span>
+    ├── <span style="color:#d29922">lockfile.bats</span>        <span style="color:#8b949e"># Lockfile tests</span>
+    └── <span style="color:#d29922">update_check.bats</span>    <span style="color:#8b949e"># Update-check banner tests</span></code></pre>
 
 ## Pull requests
 
