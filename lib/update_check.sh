@@ -64,6 +64,6 @@ update_check_banner() {
     newer=$(printf '%s\n%s\n' "$VERSION" "$latest" | sort -V | tail -n1)
     [[ "$newer" == "$VERSION" ]] && return 0
 
-    printf "%s⬆ repos-manager %s available (current %s) — run: repos-manager update%s\n" \
+    printf "%s⬆ repos-manager %s available (current %s), run: repos-manager update%s\n" \
         "$YELLOW" "$latest" "$VERSION" "$RESET" >&2
 }

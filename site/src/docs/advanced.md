@@ -41,7 +41,7 @@ If running from a git clone, it fetches and fast-forward pulls from `origin/main
 You don't have to run `update` to know a new version is out. On every invocation (except `update`, `version` and `help`), repos-manager spawns a detached background `curl` that fetches the latest `VERSION` from `main` and caches it under `${XDG_CACHE_HOME:-~/.cache}/repos-manager/latest-version`. The cache has a 24h TTL and is compared against the running binary on the next run. When a newer release is available, a one-line yellow banner is printed on stderr before the command runs:
 
 ```bash
-⬆ repos-manager 0.6.0 available (current 0.5.0) - run: repos-manager update
+⬆ repos-manager 0.6.0 available (current 0.5.0), run: repos-manager update
 ```
 
 The check is non-blocking (the background job is detached with redirected fds), silent when nothing new is available or when `curl` is missing, and disabled when:
