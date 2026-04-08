@@ -5,6 +5,10 @@
 
 REPOS_MANAGER_CONFIG="${REPOS_MANAGER_CONFIG:-$HOME/.config/repos-manager/config.json}"
 
+# Background update-check toggle. Overridable via config.json (check_updates)
+# or the REPOS_MANAGER_NO_UPDATE_CHECK=1 env var.
+CHECK_UPDATES="${CHECK_UPDATES:-true}"
+
 # Per-provider host lists, populated by load_config / defaults_hosts.
 # Each variable is a bash array of hostnames. Empty means "skip provider".
 HOSTS_GITHUB=()
@@ -66,6 +70,14 @@ load_config() {
         fi
     fi
 
+    # Note: we can't use `// empty` here — jq's alternative operator treats
+    # a literal `false` as absent and would silently drop the field.
+    val=$(jq -r 'if has("check_updates") then .check_updates else empty end' \
+        "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ "$val" == "false" ]]; then
+        CHECK_UPDATES="false"
+    fi
+
     # Per-provider host lists. Only override the defaults if the user
     # actually declared hosts for that provider in the config.
     # NB: macOS ships bash 3.2 which has no `mapfile`, so read in a loop.
@@ -118,6 +130,7 @@ init_config() {
   "base_dir": "~/Documents",
   "parallel": 4,
   "protocol": "ssh",
+  "check_updates": true,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],
