@@ -8,6 +8,7 @@ order: 1
 
 - `git` and `jq` (required)
 - `bash` 4+ (default on all modern Linux distros and macOS)
+- `curl` and `yq`, required only if you use the Forgejo / Gitea provider (see the Providers page)
 - At least one provider CLI: `gh`, `glab`, `tea`, `bitbucket`, or `rad`
 
 ### Install dependencies by distro

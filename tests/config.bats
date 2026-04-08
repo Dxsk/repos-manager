@@ -120,6 +120,24 @@ JSON
     [[ "$output" == *"b.example"* ]]
 }
 
+@test "load_config: check_updates=false disables update checks" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/nocheck.json"
+    cat > "$REPOS_MANAGER_CONFIG" <<'JSON'
+{"check_updates": false}
+JSON
+    CHECK_UPDATES="true"
+    load_config
+    [[ "$CHECK_UPDATES" == "false" ]]
+}
+
+@test "load_config: check_updates default stays true" {
+    REPOS_MANAGER_CONFIG="$TEST_TEMP/default.json"
+    echo '{}' > "$REPOS_MANAGER_CONFIG"
+    CHECK_UPDATES="true"
+    load_config
+    [[ "$CHECK_UPDATES" == "true" ]]
+}
+
 @test "init_config: does not overwrite existing config" {
     REPOS_MANAGER_CONFIG="$TEST_TEMP/existing.json"
     echo '{"custom": true}' > "$REPOS_MANAGER_CONFIG"

@@ -16,15 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install bats (Linux)
+      - name: Install deps (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y bats
+          sudo apt-get install -y bats jq curl
+          # Install mikefarah/yq (Go) explicitly. Debian ships python-yq
+          # which wraps jq and has a subtly different filter behaviour.
+          sudo wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
 
-      - name: Install bats (macOS)
+      - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install bats-core
+        run: |
+          brew install bats-core jq yq
+          yq --version
 
       - name: Configure git
         run: |

@@ -64,9 +64,15 @@ sync_provider() {
 
     log_info "Fetching repository list from ${host}..."
 
-    local repos_json
-    if ! repos_json=$("${provider}_list_repos"); then
+    local repos_json rc=0
+    repos_json=$("${provider}_list_repos") || rc=$?
+    if [[ $rc -ne 0 ]]; then
         release_lock "$BASE_DIR"
+        # rc=2 means "skip this host" (e.g. not logged in) — not a hard error
+        if [[ $rc -eq 2 ]]; then
+            log_warn "Skipping ${host} (not configured)"
+            return 0
+        fi
         return 1
     fi
 

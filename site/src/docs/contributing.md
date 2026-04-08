@@ -26,16 +26,17 @@ bats tests/*.bats
 
 ### Test coverage
 
-| Module | Tests | What's covered |
-|--------|-------|----------------|
-| `cli` | 8 | Version, help, unknown commands, provider routing |
-| `flags` | 11 | All flag parsing combinations |
-| `match` | 9 | Patterns, wildcards, `.repos-filter`, `.repos-ignore` |
-| `config` | 8 | Load/init `config.json`, tilde expansion, protocol |
-| `providers` | 9 | SSH/HTTPS URL extraction for all 5 providers |
-| `status` | 5 | Clean, dirty, ahead, multiple repos detection |
-| `sync` | 4 | Clone, update, skip dirty, clone failure |
-| **Total** | **60** | |
+The exact per-module counts drift as features land. Run `bats tests/*.bats` to see the current total and consult the bats files directly for the up-to-date list of cases. At time of writing the suite is ~90 tests covering CLI routing, flag parsing, pattern matching, config loading (including `check_updates` and `scan_network_mounts`), provider URL extraction and the Forgejo credentials helper, lockfile contention, `status` scanning (including the network-mount pruning and the vendored-directory prune), `sync_repo` paths and the background update-check module.
+
+## Bash portability notes
+
+repos-manager targets bash ≥ 4.0 at runtime, but the CI matrix runs the bats suite on both Ubuntu (bash 5) and macOS (bash 3.2, the system default). That asymmetry catches a handful of old-parser gotchas that have bitten the project. Keep them in mind when touching `lib/`:
+
+- **`$(expr)` inside awk scripts breaks sourcing.** Bash 3.2 scans for `$(` greedily, even inside single-quoted strings, and an awk expression like `$(i+1)` inside a `awk '...'` here-script is mis-parsed as an unclosed shell command substitution. The visible symptom is `bad substitution: no closing ')' in <(` at the function declaration level, which makes every test using that file fail on macOS. **Fix:** hoist the field index into a plain awk variable first (`j = i + 1; $j`). See `lib/status.sh` inside `_status_network_mount_points` for a commented example.
+- **Unset-array expansion.** `"${arr[@]}"` aborts under `set -u` when `arr` is empty on bash 3.2. Use `${arr[@]+"${arr[@]}"}` without outer quotes; the outer quoting wraps the empty expansion into a literal empty word, which on bash 3.2 passes an extra `""` argument to the following command.
+- **`log_*` helpers and `set -e`.** A bare `return` after a predicate propagates the predicate's exit status, so `log_debug` returned 1 when `VERBOSE=false` and killed any caller under `set -e`. Always `return 0` explicitly when shortcutting out of a log helper.
+- **`sort -z` defeats streaming.** `find ... | sort -z` forces `sort` to read every entry before emitting the first line, which silently turned the status progress indicator into a multi-minute hang on large trees. Rely on `find`'s natural order when streaming matters.
+- **Colors on CI.** `log.sh` disables colors when stdout is not a TTY and when `NO_COLOR` is set. `tests/test_helper.bash` exports `NO_COLOR=1` so assertions like `[[ "$output" =~ "1 clean" ]]` do not have to deal with ANSI escapes.
 
 ## Linting
 
@@ -50,7 +51,8 @@ Every push triggers 4 checks:
 | Check | Tool | What it does |
 |-------|------|-------------|
 | Bash lint | ShellCheck | Static analysis of all `.sh` files |
-| Tests | Bats | Runs the full 60-test suite |
+| Tests (Ubuntu) | Bats on bash 5 | Runs the full bats suite |
+| Tests (macOS) | Bats on bash 3.2 | Same suite on Apple's legacy bash, catches old-parser regressions |
 | Links | Lychee | Validates URLs in all markdown files |
 | Shell compat | zsh + fish | Syntax checks on sourceme files |
 
@@ -137,8 +139,9 @@ Update `readme.md`, `site/src/docs/providers.md`, and the glossary.
 │   ├── <span style="color:#3fb950">config.sh</span>            <span style="color:#8b949e"># Config file, sourceme gen</span>
 │   ├── <span style="color:#3fb950">match.sh</span>             <span style="color:#8b949e"># Pattern matching, filter/ignore</span>
 │   ├── <span style="color:#3fb950">sync.sh</span>              <span style="color:#8b949e"># Core sync engine (parallel)</span>
-│   ├── <span style="color:#3fb950">status.sh</span>            <span style="color:#8b949e"># Status command</span>
-│   ├── <span style="color:#3fb950">update.sh</span>            <span style="color:#8b949e"># Self-update</span>
+│   ├── <span style="color:#3fb950">status.sh</span>            <span style="color:#8b949e"># Status command (network-mount aware)</span>
+│   ├── <span style="color:#3fb950">update.sh</span>            <span style="color:#8b949e"># Interactive self-update</span>
+│   ├── <span style="color:#3fb950">update_check.sh</span>      <span style="color:#8b949e"># Background update check + banner</span>
 │   ├── <span style="color:#3fb950">github.sh</span>            <span style="color:#8b949e"># GitHub provider</span>
 │   ├── <span style="color:#3fb950">gitlab.sh</span>            <span style="color:#8b949e"># GitLab provider</span>
 │   ├── <span style="color:#3fb950">forgejo.sh</span>           <span style="color:#8b949e"># Forgejo/Gitea provider</span>
@@ -150,9 +153,11 @@ Update `readme.md`, `site/src/docs/providers.md`, and the glossary.
     ├── <span style="color:#d29922">flags.bats</span>           <span style="color:#8b949e"># Flag parsing tests</span>
     ├── <span style="color:#d29922">match.bats</span>           <span style="color:#8b949e"># Pattern matching tests</span>
     ├── <span style="color:#d29922">config.bats</span>          <span style="color:#8b949e"># Config tests</span>
-    ├── <span style="color:#d29922">providers.bats</span>       <span style="color:#8b949e"># Provider URL tests</span>
-    ├── <span style="color:#d29922">status.bats</span>          <span style="color:#8b949e"># Status tests</span>
-    └── <span style="color:#d29922">sync.bats</span>            <span style="color:#8b949e"># Sync tests</span></code></pre>
+    ├── <span style="color:#d29922">providers.bats</span>       <span style="color:#8b949e"># Provider URL + forgejo creds tests</span>
+    ├── <span style="color:#d29922">status.bats</span>          <span style="color:#8b949e"># Status tests (incl. mount pruning)</span>
+    ├── <span style="color:#d29922">sync.bats</span>            <span style="color:#8b949e"># Sync tests</span>
+    ├── <span style="color:#d29922">lockfile.bats</span>        <span style="color:#8b949e"># Lockfile tests</span>
+    └── <span style="color:#d29922">update_check.bats</span>    <span style="color:#8b949e"># Update-check banner tests</span></code></pre>
 
 ## Pull requests
 

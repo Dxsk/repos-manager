@@ -33,6 +33,8 @@ source "${REPOS_MANAGER_LIB}/sync.sh"
 source "${REPOS_MANAGER_LIB}/status.sh"
 # shellcheck source=lib/update.sh
 source "${REPOS_MANAGER_LIB}/update.sh"
+# shellcheck source=lib/update_check.sh
+source "${REPOS_MANAGER_LIB}/update_check.sh"
 
 # ── Load config ─────────────────────────────────────────────────────────────────
 
@@ -303,6 +305,17 @@ EOF
 main() {
     check_deps
     validate_base_dir
+
+    # Non-blocking update check: show a banner based on the cached result
+    # of a previous run, then refresh the cache in the background for next
+    # time. Skipped for commands where the banner is noise or redundant.
+    case "${1:-}" in
+        update|version|--version|help|--help|-h|"") ;;
+        *)
+            update_check_banner
+            update_check_refresh_async
+            ;;
+    esac
 
     case "${1:-}" in
         github)

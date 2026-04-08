@@ -54,14 +54,33 @@ Supports pagination for large instances. Works with GitLab.com and self-hosted.
 ## Forgejo / Gitea
 
 **CLI:** [`tea`](https://forgejo.org/docs/latest/) ([docs](https://forgejo.org/docs/latest/))
+**Extra runtime deps:** `curl`, `yq`
 
 ```bash
-# Install
-sudo pacman -S tea  # Arch
+# Install tea for authentication
+sudo pacman -S tea curl yq   # Arch
+brew install tea curl yq     # macOS
+
+# Authenticate once per instance
+tea login add
+# or
+repos-manager forgejo login
 
 # Self-hosted
 repos-manager forgejo sync --host git.example.com
 ```
+
+### How listing works
+
+`tea repo list` only returns the authenticated user's own repositories and does not enumerate organizations, so `repos-manager` talks to the Forgejo REST API directly instead. It reads the per-host URL and token from `~/.config/tea/config.yml`, then paginates three endpoints and merges the results:
+
+- `/api/v1/user/repos` for your personal repos
+- `/api/v1/user/orgs` for the organizations you belong to
+- `/api/v1/orgs/{org}/repos` for every such organization
+
+`tea` itself is still the recommended way to create the login entry, but it is not called during sync. The config file is the source of truth for credentials.
+
+If no `tea` login matches a configured host, the host is skipped with a warning and the sync continues with the next one. If `curl` or `yq` is missing, sync aborts with a clear message telling you which package to install.
 
 ## Bitbucket
 

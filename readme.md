@@ -33,6 +33,8 @@ A single CLI tool to clone and sync all your Git repositories, no matter the pro
 - Lockfile to prevent concurrent syncs on the same base directory
 - Verbose (`--verbose`) and quiet (`--quiet`) output modes
 - Status overview: dirty, ahead, behind, diverged repos
+- Fast `status` scan with live progress indicator, automatic skip of cloud drives and other network mounts
+- Background update check with a one-line banner when a newer release is available
 - Universal login: authenticate all detected providers at once
 - Config file (`~/.config/repos-manager/config.json`) for defaults
 - Auto-generated sourceme files per host directory
@@ -132,6 +134,8 @@ repos-manager init
   "base_dir": "~/Documents",
   "parallel": 4,
   "protocol": "ssh",
+  "check_updates": true,
+  "scan_network_mounts": false,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],
@@ -141,7 +145,12 @@ repos-manager init
 }
 ```
 
-Each `hosts.<provider>` key takes a **list** of hostnames, so you can sync several instances of the same provider — typically a SaaS one plus your self-hosted one:
+Two behaviours are controlled from the config file:
+
+- `check_updates` (default `true`): on every run except `update`, `version` and `help`, a detached background `curl` fetches the latest `VERSION` from `main` and caches it for 24 hours in `~/.cache/repos-manager/latest-version`. The next run compares the cache against the running binary and prints a yellow banner when a newer release is available. Set `REPOS_MANAGER_NO_UPDATE_CHECK=1` for a one-shot opt-out.
+- `scan_network_mounts` (default `false`): `repos-manager status` reads `/proc/self/mountinfo` and prunes every mount point under `base_dir` whose filesystem type is `fuse`, `fuse.*`, `nfs`, `cifs`, `smb*`, `smbfs`, `afs`, `ceph` or `davfs`. This keeps the scan fast on setups that host cloud drives (kDrive, Dropbox, sshfs) under `~/Documents`. Flip it to `true` if you really do host repos on a reliable network share. The scan will print a warning that it can hang on flaky links.
+
+Each `hosts.<provider>` key takes a **list** of hostnames, so you can sync several instances of the same provider (typically a SaaS one plus your self-hosted one):
 
 ```json
 {
@@ -285,16 +294,20 @@ test-org/*
 | `REPOS_MANAGER_LIB` | Path to lib modules | Auto-detected |
 | `REPOS_MANAGER_PARALLEL` | Default parallel jobs | `4` |
 | `REPOS_MANAGER_PROTOCOL` | Default protocol (`ssh` or `https`) | `ssh` |
+| `REPOS_MANAGER_NO_UPDATE_CHECK` | Set to `1` to skip the background update check | Unset |
+| `REPOS_MANAGER_UPDATE_TTL` | Seconds between update checks | `86400` |
+| `REPOS_MANAGER_UPDATE_CACHE` | Path to the cached latest-version file | `${XDG_CACHE_HOME:-~/.cache}/repos-manager/latest-version` |
+| `TEA_CONFIG` | Path to tea's config file, read by the Forgejo provider | `~/.config/tea/config.yml` |
 | `NO_COLOR` | Disable colored output when set | Unset |
 
 ## Requirements
 
-- `bash` ≥ 4.0 — macOS ships bash 3.2 by default; install a newer one with `brew install bash` and make sure it's first in your `PATH`. Older versions miss `mapfile`, associative arrays and other features the scripts rely on.
+- `bash` ≥ 4.0. macOS ships bash 3.2 by default: install a newer one with `brew install bash` and make sure it's first in your `PATH`. Older versions miss `mapfile`, associative arrays and other features the scripts rely on.
 - `git`
 - `jq`
 - `gh` for GitHub
 - `glab` for GitLab
-- `tea` for Forgejo / Gitea
+- `tea` for Forgejo / Gitea authentication, plus `curl` and `yq` (listing talks to the Forgejo API directly, see [docs/providers](site/src/docs/providers.md))
 - `bitbucket` for Bitbucket (optional, can use API fallback)
 - `rad` for Radicle
 
