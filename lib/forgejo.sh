@@ -32,31 +32,31 @@ _forgejo_check_deps() {
 
 # Print "url<TAB>token" for the tea login whose host matches $1.
 # Returns 2 if no matching login is found (signals "skip this host").
+#
+# We keep the yq filter intentionally trivial (no --arg, no sub()) so it
+# behaves identically under mikefarah/yq (Go) and python-yq (jq wrapper),
+# which disagree on `--arg` and a few string primitives. All host matching
+# happens in bash against the plain "url<TAB>token" stream.
 _forgejo_creds_for_host() {
     local host="$1"
     [[ -z "$host" ]] && return 1
     [[ -f "$TEA_CONFIG" ]] || { echo "tea config not found: $TEA_CONFIG" >&2; return 2; }
 
-    # Select the login entry whose URL host equals $host.
-    local url token
-    url=$(yq -r --arg h "$host" '
-        .logins[]? | select(
-            (.url | sub("^https?://"; "") | sub("/.*$"; "")) == $h
-        ) | .url
-    ' "$TEA_CONFIG" 2>/dev/null | head -n1)
+    local url token stripped
+    while IFS=$'\t' read -r url token; do
+        [[ -z "$url" || "$url" == "null" ]] && continue
+        [[ -z "$token" || "$token" == "null" ]] && continue
+        # Strip scheme and anything after the host.
+        stripped="${url#http://}"
+        stripped="${stripped#https://}"
+        stripped="${stripped%%/*}"
+        if [[ "$stripped" == "$host" ]]; then
+            printf '%s\t%s\n' "${url%/}" "$token"
+            return 0
+        fi
+    done < <(yq -r '.logins[] | [.url, .token] | @tsv' "$TEA_CONFIG" 2>/dev/null)
 
-    token=$(yq -r --arg h "$host" '
-        .logins[]? | select(
-            (.url | sub("^https?://"; "") | sub("/.*$"; "")) == $h
-        ) | .token
-    ' "$TEA_CONFIG" 2>/dev/null | head -n1)
-
-    if [[ -z "$url" || "$url" == "null" || -z "$token" || "$token" == "null" ]]; then
-        return 2
-    fi
-    # Strip trailing slash on URL
-    url="${url%/}"
-    printf '%s\t%s\n' "$url" "$token"
+    return 2
 }
 
 # Paginate a Forgejo API endpoint and echo a JSON array of all results.
