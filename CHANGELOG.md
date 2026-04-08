@@ -4,6 +4,10 @@
 
 - Add multi-host support per provider (#3)
 
+## v0.5.0
+
+- Add multi-host support per provider (#3)
+
 ## v0.4.2
 
 - Fix CI version bump workflow now creates the GitHub release inline (the default `GITHUB_TOKEN` did not trigger `release.yml`)
