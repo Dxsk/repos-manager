@@ -49,7 +49,7 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 
 While the scan is running, a single-line progress indicator shows the current repo being inspected on stderr (`[N] provider/owner/repo`). It is suppressed when stderr is not a TTY or when `--quiet` is set.
 
-`status` walks every `.git` directory under `base_dir`, pruning heavy vendored directories (`node_modules`, `.venv`, `venv`, `__pycache__`, `target`, `vendor`, `dist`, `build`, `.next`, `.cache`) and, by default, every network or FUSE mount point under `base_dir` (cloud drives, NFS, SMB, sshfs). Use `--verbose` to see which mounts were skipped, and see [Configuration → Network-mount scanning](./configuration.md) to opt back in.
+`status` walks every `.git` directory under `base_dir`, pruning heavy vendored directories (`node_modules`, `.venv`, `venv`, `__pycache__`, `target`, `vendor`, `dist`, `build`, `.next`, `.cache`) and, by default, every network or FUSE mount point under `base_dir` (cloud drives, NFS, SMB, sshfs). Use `--verbose` to see which mounts were skipped, and see [Configuration → Network-mount scanning](../configuration/) to opt back in.
 
 ### init
 
@@ -67,7 +67,7 @@ Check for updates and self-update:
 repos-manager update
 ```
 
-In addition to this manual command, every other invocation (sync, status, init, login) runs a non-blocking background update check and prints a one-line yellow banner on the next run when a newer release is available. The check is cached for 24 hours and never slows down the command in progress. See [Configuration → Update banner](./configuration.md) for the opt-out flags.
+In addition to this manual command, every other invocation (sync, status, init, login) runs a non-blocking background update check and prints a one-line yellow banner on the next run when a newer release is available. The check is cached for 24 hours and never slows down the command in progress. See [Configuration → Update banner](../configuration/) for the opt-out flags.
 
 ### help
 
