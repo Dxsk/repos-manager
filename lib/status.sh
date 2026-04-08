@@ -22,6 +22,18 @@ _status_network_mount_points() {
     #   1 mount_id  2 parent_id  3 major:minor  4 root  5 mount_point
     #   6 options   7.. optional_fields  -  fstype  source  super_options
     # We need field 5 (mount point) and the field after the literal "-".
+    # IMPORTANT — bash 3.2 parser quirk (macOS ships bash 3.2 by default):
+    # bash 3.2 scans for $( sequences greedily, even inside single-quoted
+    # strings, and will mis-parse an awk script like $(i+1) inside this
+    # here-script as a shell command substitution with an unclosed
+    # parenthesis. The visible symptom is a 'bad substitution: no closing
+    # )' in <(' error that aborts sourcing of status.sh, which then makes
+    # every status test fail on the macOS GitHub runner. The workaround
+    # is to hoist any awk field index into a plain variable first (`j`
+    # below) and reference it as $j rather than $(i+1). The project
+    # requires bash 4+ at runtime, but the test CI intentionally runs
+    # under whatever bash is on the runner so regressions like this
+    # surface early. See commit c3a7bee for the original diagnosis.
     awk -v base="$BASE_DIR" -v re="$_STATUS_NETWORK_FSTYPES" '
         {
             mp = $5
