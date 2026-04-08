@@ -84,6 +84,36 @@ status_all() {
         log_warn "status: scanning network mounts (can be very slow or hang on unreliable links)"
     fi
 
+    # IMPORTANT - bash 3.2 parser quirk (macOS default shell):
+    # bash 3.2 mis-parses `${arr[@]+"${arr[@]}"}` when it appears
+    # inside a `< <( ... )` process substitution, emitting
+    # `bad substitution: no closing ')' in <(`. Build the find
+    # invocation into an array BEFORE the while loop so the process
+    # substitution only contains a simple array expansion, and expand
+    # the optional prune elements with a plain length check instead
+    # of the `${+}` form. See contributing doc, "Bash portability
+    # notes".
+    local -a find_cmd
+    find_cmd=(
+        find "$BASE_DIR"
+        \( -type d \(
+               -name node_modules
+            -o -name .venv
+            -o -name venv
+            -o -name __pycache__
+            -o -name target
+            -o -name vendor
+            -o -name dist
+            -o -name build
+            -o -name .next
+            -o -name .cache
+        \) -prune \)
+    )
+    if (( ${#extra_prune[@]} > 0 )); then
+        find_cmd+=("${extra_prune[@]}")
+    fi
+    find_cmd+=(-o -name ".git" -type d -print0)
+
     while IFS= read -r -d '' git_dir; do
         local repo_dir="${git_dir%/.git}"
         local rel_path="${repo_dir#"$BASE_DIR"/}"
@@ -141,32 +171,7 @@ status_all() {
         else
             clean=$((clean + 1))
         fi
-    done < <(
-        # Prune heavy directories that never contain a tracked repo: huge
-        # dependency trees, build outputs, and VCS-internal mirrors. This
-        # keeps `status` fast on a BASE_DIR that also hosts working trees
-        # with vendored deps.
-        find "$BASE_DIR" \
-            \( -type d \( \
-                   -name node_modules \
-                -o -name .venv \
-                -o -name venv \
-                -o -name __pycache__ \
-                -o -name target \
-                -o -name vendor \
-                -o -name dist \
-                -o -name build \
-                -o -name .next \
-                -o -name .cache \
-            \) -prune \) \
-            ${extra_prune[@]+"${extra_prune[@]}"} \
-            -o -name ".git" -type d -print0 2>/dev/null
-        # Note: intentionally NOT piping through `sort -z`. sort must
-        # read its entire input before emitting the first line, which
-        # defeats the streaming progress indicator and makes status
-        # appear to hang on large trees. Rely on find's traversal
-        # order instead.
-    )
+    done < <("${find_cmd[@]}" 2>/dev/null)
 
     if $show_progress; then
         printf '\r\033[K' >&2  # clear progress line
