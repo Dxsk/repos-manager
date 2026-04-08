@@ -9,6 +9,13 @@ REPOS_MANAGER_CONFIG="${REPOS_MANAGER_CONFIG:-$HOME/.config/repos-manager/config
 # or the REPOS_MANAGER_NO_UPDATE_CHECK=1 env var.
 CHECK_UPDATES="${CHECK_UPDATES:-true}"
 
+# When false (default), `status` prunes network/FUSE mount points
+# (cloud drives, NFS, sshfs, davfs, etc.) from its recursive scan.
+# Setting this to true forces the scan to descend into those mounts —
+# useful if you really do host repos on a reliable network share, but
+# can cause long hangs on flaky links.
+SCAN_NETWORK_MOUNTS="${SCAN_NETWORK_MOUNTS:-false}"
+
 # Per-provider host lists, populated by load_config / defaults_hosts.
 # Each variable is a bash array of hostnames. Empty means "skip provider".
 HOSTS_GITHUB=()
@@ -78,6 +85,12 @@ load_config() {
         CHECK_UPDATES="false"
     fi
 
+    val=$(jq -r 'if has("scan_network_mounts") then .scan_network_mounts else empty end' \
+        "$REPOS_MANAGER_CONFIG" 2>/dev/null || true)
+    if [[ "$val" == "true" ]]; then
+        SCAN_NETWORK_MOUNTS="true"
+    fi
+
     # Per-provider host lists. Only override the defaults if the user
     # actually declared hosts for that provider in the config.
     # NB: macOS ships bash 3.2 which has no `mapfile`, so read in a loop.
@@ -131,6 +144,7 @@ init_config() {
   "parallel": 4,
   "protocol": "ssh",
   "check_updates": true,
+  "scan_network_mounts": false,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],

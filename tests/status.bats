@@ -57,6 +57,35 @@ source "$REPOS_MANAGER_LIB/status.sh"
     [[ "$output" =~ "Total: 1 repos" ]]
 }
 
+@test "status: _status_network_mount_points filters by fstype and base" {
+    local mountinfo="$TEST_TEMP/mountinfo"
+    # Realistic mountinfo lines: a davfs cloud drive under BASE_DIR, an
+    # unrelated NFS mount outside BASE_DIR, and a local ext4 mount that
+    # must NOT be pruned.
+    cat > "$mountinfo" <<EOF
+29 1 0:27 / $BASE_DIR/cloud rw,noexec,relatime shared:1 - fuse https://example.com rw
+30 1 0:28 / /mnt/nas rw,relatime shared:2 - nfs4 server:/export rw
+31 1 0:29 / $BASE_DIR/local rw,relatime shared:3 - ext4 /dev/sda1 rw
+32 1 0:30 / $BASE_DIR/sshfs rw,relatime shared:4 - fuse.sshfs user@host:/ rw
+33 1 0:31 / $BASE_DIR/dav rw,relatime shared:5 - davfs https://dav.example rw
+EOF
+    run _status_network_mount_points "$mountinfo"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"$BASE_DIR/cloud"* ]]
+    [[ "$output" == *"$BASE_DIR/sshfs"* ]]
+    [[ "$output" == *"$BASE_DIR/dav"* ]]
+    [[ "$output" != *"$BASE_DIR/local"* ]]
+    [[ "$output" != *"/mnt/nas"* ]]
+}
+
+@test "status: _status_network_mount_points returns nothing for empty mountinfo" {
+    local mountinfo="$TEST_TEMP/empty_mountinfo"
+    : > "$mountinfo"
+    run _status_network_mount_points "$mountinfo"
+    [[ "$status" -eq 0 ]]
+    [[ -z "$output" ]]
+}
+
 @test "status: empty base dir" {
     run status_all
     [[ "$status" -eq 0 ]]
