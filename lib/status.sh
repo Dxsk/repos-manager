@@ -26,8 +26,13 @@ _status_network_mount_points() {
         {
             mp = $5
             # Find the "-" separator, fstype follows immediately after.
+            fstype = ""
             for (i = 6; i <= NF; i++) {
-                if ($i == "-") { fstype = $(i+1); break }
+                if ($i == "-") {
+                    j = i + 1
+                    fstype = $j
+                    break
+                }
             }
             if (fstype ~ re && index(mp, base "/") == 1) {
                 print mp

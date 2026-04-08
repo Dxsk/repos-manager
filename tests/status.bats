@@ -7,9 +7,6 @@ source "$REPOS_MANAGER_LIB/status.sh"
 @test "status: clean repo shows nothing" {
     create_repo "$BASE_DIR/github.com/user/clean-repo"
     run status_all
-    echo "DEBUG status=$status" >&3
-    echo "DEBUG output=[$output]" >&3
-    echo "DEBUG stderr=[$stderr]" >&3
     [[ "$status" -eq 0 ]]
     [[ "$output" =~ "1 clean" ]]
 }
