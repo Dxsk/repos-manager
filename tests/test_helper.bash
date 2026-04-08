@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Common test helpers
 
+# Force color off so string assertions do not have to deal with ANSI
+# escapes. log.sh decides once at source time whether to emit colors
+# based on a TTY check, and on some CI runners (notably macOS bats-core
+# via brew) the bats process does attach a pseudo-TTY, which would make
+# the output contain codes around every flag name.
+export NO_COLOR=1
+
 export REPOS_MANAGER_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 
 # Source all libs without running main
