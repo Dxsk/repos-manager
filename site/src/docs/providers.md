@@ -34,7 +34,7 @@ repos-manager github login
 repos-manager github sync
 ```
 
-Fetches repos from your account and all organizations you belong to.
+Fetches every repo you have access to: your own, repos in organizations you belong to, and repos where you are a plain collaborator on someone else's personal account. Listing hits `/user/repos?affiliation=owner,collaborator,organization_member` with `--paginate`, so collaborations on personal accounts are picked up without any per-org fan-out.
 
 ## GitLab
 

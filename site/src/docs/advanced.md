@@ -24,7 +24,7 @@ For large organizations (100+ repos), higher parallelism helps. For slow connect
 
 ## Concurrent sync protection
 
-repos-manager uses a lockfile (`BASE_DIR/.repos-manager.lock`) to prevent multiple syncs from running at the same time on the same directory. If a previous sync was interrupted, the lockfile is automatically cleaned up when the holding process is no longer running.
+repos-manager uses a per-host lockfile (`BASE_DIR/<host>/.repos-manager.lock`) to prevent multiple syncs from running against the same host at the same time. Distinct providers or hosts write to disjoint subtrees (`BASE_DIR/github.com`, `BASE_DIR/gitlab.com`, ...) and are free to sync concurrently. If a previous sync was interrupted, the lockfile is automatically cleaned up when the holding process is no longer running.
 
 ## Self-update
 
