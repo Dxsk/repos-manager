@@ -10,21 +10,16 @@ github_list_repos() {
         echo "gh CLI not found" >&2; return 1
     fi
 
-    local all_repos
-    all_repos=$(gh repo list --json nameWithOwner,sshUrl,url --limit 10000 2>/dev/null || echo "[]")
-
-    # Fetch repos from each organization the user belongs to
-    local orgs
-    orgs=$(gh api user/orgs --jq '.[].login' 2>/dev/null || true)
-
-    for org in $orgs; do
-        [[ -z "$org" ]] && continue
-        local org_repos
-        org_repos=$(gh repo list "$org" --json nameWithOwner,sshUrl,url --limit 10000 2>/dev/null || echo "[]")
-        all_repos=$(printf '%s\n%s' "$all_repos" "$org_repos" | jq -s 'add | unique_by(.nameWithOwner)')
-    done
-
-    echo "$all_repos"
+    # `gh repo list` only returns the authenticated user's own repos; repos
+    # where the user is a plain collaborator on someone else's personal
+    # account would never appear. Hit /user/repos directly with the full
+    # affiliation set so owner, collaborator and organization_member repos
+    # are all listed in a single paginated call.
+    gh api --paginate \
+        '/user/repos?affiliation=owner,collaborator,organization_member&per_page=100' \
+        --jq '[.[] | {nameWithOwner: .full_name, sshUrl: .ssh_url, url: .html_url}]' \
+        2>/dev/null \
+        | jq -s 'add // [] | unique_by(.nameWithOwner)'
 }
 
 github_get_clone_url() {
