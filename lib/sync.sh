@@ -5,6 +5,8 @@ acquire_lock() {
     local dir="$1"
     local lockfile="$dir/.repos-manager.lock"
 
+    mkdir -p "$dir" 2>/dev/null
+
     if [[ -f "$lockfile" ]]; then
         local pid
         pid=$(<"$lockfile")
@@ -33,9 +35,12 @@ sync_repo() {
             log_warn "${full_name} (dirty, skipped)" >&2
             echo "skipped"
         else
+            # Pull explicitly from origin's current branch so repos whose
+            # local branch has no upstream tracking configured (e.g. manual
+            # clones, renamed default branches) still update cleanly.
             local err
             if err=$(git -C "$local_path" fetch --all --quiet 2>&1) && \
-               err=$(git -C "$local_path" pull --ff-only --quiet 2>&1); then
+               err=$(git -C "$local_path" pull --ff-only --quiet origin HEAD 2>&1); then
                 log_success "${full_name} (updated)" >&2
                 echo "updated"
             else
@@ -60,14 +65,18 @@ sync_repo() {
 sync_provider() {
     local provider="$1" host="$2"
 
-    acquire_lock "$BASE_DIR" || return 1
+    # Lock per-host, not on BASE_DIR: distinct providers/hosts write to
+    # disjoint subtrees ($BASE_DIR/$host) and should be allowed to run
+    # concurrently.
+    local lock_dir="$BASE_DIR/$host"
+    acquire_lock "$lock_dir" || return 1
 
     log_info "Fetching repository list from ${host}..."
 
     local repos_json rc=0
     repos_json=$("${provider}_list_repos") || rc=$?
     if [[ $rc -ne 0 ]]; then
-        release_lock "$BASE_DIR"
+        release_lock "$lock_dir"
         # rc=2 means "skip this host" (e.g. not logged in) — not a hard error
         if [[ $rc -eq 2 ]]; then
             log_warn "Skipping ${host} (not configured)"
@@ -162,7 +171,7 @@ sync_provider() {
         fi
     fi
 
-    release_lock "$BASE_DIR"
+    release_lock "$lock_dir"
 
     echo
     log_info "Done: ${cloned} cloned, ${updated} updated, ${skipped} skipped, ${errored} errors"
