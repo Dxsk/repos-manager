@@ -8,7 +8,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
   <h1>repos-manager</h1>
   <p class="tagline">One CLI to sync them all. Clone, update, and manage your Git repositories across every provider.</p>
 
-  <div class="install-cmd" data-copy="git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install">
+  <div class="install-cmd" data-copy="git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install">
     <span class="prompt">$_</span> <span id="typing-target"></span><span class="cursor"></span>
   </div>
 
@@ -66,7 +66,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
   // Typing animation for install command
   var typingTarget = document.getElementById('typing-target');
   if (typingTarget) {
-    var cmd = 'git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install';
+    var cmd = 'git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install';
     var i = 0;
     function typeChar() {
       if (i < cmd.length) {
@@ -273,7 +273,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
     <h2 class="section-title">Quick start</h2>
 
     <div class="quickstart-grid animate-stagger">
-      <div class="qs-terminal" data-copy="git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install">
+      <div class="qs-terminal" data-copy="git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install">
         <div class="qs-titlebar">
           <span class="dot" style="background:var(--accent-red)"></span>
           <span class="dot" style="background:var(--accent-orange)"></span>
@@ -281,7 +281,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
           <span class="qs-title">step-1 ~ install</span>
         </div>
         <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">git clone</span> git@github.com:Dxsk/repos-manager.git</div>
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">git clone</span> https://github.com/Dxsk/repos-manager.git</div>
           <div><span class="qs-prompt">$_</span> <span class="qs-cmd">cd</span> repos-manager <span class="qs-op">&&</span> <span class="qs-cmd">make</span> install</div>
           <div class="qs-output">Installed to ~/.local/bin/repos-manager</div>
         </div>
