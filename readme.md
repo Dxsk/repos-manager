@@ -4,6 +4,7 @@
 [![Lint](https://github.com/Dxsk/repos-manager/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/Dxsk/repos-manager/actions/workflows/shellcheck.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/Dxsk/repos-manager)](https://github.com/Dxsk/repos-manager/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/dxsk)
 
 A single CLI tool to clone and sync all your Git repositories, no matter the provider.
 
@@ -331,6 +332,10 @@ test-org/*
 | [Git](https://git-scm.com) | Distributed version control system | [Git Reference](https://git-scm.com/docs) |
 | [jq](https://jqlang.github.io/jq/) | Lightweight CLI JSON processor | [jq Manual](https://jqlang.github.io/jq/manual/) |
 | [GNU Stow](https://www.gnu.org/software/stow/) | Symlink farm manager (used for dotfiles) | [Stow Manual](https://www.gnu.org/software/stow/manual/) |
+
+## Support
+
+If this tool saves you time, you can support my work by [buying me a coffee](https://buymeacoffee.com/dxsk). Thank you!
 
 ## License
 
