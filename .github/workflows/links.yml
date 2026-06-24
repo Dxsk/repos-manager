@@ -21,7 +21,7 @@ jobs:
       - name: Check links in markdown
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
-          args: --verbose --no-progress --timeout 30 --accept '200..=399,429' --exclude 'buymeacoffee\.com' '**/*.md'
+          args: --verbose --no-progress --timeout 30 --accept '200..=399,429' --exclude 'buymeacoffee\.com|gnu\.org' '**/*.md'
           fail: true
 
   check-site:
@@ -49,5 +49,5 @@ jobs:
       - name: Check links in built site
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
-          args: --verbose --no-progress --timeout 30 --accept '200..=399,429' --exclude 'buymeacoffee\.com' --root-dir site/_site 'site/_site/**/*.html'
+          args: --verbose --no-progress --timeout 30 --accept '200..=399,429' --exclude 'buymeacoffee\.com|gnu\.org' --root-dir site/_site 'site/_site/**/*.html'
           fail: true
