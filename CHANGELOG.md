@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0
+
+- Add Buy Me a Coffee link
+
 ## v0.5.1
 
 - Fix parse squash-merge bodies and strip bullet prefixes
