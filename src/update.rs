@@ -71,35 +71,37 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     matches!((parse_version(latest), parse_version(current)), (Some(l), Some(c)) if l > c)
 }
 
-fn cache_is_stale(path: &Path) -> bool {
+fn cache_is_stale(path: &Path, ttl: Duration) -> bool {
     fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| SystemTime::now().duration_since(t).ok())
-        .is_none_or(|age| age >= ttl())
+        .is_none_or(|age| age >= ttl)
+}
+
+/// Banner text for the cached latest version, if it is newer than this build.
+fn banner_message(cached: &str) -> Option<String> {
+    let latest = cached.trim();
+    is_newer(latest, CURRENT).then(|| {
+        format!("⬆ repos-manager {latest} available (current {CURRENT}), run: repos-manager update")
+    })
 }
 
 pub fn banner(settings: &Settings) {
     if !settings.check_updates {
         return;
     }
-    let Ok(latest) = fs::read_to_string(cache_path()) else {
-        return;
-    };
-    let latest = latest.trim();
-    if is_newer(latest, CURRENT) {
-        eprintln!(
-            "{}",
-            output::yellow(&format!(
-                "⬆ repos-manager {latest} available (current {CURRENT}), run: repos-manager update"
-            ))
-        );
+    if let Some(msg) = fs::read_to_string(cache_path())
+        .ok()
+        .and_then(|c| banner_message(&c))
+    {
+        eprintln!("{}", output::yellow(&msg));
     }
 }
 
 /// Spawn a detached copy of ourselves to refresh the cache. Never fails the caller.
 pub fn refresh_async(settings: &Settings) {
-    if !settings.check_updates || !cache_is_stale(&cache_path()) {
+    if !settings.check_updates || !cache_is_stale(&cache_path(), ttl()) {
         return;
     }
     let Ok(exe) = std::env::current_exe() else {
@@ -126,9 +128,9 @@ pub fn refresh_async(settings: &Settings) {
     let _ = cmd.spawn();
 }
 
-fn fetch_release(timeout: Duration) -> Result<Release> {
+fn fetch_release(url: &str, timeout: Duration) -> Result<Release> {
     http::agent(timeout)
-        .get(&api_url())
+        .get(url)
         .header("Accept", "application/vnd.github+json")
         .call()
         .context("cannot reach the release API")?
@@ -139,8 +141,11 @@ fn fetch_release(timeout: Duration) -> Result<Release> {
 
 /// Entry point of the detached child.
 pub fn refresh_cache() -> Result<()> {
-    let release = fetch_release(Duration::from_secs(5))?;
-    let path = cache_path();
+    refresh_cache_to(&api_url(), &cache_path())
+}
+
+fn refresh_cache_to(url: &str, path: &Path) -> Result<()> {
+    let release = fetch_release(url, Duration::from_secs(5))?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -221,6 +226,32 @@ fn extract_binary(archive: &[u8], asset: &str) -> Result<Vec<u8>> {
     Err(anyhow!("{bin} not found in {asset}"))
 }
 
+/// Download the asset `name` and `SHA256SUMS` through `fetch`, check the
+/// archive's hash and return the binary it contains.
+fn verified_binary(
+    release: &Release,
+    name: &str,
+    fetch: impl Fn(&str) -> Result<Vec<u8>>,
+) -> Result<Vec<u8>> {
+    let find = |n: &str| {
+        release
+            .assets
+            .iter()
+            .find(|a| a.name == n)
+            .map(|a| a.browser_download_url.clone())
+            .ok_or_else(|| anyhow!("release {} has no asset {n}", release.tag_name))
+    };
+    let archive = fetch(&find(name)?)?;
+    let sums = String::from_utf8(fetch(&find("SHA256SUMS")?)?)?;
+    let expected =
+        expected_checksum(&sums, name).ok_or_else(|| anyhow!("{name} missing from SHA256SUMS"))?;
+    let actual = hex(&Sha256::digest(&archive));
+    if actual != expected {
+        bail!("checksum mismatch for {name}: expected {expected}, got {actual}");
+    }
+    extract_binary(&archive, name)
+}
+
 fn confirm(prompt: &str) -> Result<bool> {
     print!("{prompt} [y/N] ");
     io::stdout().flush()?;
@@ -231,7 +262,7 @@ fn confirm(prompt: &str) -> Result<bool> {
 
 pub fn self_update(assume_yes: bool) -> Result<()> {
     output::info("Checking for updates...");
-    let release = fetch_release(Duration::from_secs(15))?;
+    let release = fetch_release(&api_url(), Duration::from_secs(15))?;
     let latest = release.tag_name.trim_start_matches('v');
     if !is_newer(latest, CURRENT) {
         output::success(&format!("Already up to date ({CURRENT})"));
@@ -245,25 +276,7 @@ pub fn self_update(assume_yes: bool) -> Result<()> {
         return Ok(());
     }
 
-    let name = asset_name()?;
-    let find = |n: &str| {
-        release
-            .assets
-            .iter()
-            .find(|a| a.name == n)
-            .map(|a| a.browser_download_url.clone())
-            .ok_or_else(|| anyhow!("release {} has no asset {n}", release.tag_name))
-    };
-    let archive = download(&find(&name)?)?;
-    let sums = String::from_utf8(download(&find("SHA256SUMS")?)?)?;
-    let expected =
-        expected_checksum(&sums, &name).ok_or_else(|| anyhow!("{name} missing from SHA256SUMS"))?;
-    let actual = hex(&Sha256::digest(&archive));
-    if actual != expected {
-        bail!("checksum mismatch for {name}: expected {expected}, got {actual}");
-    }
-
-    let binary = extract_binary(&archive, &name)?;
+    let binary = verified_binary(&release, &asset_name()?, download)?;
     let tmp = std::env::temp_dir().join(format!("repos-manager-update-{}", std::process::id()));
     fs::write(&tmp, &binary)?;
     #[cfg(unix)]
@@ -283,6 +296,7 @@ pub fn self_update(assume_yes: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_server::{Response, Server};
 
     #[test]
     fn version_comparison() {
@@ -332,24 +346,156 @@ mod tests {
         assert!(n.ends_with(".tar.gz") || n.ends_with(".zip"));
     }
 
-    #[test]
-    fn extracts_from_tar_gz() {
+    const BIN: &str = if cfg!(windows) {
+        "repos-manager.exe"
+    } else {
+        "repos-manager"
+    };
+
+    fn tar_gz(name: &str, data: &[u8]) -> Vec<u8> {
         let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
             Vec::new(),
             flate2::Compression::fast(),
         ));
-        let bin = if cfg!(windows) {
-            "repos-manager.exe"
-        } else {
-            "repos-manager"
-        };
-        let data = b"binary";
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
         header.set_mode(0o755);
         header.set_cksum();
-        tar.append_data(&mut header, bin, &data[..]).unwrap();
-        let gz = tar.into_inner().unwrap().finish().unwrap();
-        assert_eq!(extract_binary(&gz, "x.tar.gz").unwrap(), data);
+        tar.append_data(&mut header, name, data).unwrap();
+        tar.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn zip(name: &str, data: &[u8]) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
+        zip.start_file("README.md", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"readme").unwrap();
+        zip.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(data).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn extracts_from_tar_gz() {
+        let gz = tar_gz(&format!("dir/{BIN}"), b"binary");
+        assert_eq!(extract_binary(&gz, "x.tar.gz").unwrap(), b"binary");
+        let other = tar_gz("something-else", b"x");
+        assert!(extract_binary(&other, "x.tar.gz").is_err());
+    }
+
+    #[test]
+    fn extracts_from_zip() {
+        let z = zip(BIN, b"exe");
+        assert_eq!(extract_binary(&z, "x.zip").unwrap(), b"exe");
+        let other = zip("other.exe", b"x");
+        let err = extract_binary(&other, "x.zip").unwrap_err();
+        assert!(err.to_string().contains("not found in x.zip"), "{err}");
+        assert!(extract_binary(b"not a zip", "x.zip").is_err());
+    }
+
+    #[test]
+    fn hex_encoding() {
+        assert_eq!(hex(&[0x00, 0x0f, 0xab]), "000fab");
+    }
+
+    #[test]
+    fn banner_only_for_newer_versions() {
+        let msg = banner_message("99.0.0\n").unwrap();
+        assert!(
+            msg.contains("99.0.0 available") && msg.contains(CURRENT),
+            "{msg}"
+        );
+        assert_eq!(banner_message(CURRENT), None);
+        assert_eq!(banner_message("not a version"), None);
+        assert_eq!(banner_message(""), None);
+    }
+
+    #[test]
+    fn cache_staleness() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("latest-version");
+        assert!(cache_is_stale(&path, Duration::from_secs(3600)));
+        fs::write(&path, "1.0.0").unwrap();
+        assert!(!cache_is_stale(&path, Duration::from_secs(3600)));
+        assert!(cache_is_stale(&path, Duration::ZERO));
+    }
+
+    #[test]
+    fn banner_and_refresh_are_noops_when_disabled() {
+        let mut settings = Settings::for_tests(Path::new("/"));
+        settings.check_updates = false;
+        banner(&settings);
+        refresh_async(&settings);
+    }
+
+    #[test]
+    fn refresh_writes_cache_without_v_prefix() {
+        let server = Server::start(|target| match target {
+            "/latest" => Response::json(r#"{"tag_name":"v9.9.9"}"#),
+            _ => Response::not_found(),
+        });
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cache").join("latest-version");
+        refresh_cache_to(&format!("{}/latest", server.url), &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "9.9.9");
+        assert!(server.requests()[0].contains("application/vnd.github+json"));
+        assert!(refresh_cache_to(&format!("{}/missing", server.url), &path).is_err());
+    }
+
+    #[test]
+    fn invalid_release_payload_is_an_error() {
+        let server = Server::start(|_| Response::json(r#"{"name":"no tag"}"#));
+        let err = fetch_release(&server.url, Duration::from_secs(5)).unwrap_err();
+        assert!(err.to_string().contains("unexpected"), "{err}");
+    }
+
+    #[test]
+    fn download_returns_body() {
+        let server = Server::start(|_| Response::bytes(vec![1, 2, 3]));
+        assert_eq!(download(&server.url).unwrap(), [1, 2, 3]);
+        let missing = Server::start(|_| Response::not_found());
+        assert!(download(&missing.url).is_err());
+    }
+
+    #[test]
+    fn verified_binary_checks_sha256() {
+        let name = "repos-manager-x86_64-unknown-linux-musl.tar.gz";
+        let archive = tar_gz(BIN, b"new binary");
+        let good_sums = format!("{}  {name}\n", hex(&Sha256::digest(&archive)));
+        let release = |assets: &[&str]| Release {
+            tag_name: "v2.0.0".into(),
+            assets: assets
+                .iter()
+                .map(|n| Asset {
+                    name: n.to_string(),
+                    browser_download_url: format!("mem://{n}"),
+                })
+                .collect(),
+        };
+        let full = release(&[name, "SHA256SUMS"]);
+        let fetch = |sums: String| {
+            let archive = archive.clone();
+            move |url: &str| -> Result<Vec<u8>> {
+                Ok(if url.ends_with("SHA256SUMS") {
+                    sums.clone().into_bytes()
+                } else {
+                    archive.clone()
+                })
+            }
+        };
+
+        let bin = verified_binary(&full, name, fetch(good_sums.clone())).unwrap();
+        assert_eq!(bin, b"new binary");
+
+        let bad = format!("{}  {name}\n", "0".repeat(64));
+        let err = verified_binary(&full, name, fetch(bad)).unwrap_err();
+        assert!(err.to_string().contains("checksum mismatch"), "{err}");
+
+        let err = verified_binary(&full, name, fetch("abc  other\n".into())).unwrap_err();
+        assert!(err.to_string().contains("missing from SHA256SUMS"), "{err}");
+
+        let err = verified_binary(&release(&[name]), name, fetch(good_sums)).unwrap_err();
+        assert!(err.to_string().contains("no asset SHA256SUMS"), "{err}");
     }
 }

@@ -89,13 +89,38 @@ pub fn repo_state(dir: &Path) -> RepoState {
     st
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub total: usize,
+    pub clean: usize,
+    pub dirty: usize,
+    pub ahead: usize,
+    pub behind: usize,
+    pub diverged: usize,
+}
+
 pub fn status_all(settings: &Settings) {
     let base = &settings.base_dir;
     output::info(&format!("Scanning repos in {}...", base.display()));
     output::blank();
 
     let show_progress = std::io::stderr().is_terminal() && !output::is_quiet();
-    let skip_mounts = excluded_mounts(settings);
+    let c = scan(base, &excluded_mounts(settings), show_progress);
+
+    output::blank();
+    output::info(&format!(
+        "Total: {} repos - {}, {}, {}, {}, {}",
+        c.total,
+        green(&format!("{} clean", c.clean)),
+        yellow(&format!("{} dirty", c.dirty)),
+        green(&format!("{} ahead", c.ahead)),
+        blue(&format!("{} behind", c.behind)),
+        red(&format!("{} diverged", c.diverged)),
+    ));
+}
+
+/// Walk `base`, print every repo that is not clean and count them by state.
+fn scan(base: &Path, skip_mounts: &[PathBuf], show_progress: bool) -> Counts {
     let (mut total, mut clean, mut dirty, mut ahead, mut behind, mut diverged) = (0, 0, 0, 0, 0, 0);
 
     let mut it = WalkDir::new(base).follow_links(false).into_iter();
@@ -175,16 +200,14 @@ pub fn status_all(settings: &Settings) {
     if show_progress {
         eprint!("\r\x1b[K");
     }
-
-    output::blank();
-    output::info(&format!(
-        "Total: {total} repos - {}, {}, {}, {}, {}",
-        green(&format!("{clean} clean")),
-        yellow(&format!("{dirty} dirty")),
-        green(&format!("{ahead} ahead")),
-        blue(&format!("{behind} behind")),
-        red(&format!("{diverged} diverged")),
-    ));
+    Counts {
+        total,
+        clean,
+        dirty,
+        ahead,
+        behind,
+        diverged,
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +280,112 @@ mod tests {
                 ahead: 1,
                 behind: 0
             }
+        );
+    }
+
+    fn clone(bare: &Path, dest: &Path) {
+        let parent = dest.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+        git_cmd(
+            parent,
+            &[
+                "clone",
+                "--quiet",
+                bare.to_str().unwrap(),
+                dest.to_str().unwrap(),
+            ],
+        );
+    }
+
+    fn commit(dir: &Path, msg: &str) {
+        git_cmd(dir, &["commit", "--quiet", "--allow-empty", "-m", msg]);
+    }
+
+    #[test]
+    fn scan_counts_each_state_and_prunes_heavy_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let long = base.join("a".repeat(40)).join("b".repeat(40));
+        for name in ["clean", "dirty", "ahead", "behind", "diverged"] {
+            clone(&bare, &base.join("host").join(name));
+        }
+        clone(&bare, &long);
+        let host = base.join("host");
+
+        let pusher = tmp.path().join("pusher");
+        clone(&bare, &pusher);
+        commit(&pusher, "remote");
+        git_cmd(&pusher, &["push", "--quiet", "origin", "main"]);
+
+        std::fs::write(host.join("dirty").join("f.txt"), "x").unwrap();
+        commit(&host.join("ahead"), "local");
+        git_cmd(&host.join("behind"), &["fetch", "--quiet"]);
+        commit(&host.join("diverged"), "local");
+        git_cmd(&host.join("diverged"), &["fetch", "--quiet"]);
+
+        let mount = base.join("mnt");
+        for fake in [
+            base.join("node_modules").join("pkg"),
+            host.join("ahead").join("target").join("x"),
+            mount.join("remote"),
+        ] {
+            std::fs::create_dir_all(fake.join(".git")).unwrap();
+        }
+        std::fs::write(base.join("notes.txt"), "not a repo").unwrap();
+
+        let counts = scan(&base, &[mount], true);
+        assert_eq!(
+            counts,
+            Counts {
+                total: 6,
+                clean: 2,
+                dirty: 1,
+                ahead: 1,
+                behind: 1,
+                diverged: 1,
+            }
+        );
+        assert_eq!(
+            repo_state(&host.join("diverged")),
+            RepoState {
+                dirty: false,
+                ahead: 1,
+                behind: 1
+            }
+        );
+    }
+
+    #[test]
+    fn repo_without_upstream_is_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        git_cmd(tmp.path(), &["init", "--quiet", "-b", "main"]);
+        commit(tmp.path(), "init");
+        assert_eq!(repo_state(tmp.path()), RepoState::default());
+    }
+
+    #[test]
+    fn network_mounts_excluded_unless_opted_in() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut settings = Settings::for_tests(tmp.path());
+        assert!(excluded_mounts(&settings).is_empty());
+        settings.scan_network_mounts = true;
+        assert!(excluded_mounts(&settings).is_empty());
+        status_all(&settings);
+    }
+
+    #[test]
+    fn mountinfo_edge_cases() {
+        let base = Path::new("/data");
+        let info = "\
+1 0 0:1 / /data rw - nfs srv:/ rw
+2 0 0:1 / /data/with\\040space rw - smbfs //srv rw
+3 0 0:1 / /data/short
+4 0 0:1 / /data/nosep rw shared:1 fuse x
+";
+        assert_eq!(
+            network_mount_points(info, base),
+            [PathBuf::from("/data/with space")]
         );
     }
 }

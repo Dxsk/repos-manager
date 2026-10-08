@@ -7,6 +7,8 @@ mod output;
 mod providers;
 mod status;
 mod sync;
+#[cfg(test)]
+mod test_server;
 mod update;
 
 use std::process::ExitCode;
@@ -198,5 +200,44 @@ fn sync_all(settings: &Settings, opts: &SyncOptions) {
                 output::error(&format!("{host}: {e:#}"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn sync_flags_override_settings() {
+        let mut settings = Settings::for_tests(&PathBuf::from("/from/config"));
+        let args = SyncArgs {
+            filter: Some("o/*".into()),
+            https: true,
+            prune: true,
+            dry_run: true,
+            parallel: Some(7),
+            common: CommonFlags {
+                base_dir: Some(PathBuf::from("/from/flag")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let opts = apply_sync(&mut settings, &args);
+        assert_eq!(settings.base_dir, PathBuf::from("/from/flag"));
+        assert!(settings.use_https);
+        assert_eq!(settings.parallel, 7);
+        assert_eq!(opts.filter.as_deref(), Some("o/*"));
+        assert!(opts.prune && opts.dry_run);
+    }
+
+    #[test]
+    fn defaults_keep_settings() {
+        let mut settings = Settings::for_tests(&PathBuf::from("/base"));
+        let opts = apply_sync(&mut settings, &SyncArgs::default());
+        assert_eq!(settings.base_dir, PathBuf::from("/base"));
+        assert!(!settings.use_https);
+        assert_eq!(settings.parallel, 4);
+        assert!(opts.filter.is_none() && !opts.prune && !opts.dry_run);
     }
 }

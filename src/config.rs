@@ -61,16 +61,14 @@ fn expand_tilde(s: &str) -> PathBuf {
     }
 }
 
-fn env_nonempty(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|v| !v.is_empty())
-}
-
 impl Settings {
     pub fn load() -> Result<Self> {
-        Self::load_from(&config_path())
+        Self::load_from(&config_path(), |key| std::env::var(key).ok())
     }
 
-    pub fn load_from(path: &Path) -> Result<Self> {
+    /// `env` is injected so tests do not race on the process environment.
+    pub fn load_from(path: &Path, env: impl Fn(&str) -> Option<String>) -> Result<Self> {
+        let env_nonempty = |key: &str| env(key).filter(|v| !v.is_empty());
         let file: FileConfig = if path.is_file() {
             let raw = fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?;
@@ -160,7 +158,10 @@ const DEFAULT_CONFIG: &str = r#"{
 "#;
 
 pub fn init_config() -> Result<()> {
-    let path = config_path();
+    init_config_at(&config_path())
+}
+
+fn init_config_at(path: &Path) -> Result<()> {
     if path.exists() {
         output::warn(&format!("Config already exists: {}", path.display()));
         return Ok(());
@@ -173,9 +174,19 @@ pub fn init_config() -> Result<()> {
             fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
         }
     }
-    fs::write(&path, DEFAULT_CONFIG)?;
+    fs::write(path, DEFAULT_CONFIG)?;
     output::success(&format!("Config created: {}", path.display()));
     Ok(())
+}
+
+#[cfg(test)]
+impl Settings {
+    /// Defaults (no file, no env) rooted at `base`.
+    pub fn for_tests(base: &Path) -> Self {
+        let mut s = Self::load_from(Path::new(""), |_| None).unwrap();
+        s.base_dir = base.to_path_buf();
+        s
+    }
 }
 
 #[cfg(test)]
@@ -189,20 +200,45 @@ mod tests {
         (dir, p)
     }
 
+    fn load(path: &Path) -> Settings {
+        Settings::load_from(path, |_| None).unwrap()
+    }
+
+    fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            vars.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
     #[test]
     fn defaults_without_file() {
-        let s = Settings::load_from(Path::new("/nonexistent/config.json")).unwrap();
+        let s = load(Path::new("/nonexistent/config.json"));
         assert_eq!(s.hosts(Provider::Forgejo), ["codeberg.org"]);
+        assert_eq!(s.hosts(Provider::Radicle), ["radicle"]);
+        assert_eq!(s.base_dir, home_dir().join("Documents"));
+        assert_eq!(s.parallel, 4);
         assert!(s.check_updates);
+        assert!(!s.use_https);
         assert!(!s.scan_network_mounts);
     }
 
     #[test]
     fn hosts_string_and_list_forms() {
         let (_d, p) = write(r#"{"hosts":{"gitlab":"gl.example.org","forgejo":["a.org","b.org"]}}"#);
-        let s = Settings::load_from(&p).unwrap();
+        let s = load(&p);
         assert_eq!(s.hosts(Provider::Gitlab), ["gl.example.org"]);
         assert_eq!(s.hosts(Provider::Forgejo), ["a.org", "b.org"]);
+        assert_eq!(s.hosts(Provider::Github), ["github.com"]);
+    }
+
+    #[test]
+    fn unknown_provider_and_empty_hosts_are_ignored() {
+        let (_d, p) =
+            write(r#"{"hosts":{"sourceforge":"sf.net","gitea":["", "g.org"],"github":[""]}}"#);
+        let s = load(&p);
+        assert_eq!(s.hosts(Provider::Forgejo), ["g.org"]);
         assert_eq!(s.hosts(Provider::Github), ["github.com"]);
     }
 
@@ -210,21 +246,101 @@ mod tests {
     fn explicit_false_is_respected() {
         let (_d, p) =
             write(r#"{"check_updates":false,"scan_network_mounts":true,"protocol":"https"}"#);
-        let s = Settings::load_from(&p).unwrap();
+        let s = load(&p);
         assert!(!s.check_updates);
         assert!(s.scan_network_mounts);
         assert!(s.use_https);
     }
 
     #[test]
+    fn file_values_are_used() {
+        let (_d, p) = write(r#"{"base_dir":"~/src","parallel":0}"#);
+        let s = load(&p);
+        assert_eq!(s.base_dir, home_dir().join("src"));
+        assert_eq!(s.parallel, 1, "parallel is clamped to at least 1");
+    }
+
+    #[test]
+    fn env_overrides_file() {
+        let (_d, p) = write(r#"{"base_dir":"/from/file","parallel":2,"protocol":"https"}"#);
+        let vars = [
+            ("REPOS_MANAGER_BASE_DIR", "/from/env"),
+            ("REPOS_MANAGER_PARALLEL", "9"),
+            ("REPOS_MANAGER_PROTOCOL", "ssh"),
+            ("REPOS_MANAGER_NO_UPDATE_CHECK", "1"),
+        ];
+        let s = Settings::load_from(&p, env(&vars)).unwrap();
+        assert_eq!(s.base_dir, PathBuf::from("/from/env"));
+        assert_eq!(s.parallel, 9);
+        assert!(!s.use_https);
+        assert!(!s.check_updates);
+    }
+
+    #[test]
+    fn empty_or_invalid_env_falls_back_to_file() {
+        let (_d, p) = write(r#"{"base_dir":"/from/file","parallel":3}"#);
+        let vars = [
+            ("REPOS_MANAGER_BASE_DIR", ""),
+            ("REPOS_MANAGER_PARALLEL", "many"),
+            ("REPOS_MANAGER_NO_UPDATE_CHECK", "0"),
+        ];
+        let s = Settings::load_from(&p, env(&vars)).unwrap();
+        assert_eq!(s.base_dir, PathBuf::from("/from/file"));
+        assert_eq!(s.parallel, 3);
+        assert!(s.check_updates);
+    }
+
+    #[test]
     fn tilde_expansion() {
         assert_eq!(expand_tilde("~/Documents"), home_dir().join("Documents"));
+        assert_eq!(expand_tilde(r"~\Documents"), home_dir().join("Documents"));
         assert_eq!(expand_tilde("/abs"), PathBuf::from("/abs"));
     }
 
     #[test]
     fn invalid_json_is_an_error() {
         let (_d, p) = write("{not json");
-        assert!(Settings::load_from(&p).is_err());
+        assert!(Settings::load_from(&p, |_| None).is_err());
+    }
+
+    #[test]
+    fn directory_config_is_treated_as_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(Settings::load_from(tmp.path(), |_| None).is_ok());
+    }
+
+    #[test]
+    fn base_dir_validation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut s = Settings::for_tests(Path::new(""));
+        assert!(s.validate_base_dir().is_err());
+        s.base_dir = PathBuf::from("relative");
+        let err = s.validate_base_dir().unwrap_err().to_string();
+        assert!(err.contains("absolute"), "{err}");
+        s.base_dir = tmp.path().join("a").join("b");
+        s.validate_base_dir().unwrap();
+        assert!(s.base_dir.is_dir());
+        let file = tmp.path().join("file");
+        fs::write(&file, "x").unwrap();
+        s.base_dir = file.join("sub");
+        assert!(s.validate_base_dir().is_err());
+    }
+
+    #[test]
+    fn init_writes_default_config_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nested").join("config.json");
+        init_config_at(&path).unwrap();
+        let s = load(&path);
+        assert_eq!(s.hosts(Provider::Bitbucket), ["bitbucket.org"]);
+        assert!(!s.use_https);
+
+        fs::write(&path, "{}").unwrap();
+        init_config_at(&path).unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{}",
+            "existing file kept"
+        );
     }
 }

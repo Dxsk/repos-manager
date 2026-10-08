@@ -87,12 +87,17 @@ pub fn list_repos() -> Result<Vec<Repo>, ListError> {
     };
     let creds = creds.trim();
     let user = creds.split(':').next().unwrap_or_default();
-    let auth = format!("Basic {}", STANDARD.encode(creds));
+    Ok(list_from_api(
+        &format!("https://api.bitbucket.org/2.0/repositories/{user}?pagelen=100"),
+        creds,
+    )?)
+}
 
+/// Follow the `next` links of the paginated API from `first_page`.
+fn list_from_api(first_page: &str, creds: &str) -> Result<Vec<Repo>> {
+    let auth = format!("Basic {}", STANDARD.encode(creds));
     let agent = http::agent(Duration::from_secs(30));
-    let mut next = Some(format!(
-        "https://api.bitbucket.org/2.0/repositories/{user}?pagelen=100"
-    ));
+    let mut next = Some(first_page.to_string());
     let mut items = Vec::new();
     while let Some(url) = next {
         let page: Value = agent
@@ -101,8 +106,7 @@ pub fn list_repos() -> Result<Vec<Repo>, ListError> {
             .call()
             .context("Bitbucket API")?
             .body_mut()
-            .read_json()
-            .map_err(anyhow::Error::from)?;
+            .read_json()?;
         if let Some(values) = page.get("values").and_then(Value::as_array) {
             items.extend(values.iter().cloned());
         }
@@ -114,6 +118,8 @@ pub fn list_repos() -> Result<Vec<Repo>, ListError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_server::{Response, Server};
+    use std::sync::{Arc, OnceLock};
 
     #[test]
     fn parses_clone_links() {
@@ -126,5 +132,48 @@ mod tests {
         let r = &parse(&items)[0];
         assert_eq!(r.ssh_url, "git@bitbucket.org:team/repo.git");
         assert_eq!(r.https_url, "https://bitbucket.org/team/repo.git");
+    }
+
+    #[test]
+    fn missing_links_and_names() {
+        let items: Vec<Value> =
+            serde_json::from_str(r#"[{"full_name":"t/r"},{"links":{}}]"#).unwrap();
+        let repos = parse(&items);
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].ssh_url, "");
+    }
+
+    #[test]
+    fn api_follows_next_links() {
+        let base = Arc::new(OnceLock::<String>::new());
+        let server = Server::start({
+            let base = Arc::clone(&base);
+            move |target| {
+                if target.contains("page=2") {
+                    Response::json(r#"{"values":[{"full_name":"t/b"}]}"#)
+                } else {
+                    let next = format!("{}/repositories/t?page=2", base.get().unwrap());
+                    Response::json(&format!(
+                        r#"{{"values":[{{"full_name":"t/a"}}],"next":"{next}"}}"#
+                    ))
+                }
+            }
+        });
+        base.set(server.url.clone()).unwrap();
+
+        let first = format!("{}/repositories/t?pagelen=100", server.url);
+        let repos = list_from_api(&first, "user:pass").unwrap();
+        let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
+        assert_eq!(names, ["t/a", "t/b"]);
+        let auth = format!("Basic {}", STANDARD.encode("user:pass"));
+        let reqs = server.requests();
+        assert_eq!(reqs.len(), 2);
+        assert!(reqs.iter().all(|r| r.contains(&auth)));
+    }
+
+    #[test]
+    fn api_error_is_reported() {
+        let server = Server::start(|_| Response::not_found());
+        assert!(list_from_api(&server.url, "u:p").is_err());
     }
 }

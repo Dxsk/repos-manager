@@ -120,16 +120,14 @@ impl Provider {
     }
 
     pub fn list_repos(self, host: &str) -> Result<Vec<Repo>, ListError> {
-        let mut repos = match self {
+        let repos = match self {
             Provider::Github => github::list_repos(host),
             Provider::Gitlab => gitlab::list_repos(host),
             Provider::Forgejo => forgejo::list_repos(host),
             Provider::Bitbucket => bitbucket::list_repos(),
             Provider::Radicle => radicle::list_repos(),
         }?;
-        repos.sort_by(|a, b| a.full_name.cmp(&b.full_name));
-        repos.dedup_by(|a, b| a.full_name == b.full_name);
-        Ok(repos)
+        Ok(sorted_unique(repos))
     }
 }
 
@@ -137,6 +135,13 @@ impl fmt::Display for Provider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
     }
+}
+
+/// Org listings can overlap with the user's own repos.
+fn sorted_unique(mut repos: Vec<Repo>) -> Vec<Repo> {
+    repos.sort_by(|a, b| a.full_name.cmp(&b.full_name));
+    repos.dedup_by(|a, b| a.full_name == b.full_name);
+    repos
 }
 
 pub fn has_cli(name: &str) -> bool {
@@ -240,5 +245,76 @@ mod tests {
         };
         assert_eq!(r.clone_url(false), "ssh");
         assert_eq!(r.clone_url(true), "https");
+    }
+
+    #[test]
+    fn non_array_pages_and_invalid_json() {
+        let v = parse_paginated("{\"a\":1}[{\"a\":2}]").unwrap();
+        assert_eq!(v.len(), 2);
+        assert!(parse_paginated("").unwrap().is_empty());
+        assert!(parse_paginated("[{\"a\":1}][oops").is_err());
+    }
+
+    #[test]
+    fn provider_metadata() {
+        let clis: Vec<_> = Provider::ALL.iter().map(|p| p.cli()).collect();
+        assert_eq!(clis, ["gh", "glab", "tea", "bitbucket", "rad"]);
+        assert_eq!(Provider::Gitlab.default_host(), "gitlab.com");
+        assert_eq!(Provider::Bitbucket.default_host(), "bitbucket.org");
+        assert_eq!(Provider::Radicle.to_string(), "radicle");
+        assert_eq!(Provider::from_name("sourceforge"), None);
+        for p in Provider::ALL {
+            // Must not panic whatever is installed.
+            let _ = p.available();
+        }
+    }
+
+    #[test]
+    fn listing_is_sorted_and_deduplicated() {
+        let repo = |n: &str, url: &str| Repo {
+            full_name: n.into(),
+            ssh_url: url.into(),
+            https_url: url.into(),
+        };
+        let out = sorted_unique(vec![repo("b/x", "1"), repo("a/y", "2"), repo("b/x", "3")]);
+        let names: Vec<_> = out.iter().map(|r| r.full_name.as_str()).collect();
+        assert_eq!(names, ["a/y", "b/x"]);
+    }
+
+    #[test]
+    fn cli_detection() {
+        assert!(has_cli("git"));
+        assert!(require_cli("git").is_ok());
+        assert!(!has_cli("repos-manager-no-such-cli"));
+        let Err(ListError::Fail(e)) = require_cli("repos-manager-no-such-cli") else {
+            panic!("expected a failure");
+        };
+        assert!(e.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn capture_returns_stdout_or_stderr() {
+        let out = run_capture(Command::new("git").arg("--version")).unwrap();
+        assert!(out.starts_with("git version"));
+        let err = run_capture(Command::new("git").arg("no-such-subcommand")).unwrap_err();
+        assert!(err.to_string().contains("failed"), "{err}");
+        assert!(run_capture(&mut Command::new("repos-manager-no-such-cli")).is_err());
+    }
+
+    #[test]
+    fn interactive_reports_failures() {
+        run_interactive("git", &["--version"]).unwrap();
+        let err = run_interactive("git", &["no-such-subcommand"]).unwrap_err();
+        assert_eq!(err.to_string(), "git no-such-subcommand failed");
+        let err = run_interactive("repos-manager-no-such-cli", &[]).unwrap_err();
+        assert!(err.to_string().contains("is it installed"), "{err}");
+    }
+
+    #[test]
+    fn list_error_from_anyhow() {
+        assert!(matches!(
+            ListError::from(anyhow!("boom")),
+            ListError::Fail(_)
+        ));
     }
 }

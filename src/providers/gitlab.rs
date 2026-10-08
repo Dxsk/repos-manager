@@ -40,4 +40,10 @@ mod tests {
         assert_eq!(r.full_name, "group/sub/project");
         assert_eq!(r.https_url, "https://gitlab.com/group/sub/project.git");
     }
+
+    #[test]
+    fn drops_entries_without_path() {
+        let items: Vec<Value> = serde_json::from_str(r#"[{"ssh_url_to_repo":"x"}]"#).unwrap();
+        assert!(parse(&items).is_empty());
+    }
 }

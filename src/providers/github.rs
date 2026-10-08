@@ -50,4 +50,13 @@ mod tests {
         assert_eq!(r.ssh_url, "git@github.com:Dxsk/repo.git");
         assert_eq!(r.https_url, "https://github.com/Dxsk/repo.git");
     }
+
+    #[test]
+    fn drops_entries_without_name() {
+        let items: Vec<Value> =
+            serde_json::from_str(r#"[{"ssh_url":"x"},{"full_name":"o/r","html_url":""}]"#).unwrap();
+        let repos = parse(&items);
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].https_url, "");
+    }
 }

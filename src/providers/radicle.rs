@@ -32,3 +32,20 @@ pub fn list_repos() -> Result<Vec<Repo>, ListError> {
     let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
     Ok(parse(&items))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_rad_ls() {
+        let items: Vec<Value> = serde_json::from_str(
+            r#"[{"id":"z3abc","namespace":"did:key:z6Mk","name":"heartwood"}]"#,
+        )
+        .unwrap();
+        let r = &parse(&items)[0];
+        assert_eq!(r.full_name, "did:key:z6Mk/heartwood");
+        assert_eq!(r.ssh_url, "rad://z3abc");
+        assert_eq!(r.clone_url(true), "rad://z3abc");
+    }
+}

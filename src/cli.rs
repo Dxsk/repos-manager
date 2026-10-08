@@ -220,4 +220,30 @@ mod tests {
         assert!(parse(&["login", "gitea"]).is_ok());
         assert!(parse(&["login", "sourceforge"]).is_err());
     }
+
+    #[test]
+    fn provider_arg_maps_to_provider() {
+        let all = [
+            ProviderArg::Github,
+            ProviderArg::Gitlab,
+            ProviderArg::Forgejo,
+            ProviderArg::Bitbucket,
+            ProviderArg::Radicle,
+        ];
+        let mapped: Vec<Provider> = all.into_iter().map(Into::into).collect();
+        assert_eq!(mapped, Provider::ALL);
+    }
+
+    #[test]
+    fn status_and_update_flags() {
+        let cli = parse(&["status", "-v", "--base-dir", "/b"]).unwrap();
+        let Some(Command::Status(s)) = cli.command else {
+            panic!("wrong parse");
+        };
+        assert!(s.common.verbose && !s.common.quiet);
+        assert!(matches!(
+            parse(&["update", "-y"]).unwrap().command,
+            Some(Command::Update { yes: true })
+        ));
+    }
 }
