@@ -4,6 +4,8 @@
 
 Rewritten in Rust. repos-manager now ships as a single native binary for Linux (x86_64 and aarch64, static musl), macOS (x86_64 and aarch64) and Windows (x86_64 and ARM64). The commands, flags, config file (`~/.config/repos-manager/config.json`) and provider CLIs (`gh`, `glab`, `tea`, `bitbucket`, `rad`) are unchanged.
 
+This is a breaking release: 0.x installs must be replaced (0.x `repos-manager update` cannot upgrade to it), the shell `sourceme` files are gone and the `install`/`update` flows changed. See "Upgrading from 0.x" in the readme and the Changed and Removed sections below.
+
 ### Added
 
 - Native Windows support: config at `%USERPROFILE%\.config\repos-manager\config.json`, tea config read from `%LOCALAPPDATA%\tea\config.yml`, and hosts with a port (`host:3000`) stored as `host_3000`

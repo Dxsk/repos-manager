@@ -399,6 +399,26 @@ repos-manager update -y   # no prompt
 
 `update` downloads the GitHub release asset for your platform (the `msvc` zip on Windows), verifies it against the release's `SHA256SUMS` and replaces the binary in place. Re-running the install script works too.
 
+### Upgrading from 0.x
+
+1.0 is a breaking release: the Bash tool became a native binary, and the 0.x `repos-manager update` cannot install it. Your config file, `.repos-filter`, `.repos-ignore` and synced repositories are kept as they are.
+
+```sh
+# 1. Remove the 0.x Bash install (make install put it here)
+rm -f ~/.local/bin/repos-manager
+rm -rf ~/.local/lib/repos-manager
+
+# 2. Install 1.x
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
+
+# 3. Shell integration: drop the old `source .../sourceme*` lines from your
+#    shell rc file, delete the generated files, and use completions instead
+find ~/Documents -maxdepth 2 -name 'sourceme*' -delete   # adjust to your base_dir
+# then set up completions with: repos-manager completions <shell> (see Shell completions)
+```
+
+Nix users: the flake is gone, use one of the install methods above. If you set `REPOS_MANAGER_VERSION_URL`, it is now `REPOS_MANAGER_UPDATE_URL` and points to a GitHub Releases API URL.
+
 ## Development
 
 <details>
