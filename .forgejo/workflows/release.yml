@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Builds Linux (static musl, via zig) and Windows (mingw-w64) from a single
+# Linux container. macOS binaries cannot be built here (no Apple SDK on the
+# forge runner): they are only published on the GitHub release, which is
+# the one the built-in updater queries.
+jobs:
+  release:
+    name: Build and publish
+    runs-on: docker
+    container:
+      image: rust:1-bookworm
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+      TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+    steps:
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git config --global http.extraHeader "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 -w0)"
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q FETCH_HEAD
+
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends gcc-mingw-w64-x86-64 nsis jq zip xz-utils >/dev/null
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu
+          bash scripts/install-zigbuild.sh >> "$GITHUB_PATH"
+
+      - name: Build Linux x86_64
+        run: |
+          cargo zigbuild --release --locked --target x86_64-unknown-linux-musl
+          bash scripts/package.sh x86_64-unknown-linux-musl repos-manager-linux-x86_64.tar.gz
+
+      - name: Build Linux aarch64
+        run: |
+          cargo zigbuild --release --locked --target aarch64-unknown-linux-musl
+          bash scripts/package.sh aarch64-unknown-linux-musl repos-manager-linux-aarch64.tar.gz
+
+      - name: Build Windows x86_64
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+        run: |
+          cargo build --release --locked --target x86_64-pc-windows-gnu
+          bash scripts/package.sh x86_64-pc-windows-gnu repos-manager-windows-x86_64.zip
+
+      - name: Build Windows installer
+        run: |
+          version="${TAG#v}"
+          makensis -V2 \
+            -DVERSION="$version" \
+            -DVIVERSION="${version%%[-+]*}.0" \
+            -DBINARY="$PWD/target/x86_64-pc-windows-gnu/release/repos-manager.exe" \
+            -DOUTFILE="$PWD/dist/repos-manager-windows-x86_64-setup.exe" \
+            install/windows/repos-manager.nsi
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- *.tar.gz *.zip *.exe > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release notes
+        run: |
+          version="${TAG#v}"
+          awk -v h="## v${version}" '$0 == h { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "Release ${TAG}" > notes.md
+          fi
+          cat notes.md
+
+      - name: Publish
+        run: |
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: token ${TOKEN}")
+          prerelease=false
+          [[ "$TAG" == *-* ]] && prerelease=true
+
+          id=$(curl -fsS "${auth[@]}" "$api/releases/tags/$TAG" | jq -r .id) || id=""
+          if [[ -z "$id" ]]; then
+            id=$(jq -n --arg tag "$TAG" --rawfile body notes.md --argjson pre "$prerelease" \
+                '{tag_name: $tag, name: $tag, body: $body, prerelease: $pre}' \
+              | curl -fsS "${auth[@]}" -H 'Content-Type: application/json' -d @- "$api/releases" \
+              | jq -r .id)
+          fi
+          echo "Release id: $id"
+
+          existing=$(curl -fsS "${auth[@]}" "$api/releases/$id/assets")
+          for f in dist/*; do
+            name=$(basename "$f")
+            # Replace assets on re-runs instead of failing on duplicates.
+            for old in $(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<< "$existing"); do
+              curl -fsS -X DELETE "${auth[@]}" "$api/releases/$id/assets/$old"
+            done
+            curl -fsS "${auth[@]}" -F "attachment=@$f" "$api/releases/$id/assets?name=$name" > /dev/null
+            echo "Uploaded $name"
+          done

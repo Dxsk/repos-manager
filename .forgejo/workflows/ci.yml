@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Checkout is done with plain git: the rust image has no Node.js, which
+# JavaScript actions such as actions/checkout need.
+jobs:
+  rust:
+    name: Rust
+    runs-on: docker
+    container:
+      image: rust:1-bookworm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git config --global http.extraHeader "Authorization: Basic $(printf 'x:%s' '${{ github.token }}' | base64 -w0)"
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q FETCH_HEAD
+
+      - name: Configure git
+        run: |
+          git config --global user.email "test@test.com"
+          git config --global user.name "Test"
+          git config --global init.defaultBranch main
+
+      - name: Toolchain
+        run: |
+          rustup component add rustfmt clippy
+          cargo --version
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: ShellCheck
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends shellcheck >/dev/null
+          shellcheck install/install.sh scripts/*.sh
