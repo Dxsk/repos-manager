@@ -37,7 +37,7 @@ This is a breaking release: 0.x installs must be replaced (0.x `repos-manager up
 
 ### Removed
 
-- The Bash sources
+- The Bash sources. A transitional `repos-manager.sh` stub stays at the repo root for a while: it only carries `VERSION`, so 0.x installs show the 1.0 update banner, and prints the upgrade steps when a git-clone install runs it
 - The generated `sourceme`, `sourceme.zsh` and `sourceme.fish` files in host directories and the repo-root `sourceme.*` scripts, replaced by `repos-manager completions`. Leftover `sourceme*` files in existing host directories can be deleted
 - The Nix flake
 - `REPOS_MANAGER_LIB`

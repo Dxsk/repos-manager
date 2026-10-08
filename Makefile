@@ -6,6 +6,7 @@ ZSH_COMP  := $(HOME)/.local/share/zsh/site-functions/_repos-manager
 FISH_COMP := $(HOME)/.config/fish/completions/repos-manager.fish
 
 build:
+	@command -v cargo >/dev/null || { echo "cargo not found: install Rust (https://rustup.rs) or use installers/install.sh"; exit 1; }
 	cargo build --release --locked
 
 test:
@@ -47,9 +48,10 @@ release:
 	@grep -q '^## Unreleased' CHANGELOG.md || { echo "CHANGELOG.md has no '## Unreleased' section"; exit 1; }
 	sed -i.bak 's/^version = ".*"/version = "$(V)"/' Cargo.toml && rm Cargo.toml.bak
 	sed -i.bak 's/"version": ".*"/"version": "$(V)"/' site/src/_data/site.json && rm site/src/_data/site.json.bak
+	sed -i.bak 's/^VERSION=".*"/VERSION="$(V)"/' repos-manager.sh && rm repos-manager.sh.bak
 	sed -i.bak "s/^## Unreleased/## $(V) ($$(date +%F))/" CHANGELOG.md && rm CHANGELOG.md.bak
 	cargo update --workspace --offline
-	git commit -m "chore: release v$(V)" Cargo.toml Cargo.lock CHANGELOG.md site/src/_data/site.json
+	git commit -m "chore: release v$(V)" Cargo.toml Cargo.lock CHANGELOG.md site/src/_data/site.json repos-manager.sh
 	git tag -a "v$(V)" -m "v$(V)"
 	@echo "Now run: git push --follow-tags"
 
