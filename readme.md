@@ -496,7 +496,7 @@ Both releases include `SHA256SUMS` and `SHA256SUMS-binaries`. The install script
    make release V=1.1.0
    ```
 
-   The working tree must be clean. It sets the version in `Cargo.toml`, `Cargo.lock` and the documentation site, turns the `Unreleased` heading into `## 1.1.0 (date)`, then commits `chore: release v1.1.0` and creates the annotated `v1.1.0` tag. Nothing is pushed yet, so you can still check the result.
+   The working tree must be clean. It sets the version in `Cargo.toml`, `Cargo.lock` and the documentation site, turns the `Unreleased` heading into `## 1.1.0 (date)`, then commits `chore: release v1.1.0` and creates the signed `v1.1.0` tag (`git tag -s`, so a GPG signing key is needed). Nothing is pushed yet, so you can still check the result.
 3. Push to the forge:
 
    ```sh

@@ -80,7 +80,7 @@ All checks must pass before merging.
 Releases are cut by the maintainer, by hand, from `main` on the upstream forge. There is no automatic version bump.
 
 1. Describe your changes under `## Unreleased` in `CHANGELOG.md`, grouped as `### Added`, `### Changed`, `### Removed` and `### Fixed`. Contributors do this in their pull request.
-2. The maintainer runs `make release V=x.y.z` on a clean tree. It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the annotated `vx.y.z` tag. Nothing is pushed yet.
+2. The maintainer runs `make release V=x.y.z` on a clean tree. It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the signed `vx.y.z` tag (`git tag -s`, so a GPG signing key is needed). Nothing is pushed yet.
 3. `git push --follow-tags` sends the commit and tag to the forge.
 
 The tag starts the Forgejo release (Linux x86_64 and aarch64 musl, `x86_64-pc-windows-gnu` zip and the x86_64 installer). The forge push mirror then forwards `main` and the tag to GitHub, which builds the full release: Linux, macOS, Windows x86_64 and ARM64 (`msvc`) and both installers. Both releases ship `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub, so its release must carry every asset.

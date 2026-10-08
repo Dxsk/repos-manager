@@ -52,7 +52,7 @@ release:
 	sed -i.bak "s/^## Unreleased/## $(V) ($$(date +%F))/" CHANGELOG.md && rm CHANGELOG.md.bak
 	cargo update --workspace --offline
 	git commit -m "chore: release v$(V)" Cargo.toml Cargo.lock CHANGELOG.md site/src/_data/site.json repos-manager.sh
-	git tag -a "v$(V)" -m "v$(V)"
+	git tag -s "v$(V)" -m "v$(V)"
 	@echo "Now run: git push --follow-tags"
 
 .PHONY: build test coverage lint install uninstall completions uninstall-completions clean release
