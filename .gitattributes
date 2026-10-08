@@ -1,3 +1,7 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.nsi text eol=crlf
+
 # Exclude from release archives (git archive / GitHub release tarballs)
 site/           export-ignore
 tests/          export-ignore
@@ -8,3 +12,4 @@ SECURITY.md     export-ignore
 .repos-filter   export-ignore
 .repos-ignore   export-ignore
 .gitattributes  export-ignore
+.forgejo/       export-ignore
