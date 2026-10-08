@@ -8,7 +8,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
   <h1>repos-manager</h1>
   <p class="tagline">One CLI to sync them all. Clone, update, and manage your Git repositories across every provider.</p>
 
-  <div class="install-cmd" data-copy="git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install">
+  <div class="install-cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh">
     <span class="prompt">$_</span> <span id="typing-target"></span><span class="cursor"></span>
   </div>
 
@@ -66,7 +66,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
   // Typing animation for install command
   var typingTarget = document.getElementById('typing-target');
   if (typingTarget) {
-    var cmd = 'git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install';
+    var cmd = 'curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh';
     var i = 0;
     function typeChar() {
       if (i < cmd.length) {
@@ -197,7 +197,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-          parallel.sh
+          parallel.rs
         </div>
         <div class="feature-body">
           <h3>Parallel sync</h3>
@@ -207,7 +207,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
-          status.sh
+          status.rs
         </div>
         <div class="feature-body">
           <h3>Status overview</h3>
@@ -217,7 +217,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
-          namespace.sh
+          namespace.rs
         </div>
         <div class="feature-body">
           <h3>Namespace mirroring</h3>
@@ -227,7 +227,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
-          filter.sh
+          filter.rs
         </div>
         <div class="feature-body">
           <h3>Filter and ignore</h3>
@@ -237,7 +237,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-          protocol.sh
+          protocol.rs
         </div>
         <div class="feature-body">
           <h3>SSH and HTTPS</h3>
@@ -247,21 +247,31 @@ description: A single CLI tool to clone and sync all your Git repositories from 
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
-          update.sh
+          update.rs
         </div>
         <div class="feature-body">
           <h3>Self-update</h3>
-          <p>Built-in update command plus a passive background banner that tells you when a new version ships, with a 24h cache and zero overhead on the command in progress.</p>
+          <p>Built-in update command that downloads the new release and verifies its checksum, plus a passive background banner that tells you when a new version ships, with zero overhead on the command in progress.</p>
         </div>
       </div>
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
-          fast-scan.sh
+          fast-scan.rs
         </div>
         <div class="feature-body">
           <h3>Fast, safe status scan</h3>
           <p>Status walks hundreds of repos in under a second. Vendored trees (<code>node_modules</code>, <code>.venv</code>, <code>target</code>) and network mounts (cloud drives, NFS, sshfs) are pruned by default, with a live progress indicator and an opt-in to scan mounts anyway.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+          main.rs
+        </div>
+        <div class="feature-body">
+          <h3>Single native binary</h3>
+          <p>One static binary for Linux, macOS and Windows. Only <code>git</code> and your providers' CLIs are needed at runtime, with shell completions built in.</p>
         </div>
       </div>
     </div>
@@ -273,7 +283,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
     <h2 class="section-title">Quick start</h2>
 
     <div class="quickstart-grid animate-stagger">
-      <div class="qs-terminal" data-copy="git clone https://github.com/Dxsk/repos-manager.git && cd repos-manager && make install">
+      <div class="qs-terminal" data-copy="curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh">
         <div class="qs-titlebar">
           <span class="dot" style="background:var(--accent-red)"></span>
           <span class="dot" style="background:var(--accent-orange)"></span>
@@ -281,9 +291,9 @@ description: A single CLI tool to clone and sync all your Git repositories from 
           <span class="qs-title">step-1 ~ install</span>
         </div>
         <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">git clone</span> https://github.com/Dxsk/repos-manager.git</div>
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">cd</span> repos-manager <span class="qs-op">&&</span> <span class="qs-cmd">make</span> install</div>
+          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">curl</span> -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh <span class="qs-op">|</span> <span class="qs-cmd">sh</span></div>
           <div class="qs-output">Installed to ~/.local/bin/repos-manager</div>
+          <div class="qs-output" style="color:var(--text-secondary)">Windows: irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.ps1 | iex</div>
         </div>
       </div>
 

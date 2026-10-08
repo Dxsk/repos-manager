@@ -6,74 +6,103 @@ order: 1
 
 ## Prerequisites
 
-- `git` and `jq` (required)
-- `bash` 4+ (default on all modern Linux distros and macOS)
-- `curl` and `yq`, required only if you use the Forgejo / Gitea provider (see the Providers page)
-- At least one provider CLI: `gh`, `glab`, `tea`, `bitbucket`, or `rad`
+repos-manager is a single native binary for Linux (x86_64, aarch64), macOS (x86_64, aarch64) and Windows (x86_64). At runtime it only needs:
 
-### Install dependencies by distro
+- `git`
+- The CLI of each provider you want to sync: `gh`, `glab`, `tea`, `bitbucket` or `rad` (see the Providers page)
 
-| Distro | Command |
-|--------|---------|
-| Arch / CachyOS / Manjaro | `sudo pacman -S git jq github-cli` |
-| Debian / Ubuntu / Mint | `sudo apt install git jq gh` |
-| Fedora / RHEL / CentOS | `sudo dnf install git jq gh` |
-| openSUSE | `sudo zypper install git jq gh` |
-| Alpine | `apk add git jq github-cli` |
-| Void Linux | `sudo xbps-install git jq github-cli` |
-| Gentoo | `emerge dev-vcs/git app-misc/jq dev-util/github-cli` |
-| macOS (Homebrew) | `brew install git jq gh` |
+### Install git and the GitHub CLI
+
+| Platform | Command |
+|----------|---------|
+| Arch / CachyOS / Manjaro | `sudo pacman -S git github-cli` |
+| Debian / Ubuntu / Mint | `sudo apt install git gh` |
+| Fedora / RHEL / CentOS | `sudo dnf install git gh` |
+| openSUSE | `sudo zypper install git gh` |
+| Alpine | `apk add git github-cli` |
+| Void Linux | `sudo xbps-install git github-cli` |
+| Gentoo | `emerge dev-vcs/git dev-util/github-cli` |
+| macOS (Homebrew) | `brew install git gh` |
+| Windows (winget) | `winget install Git.Git GitHub.cli` |
 
 ## Installation
 
-### Make (recommended)
+Releases are published on [GitHub Releases](https://github.com/Dxsk/repos-manager/releases) and on the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases). Every release ships `SHA256SUMS`, which all install methods below verify.
 
-Works on any Linux distro or macOS with `git`, `make`, and `bash`:
+### Linux and macOS
 
 ```bash
-git clone git@github.com:Dxsk/repos-manager.git
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh
+```
+
+The script picks the archive for your OS and CPU, checks it against `SHA256SUMS` and installs the binary into `~/.local/bin`. Options go after `sh -s --`:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--version vX.Y.Z` | latest | Release to install |
+| `--prefix DIR` | `~/.local` | Installs into `DIR/bin` |
+| `--source github\|forge` | `github` | Where to download from |
+| `--uninstall` | | Remove the installed binary |
+
+```bash
+# Pin a version, system-wide
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sudo sh -s -- --version v1.0.0 --prefix /usr/local
+
+# Use the forge as source (macOS builds are only published on GitHub)
+curl -fsSL https://forge.infrasouveraine.fr/dxsk/repos-manager/raw/branch/main/install/install.sh | sh -s -- --source forge
+```
+
+### Windows
+
+With PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.ps1 | iex
+```
+
+It installs `repos-manager.exe` into `%LOCALAPPDATA%\Programs\repos-manager` and adds that folder to your user `PATH`. Open a new terminal afterwards. To pin a version, set `$env:REPOS_MANAGER_VERSION = "v1.0.0"` first. A saved copy of the script also accepts `-Version`, `-Source forge` and `-Uninstall`.
+
+Prefer an installer? Download `repos-manager-windows-x86_64-setup.exe` from the [latest release](https://github.com/Dxsk/repos-manager/releases/latest). It installs for the current user without admin rights, adds the folder to `PATH` and registers an uninstaller in *Apps and features*. Silent install: `repos-manager-windows-x86_64-setup.exe /S`.
+
+### From source
+
+Requires a recent stable [Rust toolchain](https://rustup.rs) and `make`:
+
+```bash
+git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
 cd repos-manager
-make install
+make -C install install        # cargo build --release, then copy to ~/.local/bin
+make -C install completions    # bash, zsh and fish completions
 ```
 
-This installs to `~/.local/bin/repos-manager`. Change the prefix with:
+Change the prefix with `make -C install install PREFIX=/usr/local`. Remove everything with `make -C install uninstall`.
+
+Or install straight from the repository with cargo:
 
 ```bash
-make install PREFIX=/usr/local
+cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
 ```
 
-Run lint and tests:
+### Shell completions
 
 ```bash
-make check   # lint + tests
-make lint    # shellcheck + zsh/fish syntax
-make test    # bats tests
+repos-manager completions bash > ~/.local/share/bash-completion/completions/repos-manager
+repos-manager completions zsh  > ~/.local/share/zsh/site-functions/_repos-manager
+repos-manager completions fish > ~/.config/fish/completions/repos-manager.fish
 ```
 
-### Manual
-
-Source the file for your shell:
-
-```bash
-# bash
-source sourceme.bash
-
-# zsh
-source sourceme.zsh
-
-# fish
-source sourceme.fish
+```powershell
+repos-manager completions powershell | Out-String | Invoke-Expression
 ```
 
-### Nix
-
-```bash
-nix run github:Dxsk/repos-manager -- github sync
-```
+`elvish` is also supported.
 
 ## First sync
 
 ```bash
+# Optional: write the default config file
+repos-manager init
+
 # Authenticate with your providers
 repos-manager login
 

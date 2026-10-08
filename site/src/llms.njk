@@ -7,19 +7,22 @@ eleventyExcludeFromCollections: true
 > A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.
 
 ## What it does
-repos-manager syncs Git repositories from multiple providers into a local directory structure that mirrors the remote namespace: provider/owner/repo.
+repos-manager syncs Git repositories from multiple providers into a local directory structure that mirrors the remote namespace: host/owner/repo. It is a single native binary (written in Rust) for Linux, macOS and Windows.
 
 ## Key features
 - Multi-provider: GitHub, GitLab, Forgejo/Gitea, Bitbucket, Radicle
 - Parallel sync with configurable job count
 - Status overview: dirty, ahead, behind, diverged repos
 - Filter and ignore patterns
-- Self-update mechanism
+- Self-update with checksum verification
 - Config file support
-- Auto-generated shell sourceme files
+- Shell completions (bash, zsh, fish, PowerShell, elvish)
 
 ## Install
-git clone git@github.com:Dxsk/repos-manager.git && cd repos-manager && make install
+Linux / macOS: curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh
+Windows (PowerShell): irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.ps1 | iex
+From source: cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+Runtime requirements: git, plus the CLI of each provider (gh, glab, tea, bitbucket, rad)
 
 ## Usage
 repos-manager login
@@ -29,4 +32,6 @@ repos-manager status
 ## Links
 - Website: {{ site.url }}
 - Repository: {{ site.repo }}
+- GitHub mirror and releases: {{ site.mirror }}
+- Issues: {{ site.repo }}/issues
 - License: MIT
