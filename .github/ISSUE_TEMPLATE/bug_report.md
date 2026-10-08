@@ -20,8 +20,8 @@ What you expected to happen.
 What actually happened. Include error output if any.
 
 **Environment**
-- OS/Distro:
-- Bash version (`bash --version`):
-- repos-manager version (`repos-manager --version`):
+- OS/Distro and architecture:
+- repos-manager version (`repos-manager version`):
+- git version (`git --version`):
 - Provider(s) affected:
-- Install method (make / manual / nix):
+- Install method (install.sh / install.ps1 / setup.exe / make / cargo):

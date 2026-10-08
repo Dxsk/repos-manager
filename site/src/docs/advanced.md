@@ -37,7 +37,19 @@ repos-manager update        # asks for confirmation
 repos-manager update --yes  # no prompt, for scripts
 ```
 
-It queries the GitHub Releases API, downloads the archive for the running platform (`repos-manager-<os>-<arch>.tar.gz`, or `.zip` on Windows), verifies it against the release `SHA256SUMS` and replaces the binary in place. A checksum mismatch aborts the update without touching the installed binary.
+It queries the GitHub Releases API, downloads the asset built for the running platform, verifies it against the release `SHA256SUMS` and replaces the binary in place. A checksum mismatch aborts the update without touching the installed binary.
+
+Release assets are named after the Rust target triple:
+
+| Platform | Asset |
+|----------|-------|
+| Linux x86_64 / aarch64 (static musl) | `repos-manager-x86_64-unknown-linux-musl.tar.gz`, `repos-manager-aarch64-unknown-linux-musl.tar.gz` |
+| macOS Intel / Apple Silicon | `repos-manager-x86_64-apple-darwin.tar.gz`, `repos-manager-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 / ARM64 | `repos-manager-x86_64-pc-windows-msvc.zip`, `repos-manager-aarch64-pc-windows-msvc.zip` |
+| Windows installers | `repos-manager-x86_64-setup.exe`, `repos-manager-aarch64-setup.exe` |
+| Checksums | `SHA256SUMS` (archives and installers), `SHA256SUMS-binaries` (the binary inside each archive) |
+
+The GitHub release carries all of them, and `update` always downloads from it (the `msvc` zip on Windows). The forge release only has the Linux musl archives, `repos-manager-x86_64-pc-windows-gnu.zip` and `repos-manager-x86_64-setup.exe`.
 
 If repos-manager was installed system-wide (for example in `/usr/local/bin`), run `update` with the permissions needed to write there, or re-run the install script.
 
@@ -88,5 +100,5 @@ Self-updates and every install script verify release archives against `SHA256SUM
 If you use [Dxsk/dotenv](https://github.com/Dxsk/dotenv) (GNU Stow-based dotfiles), install repos-manager from your bootstrap script with the install script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
 ```

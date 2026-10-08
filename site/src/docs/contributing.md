@@ -10,7 +10,7 @@ The primary repository is on the Forgejo forge: [forge.infrasouveraine.fr/dxsk/r
 
 ## Setup
 
-You need a recent stable [Rust toolchain](https://rustup.rs) (with `rustfmt` and `clippy`) and `git` 2.28 or newer.
+You need a recent stable [Rust toolchain](https://rustup.rs) (with `rustfmt` and `clippy`), `make` and `git` 2.28 or newer.
 
 ```bash
 git clone ssh://git@git.infrasouveraine.fr/dxsk/repos-manager.git
@@ -19,7 +19,7 @@ git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
 
 cd repos-manager
 git switch develop
-cargo build
+make build
 ```
 
 Run the CLI without installing it:
@@ -28,15 +28,31 @@ Run the CLI without installing it:
 cargo run -- github sync --dry-run --base-dir /tmp/rm
 ```
 
+## Make targets
+
+The root `Makefile` wraps the usual commands:
+
+| Target | What it does |
+|--------|--------------|
+| `make build` | `cargo build --release --locked`, binary in `target/release/` |
+| `make test` | Unit and integration tests |
+| `make coverage` | Tests plus a line coverage summary (needs `cargo install cargo-llvm-cov`) |
+| `make lint` | `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` |
+| `make install` / `make uninstall` | Install into `$(PREFIX)/bin` (`PREFIX ?= ~/.local`, `DESTDIR` supported) |
+| `make completions` | bash, zsh and fish completions in your user directories |
+| `make release V=x.y.z` | Cut a release, see below |
+
 ## Running tests
 
 ```bash
-cargo test                                        # everything
+make test                                         # everything
 cargo test sync::tests::                          # one module
 cargo test -- --exact matcher::tests::exact_and_glob
 ```
 
 Unit tests live next to the code in each module (`#[cfg(test)] mod tests`), and `tests/cli.rs` runs the compiled binary end to end. Tests shell out to the real `git` and create bare remotes in temporary directories, which is why `git init -b` support (git 2.28+) is required.
+
+`make coverage` prints per-file line coverage. The Forgejo CI runs it on every push, so you can read the figures in the job log.
 
 When running the binary from scripts, set `NO_COLOR=1` and `REPOS_MANAGER_NO_UPDATE_CHECK=1` to get plain output and no background network call.
 
@@ -44,10 +60,10 @@ When running the binary from scripts, set `NO_COLOR=1` and `REPOS_MANAGER_NO_UPD
 
 ```bash
 cargo fmt
-cargo clippy --all-targets -- -D warnings
+make lint
 ```
 
-CI runs `cargo fmt --check` and clippy with warnings as errors, so run both before pushing.
+CI runs `cargo fmt --check` and clippy with warnings as errors, so run `make lint` before pushing.
 
 ## CI pipeline
 
@@ -55,13 +71,23 @@ CI runs on both forges. The forge checks every push and pull request to `main` a
 
 | Where | Job | What it does |
 |-------|-----|-------------|
-| Forgejo Actions | Rust | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` on Linux |
-| Forgejo Actions | ShellCheck | Lints `install/install.sh` and `scripts/*.sh` |
-| GitHub Actions | Rust | Same Rust checks on Ubuntu, macOS and Windows |
-| GitHub Actions | ShellCheck | Same as above |
+| Forgejo Actions | CI | `cargo fmt --check`, `cargo clippy -D warnings`, ShellCheck on `installers/install.sh`, tests and coverage on Linux |
+| GitHub Actions | CI | Format, lint and ShellCheck, then tests on Ubuntu, macOS and Windows |
 | GitHub Actions | Links | Lychee validates URLs in the markdown files |
 
-All checks must pass before merging. Releases are built and published on both forges from tags.
+All checks must pass before merging.
+
+## Releases
+
+Releases are cut by hand from `main` on the forge. There is no automatic version bump.
+
+1. Describe your changes under `## Unreleased` in `CHANGELOG.md`, grouped as `### Added`, `### Changed`, `### Removed` and `### Fixed`. Contributors do this in their pull request.
+2. The maintainer runs `make release V=x.y.z` on a clean tree. It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the annotated `vx.y.z` tag. Nothing is pushed yet.
+3. `git push --follow-tags` sends the commit and tag to the forge.
+
+The tag starts the Forgejo release (Linux x86_64 and aarch64 musl, `x86_64-pc-windows-gnu` zip and the x86_64 installer). The forge push mirror then forwards `main` and the tag to GitHub, which builds the full release: Linux, macOS, Windows x86_64 and ARM64 (`msvc`) and both installers. Both releases ship `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub, so its release must carry every asset.
+
+Since the mirror overwrites GitHub on every sync, never commit or tag directly on GitHub.
 
 ## Adding a provider
 
@@ -156,6 +182,7 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 <pre style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:1.2em;overflow-x:auto;font-size:0.85em;line-height:1.6"><code><span style="color:#3fb950">$</span> <span style="color:#58a6ff">tree</span> repos-manager/
 <span style="color:#58a6ff">repos-manager/</span>
 ├── <span style="color:#d29922">Cargo.toml</span>               <span style="color:#8b949e"># Crate manifest</span>
+├── <span style="color:#d29922">Makefile</span>                 <span style="color:#8b949e"># build, test, coverage, lint, install, release</span>
 ├── <span style="color:#58a6ff">src/</span>
 │   ├── <span style="color:#3fb950">main.rs</span>              <span style="color:#8b949e"># Entry point, command dispatch</span>
 │   ├── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># clap command tree and flags</span>
@@ -176,7 +203,7 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 │       └── <span style="color:#3fb950">radicle.rs</span>       <span style="color:#8b949e"># Radicle (rad)</span>
 ├── <span style="color:#58a6ff">tests/</span>
 │   └── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># End-to-end CLI tests</span>
-├── <span style="color:#58a6ff">install/</span>                 <span style="color:#8b949e"># install.sh, install.ps1, Makefile, NSIS installer</span>
+├── <span style="color:#58a6ff">installers/</span>              <span style="color:#8b949e"># install.sh, install.ps1, NSIS installer</span>
 ├── <span style="color:#58a6ff">scripts/</span>                 <span style="color:#8b949e"># Release and CI helpers</span>
 └── <span style="color:#58a6ff">site/</span>                    <span style="color:#8b949e"># This documentation site (Eleventy)</span></code></pre>
 
@@ -187,8 +214,9 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 | Where | Pull requests on the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/pulls) |
 | Branch from | `develop` |
 | Scope | One feature per PR |
-| Tests | Must pass (`cargo test`) |
-| Lint | Must pass (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`) |
+| Tests | Must pass (`make test`) |
+| Lint | Must pass (`make lint`) |
+| Changelog | Add your entry under `## Unreleased` in `CHANGELOG.md` |
 | Commits | Conventional style (`feat:`, `fix:`, `docs:`, `test:`) |
 
-Versions and changelog entries are bumped automatically from commit prefixes on release, so do not bump the version in feature commits.
+Do not bump the version in your pull request: it only changes through `make release`.

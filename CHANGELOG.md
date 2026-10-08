@@ -1,51 +1,51 @@
 # Changelog
 
-## v1.0.0
+## Unreleased
 
-### Rust rewrite
+Rewritten in Rust. repos-manager now ships as a single native binary for Linux (x86_64 and aarch64, static musl), macOS (x86_64 and aarch64) and Windows (x86_64 and ARM64). The commands, flags, config file (`~/.config/repos-manager/config.json`) and provider CLIs (`gh`, `glab`, `tea`, `bitbucket`, `rad`) are unchanged.
 
-- Rewrite repos-manager in Rust: it now ships as a single native binary for Linux (x86_64 and aarch64, static musl), macOS (x86_64 and aarch64) and Windows (x86_64)
-- Keep the same commands, flags, config file (`~/.config/repos-manager/config.json`) and provider CLIs (`gh`, `glab`, `tea`, `bitbucket`, `rad`)
-- Add native Windows support: config at `%USERPROFILE%\.config\repos-manager\config.json`, tea config read from `%LOCALAPPDATA%\tea\config.yml`, and hosts with a port (`host:3000`) stored as `host_3000`
-- Add `repos-manager completions <bash|zsh|fish|powershell|elvish>` to print shell completion scripts
-- Add `-y` / `--yes` to `repos-manager update` to skip the confirmation prompt
-- Reject `--host` with `sync --all` with a clear message instead of ignoring it
-- Report an invalid `config.json` as an error instead of silently falling back to defaults
-- Replace the bats suite with `cargo test` (unit tests per module plus end-to-end CLI tests), and lint with `cargo fmt` and `cargo clippy`
+### Added
 
-### Breaking changes
+- Native Windows support: config at `%USERPROFILE%\.config\repos-manager\config.json`, tea config read from `%LOCALAPPDATA%\tea\config.yml`, and hosts with a port (`host:3000`) stored as `host_3000`
+- `repos-manager completions <bash|zsh|fish|powershell|elvish>` to print shell completion scripts
+- `-y` / `--yes` on `repos-manager update` to skip the confirmation prompt
+- `installers/install.sh` for Linux and macOS (`curl -fsSL .../installers/install.sh | sh`), installing the latest release to `~/.local/bin` after checking `SHA256SUMS`, with `--version` (or `REPOS_MANAGER_VERSION`), `--prefix` (or `PREFIX`), `--source github|forge` and `--uninstall`
+- `installers/install.ps1` for Windows, installing to `%LOCALAPPDATA%\Programs\repos-manager` and adding it to the user `PATH`, with `-Version`, `-Source`, `-InstallDir` and `-Uninstall`
+- Per-user NSIS installers, `repos-manager-x86_64-setup.exe` and `repos-manager-aarch64-setup.exe`
+- Root `Makefile` with `build`, `test`, `coverage`, `lint`, `install`, `uninstall`, `completions` and `release` targets. Build from source with `make install` or `cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git`
+- Release assets named by target triple: `repos-manager-<target>.tar.gz` for `x86_64`/`aarch64-unknown-linux-musl` and `x86_64`/`aarch64-apple-darwin`, `repos-manager-<target>.zip` for `x86_64`/`aarch64-pc-windows-msvc`, plus the installers, `SHA256SUMS` and `SHA256SUMS-binaries`
+- Windows ARM64 builds (zip and installer) on the GitHub release
+- Releases built on both forges: Forgejo publishes the Linux musl archives, an `x86_64-pc-windows-gnu` zip and the x86_64 installer; GitHub publishes every asset
+- Test coverage is measured in the Forgejo CI (`make coverage` locally, needs `cargo-llvm-cov`)
+- CI on both forges (Forgejo Actions on Linux, GitHub Actions on Linux, macOS and Windows)
+
+### Changed
 
 - Runtime dependencies are now `git` plus the provider CLIs only: `bash` 4+, `jq`, `yq` and `curl` are no longer needed
-- Remove the generated `sourceme`, `sourceme.zsh` and `sourceme.fish` files in host directories and the repo-root `sourceme.*` scripts, replaced by `repos-manager completions`. Leftover `sourceme*` files in existing host directories can be deleted
-- Drop the Nix flake
-- Move `make install` from the repo root to `install/Makefile` (`make -C install install`)
-- `repos-manager update` now downloads the release archive for the current platform, verifies it against `SHA256SUMS` and replaces the binary in place, instead of pulling a git clone
-- The update check now queries the GitHub Releases API instead of fetching `VERSION` from `main`. `REPOS_MANAGER_VERSION_URL` is replaced by `REPOS_MANAGER_UPDATE_URL`, and `REPOS_MANAGER_LIB` is gone
+- `repos-manager update` downloads the GitHub release asset for the current platform (the `msvc` zip on Windows), verifies it against `SHA256SUMS` and replaces the binary in place, instead of pulling a git clone
+- The update check queries the GitHub Releases API instead of fetching `VERSION` from `main`. `REPOS_MANAGER_VERSION_URL` is replaced by `REPOS_MANAGER_UPDATE_URL`
+- `make install` builds the Rust binary (`PREFIX ?= ~/.local`, `DESTDIR` supported)
+- `--host` with `sync --all` is rejected with a clear message instead of being ignored
+- An invalid `config.json` is reported as an error instead of silently falling back to defaults
+- The sync lock is per host (`<base_dir>/<host>/.repos-manager.lock`), so different hosts can sync concurrently (#5)
+- The bats suite is replaced by `cargo test` (unit tests per module plus end-to-end CLI tests), linted with `cargo fmt` and `cargo clippy`
+- Releases are cut by hand: changes go under `## Unreleased`, then `make release V=x.y.z` bumps the version, dates this file, commits and tags, and `git push --follow-tags` starts the releases. Versions are no longer bumped automatically from commit prefixes
+- The primary repository is now the Forgejo forge at https://forge.infrasouveraine.fr/dxsk/repos-manager, where issues and pull requests are handled. GitHub (https://github.com/Dxsk/repos-manager) is a read-only mirror of `main` and tags, fed by the forge push mirror
+- The readme and every docs page describe the Rust binary: install methods per OS, shell completions, updating, Windows notes, tea config locations, the Makefile and the release process
 
-### Sync fixes (#5)
+### Removed
 
-- GitHub listing now covers repos where you are a collaborator on another personal account (`/user/repos?affiliation=owner,collaborator,organization_member`)
-- Pull `origin HEAD` explicitly, so clones without upstream tracking (manual clones, renamed default branch) are updated too
-- The sync lock is now per host (`<base_dir>/<host>/.repos-manager.lock`), so different hosts can sync concurrently
-- The lock is an OS file lock released automatically when the process dies, so an interrupted sync never leaves a stale lock behind
+- The Bash sources
+- The generated `sourceme`, `sourceme.zsh` and `sourceme.fish` files in host directories and the repo-root `sourceme.*` scripts, replaced by `repos-manager completions`. Leftover `sourceme*` files in existing host directories can be deleted
+- The Nix flake
+- `REPOS_MANAGER_LIB`
+- The automatic version bump and changelog generation
 
-### Installation and releases
+### Fixed
 
-- Add `install/install.sh` for Linux and macOS (`curl -fsSL .../install/install.sh | sh`), installing the latest release to `~/.local/bin` after checking `SHA256SUMS`, with `--version`, `--prefix`, `--source forge` and `--uninstall`
-- Add `install/install.ps1` for Windows, installing to `%LOCALAPPDATA%\Programs\repos-manager` and adding it to the user `PATH`
-- Add a per-user NSIS installer, `repos-manager-windows-x86_64-setup.exe`
-- Build from source with `make -C install install` (and `make -C install completions`) or `cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git`
-- Release assets: `repos-manager-{linux,macos}-{x86_64,aarch64}.tar.gz`, `repos-manager-windows-x86_64.zip`, `repos-manager-windows-x86_64-setup.exe` and `SHA256SUMS`
-
-### Repository
-
-- The primary repository is now the Forgejo forge at https://forge.infrasouveraine.fr/dxsk/repos-manager, where issues and pull requests are handled
-- GitHub (https://github.com/Dxsk/repos-manager) becomes a read-only mirror of `main` and tags; releases are published on both
-- CI runs on both forges (Forgejo Actions on Linux, GitHub Actions on Linux, macOS and Windows)
-
-### Documentation
-
-- Update the readme and every docs page for the Rust binary: install methods per OS, shell completions, updating, Windows notes, tea config locations and the Rust contributing guide
+- GitHub listing covers repos where you are a collaborator on another personal account (`/user/repos?affiliation=owner,collaborator,organization_member`) (#5)
+- Pull `origin HEAD` explicitly, so clones without upstream tracking (manual clones, renamed default branch) are updated too (#5)
+- The lock is an OS file lock released automatically when the process dies, so an interrupted sync never leaves a stale lock behind (#5)
 
 ## v0.6.0
 

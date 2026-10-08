@@ -1,56 +1,200 @@
+<div align="center">
+
 # repos-manager
 
-[![CI](https://github.com/Dxsk/repos-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Dxsk/repos-manager/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/Dxsk/repos-manager)](https://github.com/Dxsk/repos-manager/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/dxsk)
+**Clone and sync every Git repository you can access, on every provider, with one command.**
 
-A single CLI tool to clone and sync all your Git repositories, no matter the provider.
+[![Forgejo CI](https://forge.infrasouveraine.fr/dxsk/repos-manager/badges/workflows/ci.yml/badge.svg?label=Forgejo%20CI)](https://forge.infrasouveraine.fr/dxsk/repos-manager/actions?workflow=ci.yml)
+[![GitHub CI](https://img.shields.io/github/actions/workflow/status/Dxsk/repos-manager/ci.yml?branch=main&label=GitHub%20CI&logo=github)](https://github.com/Dxsk/repos-manager/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Dxsk/repos-manager?logo=git&logoColor=white)](https://github.com/Dxsk/repos-manager/releases/latest)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)](#installation)
+[![License](https://img.shields.io/github/license/Dxsk/repos-manager)](LICENSE)
 
-`repos-manager` is one native binary for Linux, macOS and Windows. It drives the official CLI of each provider and mirrors every repository you can access into `<base_dir>/<host>/<owner>/<repo>`.
+[Forgejo (main repository)](https://forge.infrasouveraine.fr/dxsk/repos-manager) · [GitHub mirror](https://github.com/Dxsk/repos-manager) · [Documentation](https://repos-manager.dxscloud.fr)
 
-> **Where the project lives:** development happens on the Forgejo forge at [forge.infrasouveraine.fr/dxsk/repos-manager](https://forge.infrasouveraine.fr/dxsk/repos-manager) (issues, pull requests, releases). [GitHub](https://github.com/Dxsk/repos-manager) is a read-only mirror of `main` and tags, and also hosts the releases.
+</div>
 
-Full documentation: <https://repos-manager.dxscloud.fr>
+---
+
+If your code is spread over GitHub, a GitLab group, a self-hosted Forgejo and a couple of Bitbucket workspaces, keeping a local copy of everything up to date is tedious. `repos-manager` asks each provider for every repository you can access (personal, collaborations, organizations, groups and subgroups) and mirrors them into `<base_dir>/<host>/<owner>/<repo>`, cloning what is missing and fast-forwarding the rest.
+
+It is a single native binary for Linux, macOS and Windows. At runtime it only needs `git` and the official CLI of each provider you sync.
+
+```console
+$ repos-manager sync --all
+$ repos-manager status
+  github.com/Dxsk/dotenv dirty
+  github.com/Dxsk/mtd ahead (+2)
+  gitlab.com/work/api behind (-3)
+
+Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
+```
 
 ## Supported providers
 
-| Provider | CLI | Status |
-|----------|-----|--------|
-| GitHub | `gh` | Done |
-| GitLab | `glab` | Done |
-| Forgejo / Gitea | `tea` | Done |
-| Bitbucket | `bitbucket` or API | Done |
-| Radicle | `rad` | Done |
+| Provider | CLI | Notes |
+|---|---|---|
+| GitHub | [`gh`](https://cli.github.com/) | github.com and GitHub Enterprise |
+| GitLab | [`glab`](https://gitlab.com/gitlab-org/cli) | Groups and nested subgroups |
+| Forgejo / Gitea | [`tea`](https://gitea.com/gitea/tea) | `tea` is used for login only, listing goes through the REST API |
+| Bitbucket | [`bitbucket`](https://crates.io/crates/bitbucket-cli) | Optional, an API fallback is built in |
+| Radicle | [`rad`](https://radicle.xyz/guides/user) | |
 
-## Features
+## Installation
 
-- Single native binary for Linux (x86_64, aarch64), macOS (x86_64, aarch64) and Windows (x86_64)
-- Clone all accessible repos (personal, collaborations, orgs, groups, subgroups)
-- Mirror the remote namespace hierarchy locally: `host/owner/repo`
-- Update existing repos with fetch + fast-forward pull of `origin HEAD`
-- Skip repos with uncommitted local changes
-- Remove local repos that no longer exist on the remote (`--prune`)
-- Preview changes before applying them (`--dry-run`)
-- SSH and HTTPS support
-- Filter by owner or specific repo (`--filter`)
-- Exclude repos via `.repos-ignore`, restrict them via `.repos-filter`
-- Parallel sync (default: 4 jobs, configurable with `--parallel`)
-- Several hosts per provider (SaaS and self-hosted side by side)
-- Per-host lock to prevent concurrent syncs of the same host, released automatically if the process dies
-- Verbose (`--verbose`) and quiet (`--quiet`) output modes
-- Status overview: dirty, ahead, behind, diverged repos
-- Fast `status` scan with live progress indicator, automatic skip of cloud drives and other network mounts
-- Background update check with a one-line banner, and a self-update that verifies checksums
-- Universal login: authenticate all detected providers at once
-- Config file (`~/.config/repos-manager/config.json`) for defaults
-- Shell completions for bash, zsh, fish, PowerShell and elvish
-- Per-provider help (`repos-manager github --help`)
-- `NO_COLOR` support
+Prebuilt binaries for every release are on the [GitHub releases page](https://github.com/Dxsk/repos-manager/releases), which has every platform. The [Forgejo releases](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases) carry the Linux and Windows x86_64 builds.
 
-## Directory structure
+<details open>
+<summary><b>Linux and macOS</b></summary>
 
-After syncing, your workspace looks like this:
+<br>
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
+```
+
+The script downloads the archive that matches your OS and CPU, checks it against the release's `SHA256SUMS`, and puts the binary in `~/.local/bin`. Options go after `sh -s --`, and most of them also have an environment variable:
+
+| Option | Variable | Default | |
+|---|---|---|---|
+| `--version vX.Y.Z` | `REPOS_MANAGER_VERSION` | latest | Release to install |
+| `--prefix DIR` | `PREFIX` | `~/.local` | Installs into `DIR/bin` |
+| `--source github\|forge` | | `github` | Where to download from |
+| `--uninstall` | | | Removes the installed binary |
+
+```sh
+# Pin a version, system-wide
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sudo sh -s -- --version v1.0.0 --prefix /usr/local
+
+# Download from the forge instead of GitHub (Linux only, macOS builds are on GitHub)
+curl -fsSL https://forge.infrasouveraine.fr/dxsk/repos-manager/raw/branch/main/installers/install.sh | sh -s -- --source forge
+
+# Uninstall
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh -s -- --uninstall
+```
+
+</details>
+
+<details open>
+<summary><b>Windows</b></summary>
+
+<br>
+
+With PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex
+```
+
+It installs `repos-manager.exe` into `%LOCALAPPDATA%\Programs\repos-manager` and adds that folder to your user `PATH`. Open a new terminal afterwards.
+
+The script accepts `-Version`, `-Source github|forge`, `-InstallDir` and `-Uninstall`. To pass them without saving the file first:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1))) -Version v1.0.0
+```
+
+Setting `$env:REPOS_MANAGER_VERSION = "v1.0.0"` before the one-liner pins a version too.
+
+Prefer an installer? Download and run `repos-manager-x86_64-setup.exe` (or `repos-manager-aarch64-setup.exe` on ARM devices). It installs per user, so it does not ask for admin rights, adds the program to your `PATH` and shows up in *Apps & features* if you want to remove it later. For a silent install, pass `/S`:
+
+```powershell
+.\repos-manager-x86_64-setup.exe /S
+```
+
+If you would rather not install anything, grab the portable `.zip` and put `repos-manager.exe` somewhere on your `PATH`.
+
+</details>
+
+<details>
+<summary><b>From source</b></summary>
+
+<br>
+
+You need a stable [Rust toolchain](https://rustup.rs) and `make`.
+
+```sh
+git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+cd repos-manager
+make install                    # builds and installs to ~/.local/bin/repos-manager
+make install PREFIX=/usr/local  # or anywhere else
+make completions                # bash, zsh and fish completions in your user directories
+make uninstall
+```
+
+Packagers can stage the install with `DESTDIR`. Cargo works too:
+
+```sh
+cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+```
+
+</details>
+
+<details>
+<summary><b>Release assets</b></summary>
+
+<br>
+
+Assets are named after the Rust target they were built for:
+
+| Asset | Platform | GitHub | Forgejo |
+|---|---|:---:|:---:|
+| `repos-manager-x86_64-unknown-linux-musl.tar.gz` | Linux x86_64 (static) | ✓ | ✓ |
+| `repos-manager-aarch64-unknown-linux-musl.tar.gz` | Linux aarch64 (static) | ✓ | ✓ |
+| `repos-manager-x86_64-apple-darwin.tar.gz` | macOS Intel | ✓ | |
+| `repos-manager-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon | ✓ | |
+| `repos-manager-x86_64-pc-windows-msvc.zip` | Windows x86_64 | ✓ | |
+| `repos-manager-aarch64-pc-windows-msvc.zip` | Windows ARM64 | ✓ | |
+| `repos-manager-x86_64-pc-windows-gnu.zip` | Windows x86_64 (MinGW build) | | ✓ |
+| `repos-manager-x86_64-setup.exe` | Windows x86_64 installer | ✓ | ✓ |
+| `repos-manager-aarch64-setup.exe` | Windows ARM64 installer | ✓ | |
+
+</details>
+
+<details>
+<summary><b>Verifying a download</b></summary>
+
+<br>
+
+Every release ships two checksum files:
+
+- `SHA256SUMS` lists the archives and installers you download.
+- `SHA256SUMS-binaries` lists the `repos-manager` binary inside each archive. Use it to check a binary you already extracted or installed.
+
+On Linux and macOS:
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS   # macOS: shasum -a 256 --ignore-missing -c SHA256SUMS
+```
+
+On Windows:
+
+```powershell
+(Get-FileHash .\repos-manager-x86_64-setup.exe).Hash.ToLower()
+(Get-FileHash "$env:LOCALAPPDATA\Programs\repos-manager\repos-manager.exe").Hash.ToLower()
+```
+
+Then compare the result with the matching line in the checksum file. The install scripts and `repos-manager update` do this for you.
+
+</details>
+
+### Requirements
+
+- `git`
+- The CLI of each provider you sync: `gh`, `glab`, `tea`, `bitbucket` (optional) or `rad`
+
+Nothing else: no `bash`, `jq`, `yq` or `curl` needed at runtime.
+
+## Getting started
+
+```sh
+repos-manager init         # optional, writes ~/.config/repos-manager/config.json
+repos-manager login        # authenticates every provider whose CLI is installed
+repos-manager sync --all   # clones and updates everything
+repos-manager status       # shows dirty, ahead, behind and diverged repos
+```
+
+After a sync, your workspace mirrors the remote namespaces:
 
 ```
 ~/Documents/
@@ -62,8 +206,6 @@ After syncing, your workspace looks like this:
     my-org/
       other-project/
   gitlab.com/
-    my-user/
-      project/
     my-group/
       sub-group/
         project/
@@ -71,85 +213,71 @@ After syncing, your workspace looks like this:
 
 On Windows, a host with a port (`git.example.org:3000`) is stored as `git.example.org_3000`, since `:` is not allowed in directory names.
 
-## Installation
-
-Release archives (`repos-manager-{linux,macos}-{x86_64,aarch64}.tar.gz`, `repos-manager-windows-x86_64.zip`, the Windows installer and `SHA256SUMS`) are published on [GitHub Releases](https://github.com/Dxsk/repos-manager/releases) and on the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases). See [`install/README.md`](install/README.md) for every option.
-
-### Linux and macOS
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh
-```
-
-The script picks the archive for your OS and CPU, verifies it against `SHA256SUMS` and installs the binary into `~/.local/bin`. Options go after `sh -s --`:
-
-```bash
-# Pin a version
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh -s -- --version v1.0.0
-
-# Install system-wide
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sudo sh -s -- --prefix /usr/local
-
-# Download from the forge instead of GitHub (Linux only)
-curl -fsSL https://forge.infrasouveraine.fr/dxsk/repos-manager/raw/branch/main/install/install.sh | sh -s -- --source forge
-
-# Uninstall
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh -s -- --uninstall
-```
-
-### Windows
-
-With PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.ps1 | iex
-```
-
-This installs `repos-manager.exe` into `%LOCALAPPDATA%\Programs\repos-manager` and adds it to your user `PATH` (open a new terminal afterwards).
-
-Or download `repos-manager-windows-x86_64-setup.exe` from the [latest release](https://github.com/Dxsk/repos-manager/releases/latest) and run it. It installs for the current user without admin rights, updates `PATH` and registers an uninstaller.
-
-### From source
-
-Requires a recent stable [Rust toolchain](https://rustup.rs) and `make`:
-
-```bash
-git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
-cd repos-manager
-make -C install install        # builds and installs into ~/.local/bin
-make -C install completions    # bash, zsh and fish completions
-```
-
-Change the prefix with `make -C install install PREFIX=/usr/local`.
-
-Or let cargo do it:
-
-```bash
-cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
-```
-
-## Requirements
-
-- `git`
-- The CLI of each provider you sync:
-  - `gh` for GitHub
-  - `glab` for GitLab
-  - `tea` for Forgejo / Gitea (used for login only, see [providers](site/src/docs/providers.md))
-  - `bitbucket` for Bitbucket (optional, an API fallback is built in)
-  - `rad` for Radicle
-
-Nothing else: no `bash`, `jq`, `yq` or `curl` needed at runtime.
-
 ## Usage
 
-### Configuration
+### Commands
 
-Generate a default config file:
+| Command | What it does |
+|---|---|
+| `repos-manager login [<provider>]` | Logs in to one provider, or to every detected one |
+| `repos-manager <provider> login` | Same, per provider |
+| `repos-manager <provider> sync` | Syncs one provider (`github`, `gitlab`, `forgejo`, `gitea`, `bitbucket`, `radicle`) |
+| `repos-manager sync --all` | Syncs every configured provider |
+| `repos-manager status` | Lists repos that are dirty, ahead, behind or diverged |
+| `repos-manager init` | Creates the config file |
+| `repos-manager update` | Updates the binary in place |
+| `repos-manager completions <shell>` | Prints a completion script |
+| `repos-manager version` | Prints the version |
 
-```bash
-repos-manager init
-# Creates ~/.config/repos-manager/config.json
+`sync --all` only runs providers whose CLI (or Bitbucket credentials) is available, and one failing host never stops the others. Every provider has its own help: `repos-manager github --help`.
+
+### Sync flags
+
+| Flag | Description |
+|---|---|
+| `--filter <pattern>` | Only sync matching repos (`Dxsk/*` or `Dxsk/project`) |
+| `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
+| `--https` | Use HTTPS clone URLs instead of SSH |
+| `--prune` | Remove local repos that no longer exist on the remote |
+| `--dry-run` | Show what would be done without changing anything |
+| `--host <host>` | Target a self-hosted instance (provider sync only) |
+| `--parallel <n>` | Number of parallel jobs (default: 4) |
+| `-v`, `--verbose` | Show debug output |
+| `-q`, `--quiet` | Hide info and success messages (errors still show) |
+
+`status` accepts `--base-dir`, `--verbose` and `--quiet`. `update` accepts `-y` / `--yes`.
+
+### Examples
+
+```sh
+# Only one owner, or a single repo
+repos-manager github sync --filter 'Dxsk/*'
+repos-manager github sync --filter Dxsk/repos-manager
+
+# Preview, then clean up repos deleted on the remote
+repos-manager sync --all --prune --dry-run
+repos-manager sync --all --prune
+
+# Self-hosted instances (gitea is an alias of forgejo)
+repos-manager gitlab sync --host gitlab.example.org
+repos-manager forgejo sync --host forge.example.org
+
+# HTTPS, more jobs, another base directory
+repos-manager sync --all --https --parallel 8 --base-dir /path/to/repos
 ```
+
+Existing clean repos get `git fetch --all` and a fast-forward pull of `origin HEAD`. Repos with uncommitted changes are skipped. `--host` is rejected with `sync --all`, and `--prune` is skipped when `--filter` is set and never deletes anything outside the base directory.
+
+Each host has its own lock, so two syncs of the same host cannot overlap while different hosts sync side by side. The lock is released by the OS if the process dies.
+
+## Configuration
+
+<details open>
+<summary><b>Config file</b></summary>
+
+<br>
+
+`repos-manager init` creates `~/.config/repos-manager/config.json`. The path is the same on every OS, including Windows (`%USERPROFILE%\.config\repos-manager\config.json`), and `REPOS_MANAGER_CONFIG` overrides it.
 
 ```json
 {
@@ -160,254 +288,186 @@ repos-manager init
   "scan_network_mounts": false,
   "hosts": {
     "github":    ["github.com"],
-    "gitlab":    ["gitlab.com"],
-    "forgejo":   ["codeberg.org"],
+    "gitlab":    ["gitlab.com", "gitlab.example.org"],
+    "forgejo":   ["codeberg.org", "forge.example.org"],
     "bitbucket": ["bitbucket.org"]
   }
 }
 ```
 
-The path is the same on every OS, including Windows (`%USERPROFILE%\.config\repos-manager\config.json`). Override it with `REPOS_MANAGER_CONFIG`.
+| Field | Default | Description |
+|---|---|---|
+| `base_dir` | `~/Documents` | Where repos are cloned |
+| `parallel` | `4` | Parallel sync jobs |
+| `protocol` | `ssh` | `ssh` or `https` |
+| `check_updates` | `true` | Background update check, see [Updating](#updating) |
+| `scan_network_mounts` | `false` | Let `status` walk network and FUSE mounts (Linux) |
+| `hosts.<provider>` | provider's SaaS host | One hostname or a list. Each one is synced into its own `<base_dir>/<host>/` |
 
-Two behaviours are controlled from the config file:
+Self-hosted instances need a matching CLI login: `gh auth login --hostname <host>`, `glab auth login --hostname <host>` or `tea login add`.
 
-- `check_updates` (default `true`): see [Updating](#updating).
-- `scan_network_mounts` (default `false`): on Linux, `repos-manager status` reads `/proc/self/mountinfo` and prunes every mount point under `base_dir` whose filesystem type is `fuse`, `fuse.*`, `nfs`, `cifs`, `smb*`, `smbfs`, `afs`, `ceph` or `davfs`. This keeps the scan fast on setups that host cloud drives (kDrive, Dropbox, sshfs) under `~/Documents`. Set it to `true` if you really do host repos on a reliable network share; the scan then prints a warning that it can hang on flaky links.
+Precedence: flag > environment variable > config file > default.
 
-Each `hosts.<provider>` key takes a **list** of hostnames, so you can sync several instances of the same provider (typically a SaaS one plus your self-hosted one):
+</details>
 
-```json
-{
-  "hosts": {
-    "gitlab":  ["gitlab.com", "gitlab.example.org"],
-    "forgejo": ["codeberg.org", "forge.example.org"]
-  }
-}
-```
+<details>
+<summary><b>Filter and ignore files</b></summary>
 
-Each instance is cloned under its own directory (`<base_dir>/<host>/...`). For self-hosted instances you need a matching CLI login: `gh auth login --hostname <host>` for GitHub Enterprise, `glab auth login --hostname <host>` for GitLab, `tea login add` for Forgejo. The legacy single-string form (`"gitlab": "gitlab.com"`) is still accepted.
+<br>
 
-### Authentication
+Both files live at the root of the base directory and use the same patterns: `*` and `?` wildcards, `owner/*` also matches nested paths (`group/subgroup/project`), `#` starts a comment and empty lines are ignored.
 
-```bash
-# Login all detected providers at once
-repos-manager login
-
-# Or login a specific provider
-repos-manager login github
-repos-manager github login
-repos-manager gitlab login
-repos-manager forgejo login
-repos-manager bitbucket login
-repos-manager radicle login
-```
-
-### Syncing repos
-
-```bash
-# Sync all repos from GitHub
-repos-manager github sync
-
-# Sync all repos from GitLab
-repos-manager gitlab sync
-
-# Sync all configured providers at once
-repos-manager sync --all
-
-# Parallel sync with 8 jobs
-repos-manager sync --all --parallel 8
-```
-
-`sync --all` only runs providers whose CLI (or Bitbucket credentials) is available, and one failing host never stops the others.
-
-### Status
-
-Check which repos have uncommitted changes, are ahead/behind, or diverged:
-
-```bash
-repos-manager status
-```
+`.repos-filter` syncs **only** repos matching at least one pattern. If the file is missing, everything is synced; if it exists but holds no pattern, nothing is.
 
 ```
-  github.com/Dxsk/dotenv dirty
-  github.com/Dxsk/mtd ahead (+2)
-  gitlab.com/work/api behind (-3)
-
-Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
+# Only my repos, plus one from another org
+Dxsk/*
+other-org/some-project
 ```
 
-### Filtering
+`.repos-ignore` excludes repos, and is applied **after** `.repos-filter`.
 
-```bash
-# Sync only repos from a specific owner
-repos-manager github sync --filter 'Dxsk/*'
-
-# Sync a single repo
-repos-manager github sync --filter Dxsk/repos-manager
+```
+Dxsk/old-project
+test-org/*
 ```
 
-### Other options
+</details>
 
-```bash
-# Use HTTPS instead of SSH
-repos-manager github sync --https
+<details>
+<summary><b>Environment variables</b></summary>
 
-# Remove local repos that no longer exist on the remote
-repos-manager sync --all --prune
+<br>
 
-# Preview what would happen without making changes
-repos-manager sync --all --dry-run
+| Variable | Description | Default |
+|---|---|---|
+| `REPOS_MANAGER_CONFIG` | Path to the config file | `~/.config/repos-manager/config.json` |
+| `REPOS_MANAGER_BASE_DIR` | Base directory for all repos | `~/Documents` |
+| `REPOS_MANAGER_PARALLEL` | Default parallel jobs | `4` |
+| `REPOS_MANAGER_PROTOCOL` | Default protocol (`ssh` or `https`) | `ssh` |
+| `REPOS_MANAGER_NO_UPDATE_CHECK` | Set to `1` to skip the background update check | unset |
+| `REPOS_MANAGER_UPDATE_TTL` | Seconds between update checks | `86400` |
+| `REPOS_MANAGER_UPDATE_CACHE` | Path to the cached latest-version file | `<cache dir>/repos-manager/latest-version` |
+| `REPOS_MANAGER_UPDATE_URL` | Release API used by the update check and `update` | GitHub Releases API |
+| `TEA_CONFIG` | Path to tea's config file, read by the Forgejo provider | tea's default location |
+| `NO_COLOR` | Disable colored output | unset |
 
-# GitLab self-hosted
-repos-manager gitlab sync --host gitlab.self-hosted.com
+</details>
 
-# Forgejo / Gitea (`gitea` is an alias of `forgejo`)
-repos-manager forgejo sync --host forgejo.self-hosted.com
+<details>
+<summary><b>Fast status on large workspaces</b></summary>
 
-# Custom base directory
-repos-manager sync --all --base-dir /path/to/repos
-```
+<br>
 
-`--host` targets a single provider, so it is rejected with `sync --all`. `--prune` is skipped when `--filter` is set and never deletes anything outside the base directory.
+`status` skips vendored directories (`node_modules`, `.venv`, `target`, `vendor`, `dist` and friends) and shows a live progress line while it scans.
 
-## Flags
+On Linux it also reads `/proc/self/mountinfo` and prunes every mount under `base_dir` whose filesystem is `fuse`, `fuse.*`, `nfs`, `cifs`, `smb*`, `smbfs`, `afs`, `ceph` or `davfs`. Cloud drives (kDrive, Dropbox, sshfs) mounted under `~/Documents` would otherwise make the scan crawl. Set `"scan_network_mounts": true` if you really host repos on a reliable network share.
 
-Sync flags (`<provider> sync` and `sync --all`):
-
-| Flag | Description |
-|------|-------------|
-| `--filter <pattern>` | Filter repos by pattern (e.g. `Dxsk/*` or `Dxsk/project`) |
-| `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
-| `--https` | Use HTTPS clone URLs instead of SSH |
-| `--prune` | Remove local repos not found on the remote |
-| `--dry-run` | Show what would be done without making any changes |
-| `--host <host>` | Custom host for self-hosted instances (provider sync only) |
-| `--parallel <n>` | Number of parallel sync jobs (default: 4) |
-| `--verbose`, `-v` | Show debug output |
-| `--quiet`, `-q` | Suppress info/success messages (errors still shown) |
-
-`status` accepts `--base-dir`, `--verbose` and `--quiet`. `update` accepts `--yes` / `-y`.
+</details>
 
 ## Shell completions
 
-Completions are generated by the binary itself:
+The binary generates them for bash, zsh, fish, PowerShell and elvish:
 
-```bash
-# bash
+```sh
 repos-manager completions bash > ~/.local/share/bash-completion/completions/repos-manager
-
-# zsh (make sure the directory is in your fpath)
-repos-manager completions zsh > ~/.local/share/zsh/site-functions/_repos-manager
-
-# fish
+repos-manager completions zsh  > ~/.local/share/zsh/site-functions/_repos-manager
 repos-manager completions fish > ~/.config/fish/completions/repos-manager.fish
 ```
 
 ```powershell
-# PowerShell (add this line to your $PROFILE to make it persistent)
+# Add this line to your $PROFILE to keep it
 repos-manager completions powershell | Out-String | Invoke-Expression
 ```
 
-`elvish` is supported too. From a source checkout, `make -C install completions` installs the bash, zsh and fish files for you.
+From a source checkout, `make completions` installs the bash, zsh and fish files for you.
 
 ## Updating
 
-Every command that touches repositories prints a one-line banner when a newer release is out:
+Commands that touch repositories print a one-line banner when a newer release is out:
 
 ```
 ⬆ repos-manager 1.1.0 available (current 1.0.0), run: repos-manager update
 ```
 
-The banner reads a cached version. The cache is refreshed at most once a day by a detached background process querying the GitHub Releases API, so the check never slows down the command in progress. Disable it with `"check_updates": false` in the config file, or `REPOS_MANAGER_NO_UPDATE_CHECK=1` for a single run.
+The banner reads a cached version, refreshed at most once a day by a detached background process that queries the GitHub Releases API, so the check never slows down the command in progress. Turn it off with `"check_updates": false`, or with `REPOS_MANAGER_NO_UPDATE_CHECK=1` for a single run.
 
-To update:
-
-```bash
-repos-manager update        # asks for confirmation
-repos-manager update --yes  # no prompt
+```sh
+repos-manager update      # asks for confirmation
+repos-manager update -y   # no prompt
 ```
 
-`update` downloads the release archive for your platform, verifies it against the release `SHA256SUMS` and replaces the binary in place. Re-running the install script works too.
+`update` downloads the GitHub release asset for your platform (the `msvc` zip on Windows), verifies it against the release's `SHA256SUMS` and replaces the binary in place. Re-running the install script works too.
 
-## Filter and ignore files
+## Development
 
-Both files live at the root of the base directory.
+<details>
+<summary><b>Building and testing</b></summary>
 
-### .repos-filter
+<br>
 
-Sync **only** repos matching at least one pattern. If the file is missing, all repos are synced; if it exists but holds no pattern, nothing is synced.
-
-```
-# Only sync repos from Dxsk
-Dxsk/*
-
-# Plus a specific repo from another org
-other-org/some-project
+```sh
+make build     # optimized binary in target/release/
+make test      # unit and integration tests
+make coverage  # tests plus line coverage (needs cargo-llvm-cov)
+make lint      # rustfmt and clippy
 ```
 
-### .repos-ignore
+Tests shell out to the real `git` with bare remotes in temporary directories, so they need git 2.28 or newer. Run the CLI without installing it with `cargo run -- github sync --dry-run --base-dir /tmp/rm`.
 
-Exclude repos from syncing. Applied **after** `.repos-filter`.
+To build the Windows installer yourself, install [NSIS](https://nsis.sourceforge.io) and run:
 
-```
-# Ignore a specific repo
-Dxsk/old-project
-
-# Ignore all repos from an owner
-test-org/*
+```powershell
+cargo build --release
+makensis /DVERSION=1.0.0 /DARCH=x86_64 /DBINARY="$PWD\target\release\repos-manager.exe" installers\repos-manager.nsi
 ```
 
-### Pattern syntax
+`repos-manager-x86_64-setup.exe` is written next to the script unless you pass `/DOUTFILE=path`.
 
-- Glob wildcards: `*`, `?`
-- `owner/*` also matches nested paths (e.g. `group/subgroup/project`)
-- `#` starts a comment
-- Empty lines are ignored
+The full contributing guide is in [CONTRIBUTING.md](CONTRIBUTING.md) and on the [documentation site](https://repos-manager.dxscloud.fr/docs/contributing/). Issues and pull requests go to the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/issues).
 
-## Environment variables
+</details>
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `REPOS_MANAGER_CONFIG` | Path to the config file | `~/.config/repos-manager/config.json` |
-| `REPOS_MANAGER_BASE_DIR` | Base directory for all repos | `~/Documents` |
-| `REPOS_MANAGER_PARALLEL` | Default parallel jobs | `4` |
-| `REPOS_MANAGER_PROTOCOL` | Default protocol (`ssh` or `https`) | `ssh` |
-| `REPOS_MANAGER_NO_UPDATE_CHECK` | Set to `1` to skip the background update check | Unset |
-| `REPOS_MANAGER_UPDATE_TTL` | Seconds between update checks | `86400` |
-| `REPOS_MANAGER_UPDATE_CACHE` | Path to the cached latest-version file | `<cache dir>/repos-manager/latest-version` |
-| `REPOS_MANAGER_UPDATE_URL` | Release API endpoint used by the update check and `update` | GitHub Releases API |
-| `TEA_CONFIG` | Path to tea's config file, read by the Forgejo provider | tea's default location |
-| `NO_COLOR` | Disable colored output when set | Unset |
+<details>
+<summary><b>CI and releases</b></summary>
 
-Precedence: flag > environment variable > config file > default.
+<br>
 
-## Glossary
+The project lives on [Forgejo](https://forge.infrasouveraine.fr/dxsk/repos-manager) and is push-mirrored to [GitHub](https://github.com/Dxsk/repos-manager), which only receives `main` and tags. Each side has its own pipeline:
 
-### Providers
+| | Forgejo (`.forgejo/workflows/`) | GitHub mirror (`.github/workflows/`) |
+|---|---|---|
+| On every push | Format, lint, tests and coverage on Linux, ShellCheck | Format and lint, tests on Linux, macOS and Windows, ShellCheck, link check |
+| On a `v*` tag | Linux x86_64 and aarch64 (musl), Windows x86_64 (MinGW) and its installer | Every asset: Linux, macOS (Intel and Apple Silicon), Windows x86_64 and ARM64 with both installers |
 
-| Provider | Description | CLI | Documentation |
-|----------|-------------|-----|---------------|
-| [GitHub](https://github.com) | The most popular Git hosting platform | [`gh`](https://cli.github.com/) | [GitHub CLI Manual](https://cli.github.com/manual/) |
-| [GitLab](https://gitlab.com) | DevOps platform with built-in CI/CD | [`glab`](https://gitlab.com/gitlab-org/cli) | [GLab Documentation](https://gitlab.com/gitlab-org/cli/-/blob/main/README.md) |
-| [Forgejo](https://forgejo.org) | Community-driven self-hosted Git forge (Gitea fork) | [`tea`](https://gitea.com/gitea/tea) | [Forgejo Documentation](https://forgejo.org/docs/latest/) |
-| [Gitea](https://gitea.com) | Lightweight self-hosted Git service | [`tea`](https://gitea.com/gitea/tea) | [Gitea Documentation](https://docs.gitea.com/) |
-| [Bitbucket](https://bitbucket.org) | Atlassian's Git platform (Cloud & Server) | [`bitbucket`](https://crates.io/crates/bitbucket-cli) | [Bitbucket API](https://developer.atlassian.com/cloud/bitbucket/rest/intro/) |
-| [Radicle](https://radicle.xyz) | Sovereign peer-to-peer code forge built on Git | [`rad`](https://radicle.xyz/guides/user) | [Radicle User Guide](https://radicle.xyz/guides/user) |
+Both releases include `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub by default, which is why the GitHub release carries every asset.
 
-### Tools
+</details>
 
-| Tool | Description | Documentation |
-|------|-------------|---------------|
-| [Git](https://git-scm.com) | Distributed version control system | [Git Reference](https://git-scm.com/docs) |
-| [Rust](https://www.rust-lang.org) | Language repos-manager is written in | [The Rust Book](https://doc.rust-lang.org/book/) |
+<details>
+<summary><b>Cutting a release</b></summary>
 
-## Contributing
+<br>
 
-Issues and pull requests go to the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/issues). See [CONTRIBUTING.md](CONTRIBUTING.md).
+1. Describe the changes under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md).
+2. Run the release target with the new version:
 
-## Support
+   ```sh
+   make release V=1.1.0
+   ```
 
-If this tool saves you time, you can support my work by [buying me a coffee](https://buymeacoffee.com/dxsk). Thank you!
+   The working tree must be clean. It sets the version in `Cargo.toml`, `Cargo.lock` and the documentation site, turns the `Unreleased` heading into `## 1.1.0 (date)`, then commits `chore: release v1.1.0` and creates the annotated `v1.1.0` tag. Nothing is pushed yet, so you can still check the result.
+3. Push to the forge:
+
+   ```sh
+   git push --follow-tags
+   ```
+
+The tag starts the Forgejo release, and the push mirror carries `main` and the tag to GitHub, which builds the full release. There is no automatic version bump: the version only changes through `make release`.
+
+Since the mirror overwrites GitHub on every sync, never commit or tag directly on GitHub.
+
+</details>
 
 ## License
 

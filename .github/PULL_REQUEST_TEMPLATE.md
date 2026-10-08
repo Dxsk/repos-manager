@@ -4,7 +4,8 @@ What does this PR do?
 
 ## Checklist
 
-- [ ] Tests pass (`bats tests/*.bats`)
-- [ ] ShellCheck passes (`shellcheck -x repos-manager.sh lib/*.sh sourceme.bash`)
+- [ ] Tests pass (`make test`)
+- [ ] Lints pass (`make lint`)
+- [ ] Entry added under `## Unreleased` in `CHANGELOG.md`
 - [ ] Documentation updated (if applicable)
 - [ ] Branched from `develop`
