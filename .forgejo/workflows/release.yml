@@ -6,9 +6,17 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Rebuilds the release of an existing tag with the workflow from the
+  # default branch, e.g. after fixing a build failure.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release, e.g. v1.0.0
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
@@ -18,12 +26,18 @@ jobs:
       image: node:lts-trixie
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Resolve the tag commit
+        id: tag
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Check the tag matches Cargo.toml
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+          if [ "v$version" != "$TAG" ]; then
+            echo "Tag $TAG does not match Cargo.toml version $version" >&2
             exit 1
           fi
 
@@ -31,7 +45,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            musl-tools gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64 nsis jq zip
+            musl-tools gcc-aarch64-linux-gnu libc6-dev-arm64-cross gcc-mingw-w64-x86-64 nsis jq zip
           curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
             --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,x86_64-pc-windows-gnu
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -59,7 +73,7 @@ jobs:
       - name: Package
         run: |
           set -eu
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           out=dist/release
           mkdir -p "$out"
 
@@ -93,5 +107,7 @@ jobs:
       - uses: actions/forgejo-release@v2.13.4
         with:
           direction: upload
+          tag: ${{ env.TAG }}
+          sha: ${{ steps.tag.outputs.sha }}
           release-dir: dist/release
           override: true
