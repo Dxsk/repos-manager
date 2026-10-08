@@ -17,6 +17,8 @@ This is a breaking release: 0.x installs must be replaced (0.x `repos-manager up
 - Root `Makefile` with `build`, `test`, `coverage`, `lint`, `install`, `uninstall`, `completions` and `release` targets. Build from source with `make install` or `cargo install --git https://github.com/Dxsk/repos-manager.git`
 - Release assets named by target triple: `repos-manager-<target>.tar.gz` for `x86_64`/`aarch64-unknown-linux-musl` and `x86_64`/`aarch64-apple-darwin`, `repos-manager-<target>.zip` for `x86_64`/`aarch64-pc-windows-msvc`, plus the installers, `SHA256SUMS` and `SHA256SUMS-binaries`
 - Windows ARM64 builds (zip and installer) on the GitHub release
+- Packaging for crates.io (`cargo install repos-manager`) and the AUR (`repos-manager` built from source, `repos-manager-bin` prebuilt), rendered from a release by `packaging/aur/render.sh`
+- `repos-manager update` and the update banner detect installs owned by a package manager (AUR or other `/usr/bin` packages, Homebrew, Scoop, winget, cargo) and point to its upgrade command instead of replacing the binary
 - Releases built on both forges: Forgejo publishes the Linux musl archives, an `x86_64-pc-windows-gnu` zip and the x86_64 installer; GitHub publishes every asset
 - Test coverage is measured in the Forgejo CI (`make coverage` locally, needs `cargo-llvm-cov`)
 - CI on both forges (Forgejo Actions on Linux, GitHub Actions on Linux, macOS and Windows)

@@ -85,6 +85,15 @@ Releases are cut by the maintainer, by hand, from `main` on the upstream forge. 
 
 The tag starts the Forgejo release (Linux x86_64 and aarch64 musl, `x86_64-pc-windows-gnu` zip and the x86_64 installer). The forge push mirror then forwards `main` and the tag to GitHub, which builds the full release: Linux, macOS, Windows x86_64 and ARM64 (`msvc`) and both installers. Both releases ship `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub, so its release must carry every asset.
 
+Once the GitHub release is complete, publish the packages:
+
+```bash
+cargo publish                                # crates.io (needs `cargo login`)
+packaging/aur/render.sh x.y.z --publish      # AUR repos-manager and repos-manager-bin (needs your AUR SSH key)
+```
+
+`render.sh` without `--publish` only writes `PKGBUILD` and `.SRCINFO` to `dist/aur/` for review.
+
 Since the mirror overwrites GitHub `main` on every sync, pull requests are never merged with the GitHub button: the maintainer lands them upstream (keeping the author) and the mirror closes the loop.
 
 ## Adding a provider
