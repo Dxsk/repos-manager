@@ -96,11 +96,3 @@ Symlinks are not followed.
 On Linux and macOS, the config directory (`~/.config/repos-manager/`) is created with mode `700` (owner-only access) and the Bitbucket API credentials file `bitbucket-creds` with mode `600`. On Windows these files inherit the ACLs of your user profile.
 
 Self-updates and every install script verify release archives against `SHA256SUMS` before installing anything.
-
-## Dotenv integration
-
-If you use [Dxsk/dotenv](https://github.com/Dxsk/dotenv) (GNU Stow-based dotfiles), install repos-manager from your bootstrap script with the install script:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
-```

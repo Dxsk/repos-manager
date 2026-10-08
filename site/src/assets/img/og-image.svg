@@ -20,7 +20,7 @@
   <text x="140" y="205" font-family="monospace" font-size="16" fill="#58a6ff">Fetching repository list from github.com...</text>
   <text x="140" y="235" font-family="monospace" font-size="16" fill="#58a6ff">Found 23 repositories</text>
 
-  <text x="160" y="275" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/dotenv (updated)</text>
+  <text x="160" y="275" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/project (updated)</text>
   <text x="160" y="305" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/repos-manager (updated)</text>
   <text x="160" y="335" font-family="monospace" font-size="16" fill="#3fb950">&#x2713; user/mtd (cloned)</text>
   <text x="160" y="365" font-family="monospace" font-size="16" fill="#d29922">&#x26A0; user/infra (dirty, skipped)</text>

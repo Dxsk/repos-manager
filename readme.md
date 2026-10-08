@@ -25,7 +25,7 @@ It is a single native binary for Linux, macOS and Windows. At runtime it only ne
 ```console
 $ repos-manager sync --all
 $ repos-manager status
-  github.com/Dxsk/dotenv dirty
+  github.com/Dxsk/git-identity-manager dirty
   github.com/Dxsk/mtd ahead (+2)
   gitlab.com/work/api behind (-3)
 
