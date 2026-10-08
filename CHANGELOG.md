@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2026-10-08)
 
 Rewritten in Rust. repos-manager now ships as a single native binary for Linux (x86_64 and aarch64, static musl), macOS (x86_64 and aarch64) and Windows (x86_64 and ARM64). The commands, flags, config file (`~/.config/repos-manager/config.json`) and provider CLIs (`gh`, `glab`, `tea`, `bitbucket`, `rad`) are unchanged.
 
