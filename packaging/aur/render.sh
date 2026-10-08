@@ -51,6 +51,11 @@ done
 
 [ "$publish" = --publish ] || exit 0
 
+# The global git config may have no identity (set per repo by git-identity),
+# so AUR commits reuse the one of this repository.
+name=$(git -C "$here" config user.name)
+email=$(git -C "$here" config user.email)
+
 for pkg in "$PKG" "$PKG-bin"; do
     git clone -q "ssh://aur@aur.archlinux.org/$pkg.git" "$tmp/$pkg"
     cp "$out/$pkg/PKGBUILD" "$out/$pkg/.SRCINFO" "$tmp/$pkg/"
@@ -59,7 +64,8 @@ for pkg in "$PKG" "$PKG-bin"; do
         echo "$pkg is already up to date on the AUR"
         continue
     fi
-    git -C "$tmp/$pkg" commit -q -m "Update to $version"
+    git -C "$tmp/$pkg" -c user.name="$name" -c user.email="$email" -c commit.gpgsign=false \
+        commit -q -m "Update to $version"
     git -C "$tmp/$pkg" push -q origin HEAD:master
     echo "Published $pkg $version"
 done
