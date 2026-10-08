@@ -148,20 +148,23 @@ pub fn refresh_cache() -> Result<()> {
     Ok(())
 }
 
-/// Release asset name for the running platform, matching the release workflow.
+/// GitHub release asset for a platform. Windows always maps to the MSVC
+/// build: the mingw one only exists on the Forgejo release.
+pub fn asset_name_for(os: &str, arch: &str) -> Result<String> {
+    if !matches!(arch, "x86_64" | "aarch64") {
+        bail!("no prebuilt binary for {arch}");
+    }
+    let name = match os {
+        "linux" => format!("{arch}-unknown-linux-musl.tar.gz"),
+        "macos" => format!("{arch}-apple-darwin.tar.gz"),
+        "windows" => format!("{arch}-pc-windows-msvc.zip"),
+        other => bail!("no prebuilt binary for {other}"),
+    };
+    Ok(format!("repos-manager-{name}"))
+}
+
 pub fn asset_name() -> Result<String> {
-    let os = match std::env::consts::OS {
-        "linux" => "linux",
-        "macos" => "macos",
-        "windows" => "windows",
-        other => bail!("no prebuilt binary for {other}"),
-    };
-    let arch = match std::env::consts::ARCH {
-        a @ ("x86_64" | "aarch64") => a,
-        other => bail!("no prebuilt binary for {other}"),
-    };
-    let ext = if os == "windows" { "zip" } else { "tar.gz" };
-    Ok(format!("repos-manager-{os}-{arch}.{ext}"))
+    asset_name_for(std::env::consts::OS, std::env::consts::ARCH)
 }
 
 fn download(url: &str) -> Result<Vec<u8>> {
@@ -292,17 +295,34 @@ mod tests {
 
     #[test]
     fn checksum_lookup() {
-        let sums =
-            "abc123  repos-manager-linux-x86_64.tar.gz\nDEF456 *repos-manager-windows-x86_64.zip\n";
+        let sums = "abc123  repos-manager-x86_64-unknown-linux-musl.tar.gz\nDEF456 *repos-manager-x86_64-pc-windows-msvc.zip\n";
         assert_eq!(
-            expected_checksum(sums, "repos-manager-linux-x86_64.tar.gz").as_deref(),
+            expected_checksum(sums, "repos-manager-x86_64-unknown-linux-musl.tar.gz").as_deref(),
             Some("abc123")
         );
         assert_eq!(
-            expected_checksum(sums, "repos-manager-windows-x86_64.zip").as_deref(),
+            expected_checksum(sums, "repos-manager-x86_64-pc-windows-msvc.zip").as_deref(),
             Some("def456")
         );
         assert_eq!(expected_checksum(sums, "nope"), None);
+    }
+
+    #[test]
+    fn asset_names_match_release_targets() {
+        assert_eq!(
+            asset_name_for("linux", "aarch64").unwrap(),
+            "repos-manager-aarch64-unknown-linux-musl.tar.gz"
+        );
+        assert_eq!(
+            asset_name_for("macos", "x86_64").unwrap(),
+            "repos-manager-x86_64-apple-darwin.tar.gz"
+        );
+        assert_eq!(
+            asset_name_for("windows", "x86_64").unwrap(),
+            "repos-manager-x86_64-pc-windows-msvc.zip"
+        );
+        assert!(asset_name_for("freebsd", "x86_64").is_err());
+        assert!(asset_name_for("linux", "riscv64").is_err());
     }
 
     #[test]
