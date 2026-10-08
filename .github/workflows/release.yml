@@ -1,134 +1,137 @@
+# Runs on the GitHub mirror when a v* tag arrives from Forgejo.
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing tag to (re)build and publish, e.g. v1.0.0
-        required: true
+    tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
-  TAG: ${{ inputs.tag || github.ref_name }}
+  TAG: ${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all tags, to find the highest version below
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+
+      # A release that already exists for this tag (a re-run, or a tag pushed
+      # again after a fix) is replaced. The tag itself is kept.
+      - name: Create the release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, replacing it"
+            gh release delete "$TAG" --yes
+          fi
+          # Only the highest version is marked "latest", which is what
+          # releases/latest (install.sh and the self-updater) resolve to.
+          # Without this, an older tag rebuilt later would take over.
+          highest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          latest=false
+          [ "$highest" = "$TAG" ] && latest=true
+          echo "Highest tag is $highest, latest=$latest"
+          gh release create "$TAG" --generate-notes --verify-tag --latest="$latest"
+
   build:
-    name: Build ${{ matrix.asset }}
-    runs-on: ${{ matrix.os }}
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            asset: repos-manager-linux-x86_64.tar.gz
-            zigbuild: true
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-            asset: repos-manager-linux-aarch64.tar.gz
-            zigbuild: true
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            asset: repos-manager-macos-x86_64.tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            asset: repos-manager-macos-aarch64.tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: repos-manager-windows-x86_64.zip
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin,        os: macos-latest }
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest, arch: x86_64 }
+          - { target: aarch64-pc-windows-msvc,    os: windows-latest, arch: aarch64 }
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          ref: ${{ env.TAG }}
+          targets: ${{ matrix.target }}
 
-      - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-          rustup default stable
-
-      - name: Install zig and cargo-zigbuild
-        if: matrix.zigbuild
-        run: bash scripts/install-zigbuild.sh >> "$GITHUB_PATH"
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
         run: |
-          if [[ "${{ matrix.zigbuild }}" == "true" ]]; then
-            cargo zigbuild --release --locked --target ${{ matrix.target }}
-          else
-            cargo build --release --locked --target ${{ matrix.target }}
-          fi
+          mkdir -p dist
+          cp LICENSE readme.md target/${{ matrix.target }}/release/repos-manager dist/
+          tar -czf repos-manager-${{ matrix.target }}.tar.gz -C dist LICENSE readme.md repos-manager
 
-      - name: Package
-        run: bash scripts/package.sh ${{ matrix.target }} ${{ matrix.asset }}
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p dist
+          cp LICENSE readme.md target/${{ matrix.target }}/release/repos-manager.exe dist/
+          (cd dist && 7z a ../repos-manager-${{ matrix.target }}.zip LICENSE readme.md repos-manager.exe)
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
-          if-no-files-found: error
+      - name: Build installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+            $env:Path += ";${env:ProgramFiles(x86)}\NSIS"
+          }
+          $version = "$env:TAG".TrimStart('v')
+          $numeric = ($version -split '[-+]')[0]
+          makensis /V2 "/DVERSION=$version" "/DVIVERSION=$numeric.0" "/DARCH=${{ matrix.arch }}" `
+            "/DBINARY=..\target\${{ matrix.target }}\release\repos-manager.exe" `
+            "/DOUTFILE=..\repos-manager-${{ matrix.arch }}-setup.exe" `
+            installers\repos-manager.nsi
 
-  release:
-    name: Publish release
+      - name: Upload
+        run: |
+          shopt -s nullglob
+          gh release upload "$TAG" --clobber repos-manager-*.{tar.gz,zip} repos-manager-*-setup.exe
+
+  checksums:
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ env.TAG }}
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Build Windows installer
+      - name: Hash archives and binaries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nsis
-          version="${TAG#v}"
-          unzip -o dist/repos-manager-windows-x86_64.zip repos-manager.exe -d build-nsis
-          makensis -V2 \
-            -DVERSION="$version" \
-            -DVIVERSION="${version%%[-+]*}.0" \
-            -DBINARY="$PWD/build-nsis/repos-manager.exe" \
-            -DOUTFILE="$PWD/dist/repos-manager-windows-x86_64-setup.exe" \
-            install/windows/repos-manager.nsi
+          mkdir assets && cd assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'repos-manager-*'
+          sha256sum repos-manager-* > SHA256SUMS
 
-      - name: Checksums
-        working-directory: dist
-        run: |
-          sha256sum -- *.tar.gz *.zip *.exe > SHA256SUMS
-          cat SHA256SUMS
+          # Hash the binary inside each archive, listed as <target>/<binary>.
+          for archive in repos-manager-*.tar.gz repos-manager-*.zip; do
+            target=${archive#repos-manager-}
+            target=${target%.tar.gz}
+            target=${target%.zip}
+            mkdir -p "bin/$target"
+            case "$archive" in
+              *.tar.gz) tar -xzf "$archive" -C "bin/$target" repos-manager ;;
+              *.zip)    unzip -q "$archive" repos-manager.exe -d "bin/$target" ;;
+            esac
+          done
+          (cd bin && sha256sum */repos-manager*) > SHA256SUMS-binaries
 
-      - name: Release notes
-        run: |
-          version="${TAG#v}"
-          awk -v h="## v${version}" '$0 == h { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "Release ${TAG}" > notes.md
-          fi
-          cat notes.md
-
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          prerelease=()
-          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes-file notes.md
-            gh release upload "$TAG" dist/* --clobber
-          else
-            gh release create "$TAG" dist/* --verify-tag --title "$TAG" --notes-file notes.md "${prerelease[@]}"
-          fi
+          cat SHA256SUMS SHA256SUMS-binaries
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber SHA256SUMS SHA256SUMS-binaries

@@ -1,7 +1,7 @@
 ; repos-manager Windows installer (NSIS 3, MUI2, stock plugins only).
 ;
-;   makensis -DVERSION=1.0.0 -DBINARY=/abs/path/repos-manager.exe
-;            -DOUTFILE=/abs/path/repos-manager-windows-x86_64-setup.exe repos-manager.nsi
+;   makensis -DVERSION=1.0.0 -DARCH=x86_64 -DBINARY=/abs/path/repos-manager.exe
+;            -DOUTFILE=/abs/path/repos-manager-x86_64-setup.exe repos-manager.nsi
 ;
 ; Optional: -DVIVERSION=1.0.0.0 (numeric, needed for pre-release versions)
 ; and -DLICENSE_FILE=path. Relative paths resolve against this script's
@@ -18,14 +18,17 @@
   !error "Pass the exe path with -DBINARY=path/to/repos-manager.exe"
 !endif
 !ifndef LICENSE_FILE
-  !define LICENSE_FILE "..\..\LICENSE"
+  !define LICENSE_FILE "..\LICENSE"
 !endif
 ; Windows version resources need a purely numeric a.b.c.d.
 !ifndef VIVERSION
   !define VIVERSION "${VERSION}.0"
 !endif
+!ifndef ARCH
+  !define ARCH "x86_64"
+!endif
 !ifndef OUTFILE
-  !define OUTFILE "repos-manager-windows-x86_64-setup.exe"
+  !define OUTFILE "repos-manager-${ARCH}-setup.exe"
 !endif
 
 !define NAME "repos-manager"

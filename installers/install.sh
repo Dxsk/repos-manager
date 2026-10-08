@@ -1,7 +1,7 @@
 #!/bin/sh
 # repos-manager installer for Linux and macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --version v1.0.0 --prefix /usr/local
 
 set -eu
@@ -75,8 +75,8 @@ else
 fi
 
 case "$(uname -s)" in
-    Linux) os=linux ;;
-    Darwin) os=macos ;;
+    Linux) os=unknown-linux-musl ;;
+    Darwin) os=apple-darwin ;;
     *) die "unsupported OS: $(uname -s) (on Windows use install.ps1)" ;;
 esac
 
@@ -86,7 +86,7 @@ case "$(uname -m)" in
     *) die "unsupported architecture: $(uname -m)" ;;
 esac
 
-asset="$NAME-$os-$arch.tar.gz"
+asset="$NAME-$arch-$os.tar.gz"
 
 if [ -n "$version" ]; then
     case "$version" in v*) ;; *) version="v$version" ;; esac

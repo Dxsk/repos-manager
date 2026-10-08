@@ -1,6 +1,5 @@
+# Every text file uses LF, on Windows too. This overrides core.autocrlf.
 * text=auto eol=lf
-*.ps1 text eol=crlf
-*.nsi text eol=crlf
 
 # Exclude from release archives (git archive / GitHub release tarballs)
 site/           export-ignore

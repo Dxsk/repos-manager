@@ -1,57 +1,53 @@
+# Forgejo Actions CI. GitHub (fed by the push mirror) runs .github/workflows/
+# instead, which also covers Windows/macOS and publishes releases.
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
 
 env:
   CARGO_TERM_COLOR: always
 
-# Checkout is done with plain git: the rust image has no Node.js, which
-# JavaScript actions such as actions/checkout need.
 jobs:
-  rust:
-    name: Rust
-    runs-on: docker
+  check:
+    runs-on: ubuntu-latest
+    # Node (current LTS) is needed by the JS actions; Rust is installed below.
     container:
-      image: rust:1-bookworm
-    defaults:
-      run:
-        shell: bash
+      image: node:lts-trixie
     steps:
-      - name: Checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git config --global http.extraHeader "Authorization: Basic $(printf 'x:%s' '${{ github.token }}' | base64 -w0)"
-          git init -q .
-          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth 1 origin "$GITHUB_SHA"
-          git checkout -q FETCH_HEAD
+      - uses: actions/checkout@v7
 
-      - name: Configure git
+      - name: Install Rust and tools
         run: |
-          git config --global user.email "test@test.com"
-          git config --global user.name "Test"
+          apt-get update
+          apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
+            --component rustfmt,clippy,llvm-tools-preview
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-llvm-cov
+        run: |
+          curl -fsSL https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xzf - -C "$HOME/.cargo/bin"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ hashFiles('Cargo.lock') }}
+
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: shellcheck installers/install.sh
+
+      # Tests need a git identity for the commits they create.
+      - name: Tests and coverage
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@localhost
           git config --global init.defaultBranch main
-
-      - name: Toolchain
-        run: |
-          rustup component add rustfmt clippy
-          cargo --version
-
-      - name: Format
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --locked
-
-      - name: ShellCheck
-        run: |
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends shellcheck >/dev/null
-          shellcheck install/install.sh scripts/*.sh
+          cargo llvm-cov --locked --summary-only

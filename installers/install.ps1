@@ -1,6 +1,6 @@
 # repos-manager installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/install/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex
 #
 # Pin a version with $env:REPOS_MANAGER_VERSION = "v1.0.0" before running,
 # or download the script and call it with -Version / -Source forge / -Uninstall.
@@ -19,7 +19,6 @@ $ProgressPreference = 'SilentlyContinue'
 # Windows PowerShell 5.1 defaults to TLS 1.0, which GitHub rejects.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Asset = 'repos-manager-windows-x86_64.zip'
 $GitHub = 'https://github.com/Dxsk/repos-manager'
 $Forge = 'https://forge.infrasouveraine.fr/dxsk/repos-manager'
 $ForgeApi = 'https://forge.infrasouveraine.fr/api/v1/repos/dxsk/repos-manager'
@@ -49,6 +48,15 @@ if ($Uninstall) {
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'Only 64-bit Windows is supported.' }
 
 if ($Version -and -not $Version.StartsWith('v')) { $Version = "v$Version" }
+
+$Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+# GitHub ships MSVC builds for both arches; the forge only cross-builds x86_64 with mingw.
+if ($Source -eq 'forge') {
+    if ($Arch -ne 'x86_64') { throw 'The forge release only has x86_64 Windows builds, use -Source github' }
+    $Asset = 'repos-manager-x86_64-pc-windows-gnu.zip'
+} else {
+    $Asset = "repos-manager-$Arch-pc-windows-msvc.zip"
+}
 
 if ($Source -eq 'forge') {
     if (-not $Version) { $Version = (Invoke-RestMethod "$ForgeApi/releases/latest").tag_name }

@@ -1,111 +1,97 @@
+# Forgejo release: on a pushed v* tag, cross-compile from a single Linux runner
+# and publish a Forgejo release. macOS and Windows ARM builds are only produced
+# by the GitHub mirror (.github/workflows/release.yml), which needs native runners.
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ["v*"]
 
 env:
   CARGO_TERM_COLOR: always
 
-# Builds Linux (static musl, via zig) and Windows (mingw-w64) from a single
-# Linux container. macOS binaries cannot be built here (no Apple SDK on the
-# forge runner): they are only published on the GitHub release, which is
-# the one the built-in updater queries.
 jobs:
   release:
-    name: Build and publish
-    runs-on: docker
+    # Assumes an x86_64 host.
+    runs-on: ubuntu-latest
     container:
-      image: rust:1-bookworm
-    defaults:
-      run:
-        shell: bash
-    env:
-      TAG: ${{ github.ref_name }}
-      TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+      image: node:lts-trixie
     steps:
-      - name: Checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git config --global http.extraHeader "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 -w0)"
-          git init -q .
-          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth 1 origin "$GITHUB_SHA"
-          git checkout -q FETCH_HEAD
+      - uses: actions/checkout@v7
 
-      - name: Install build tools
+      - name: Check the tag matches Cargo.toml
         run: |
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends gcc-mingw-w64-x86-64 nsis jq zip xz-utils >/dev/null
-          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu
-          bash scripts/install-zigbuild.sh >> "$GITHUB_PATH"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
 
-      - name: Build Linux x86_64
+      - name: Install toolchains
         run: |
-          cargo zigbuild --release --locked --target x86_64-unknown-linux-musl
-          bash scripts/package.sh x86_64-unknown-linux-musl repos-manager-linux-x86_64.tar.gz
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            musl-tools gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64 nsis jq zip
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
+            --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,x86_64-pc-windows-gnu
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Build Linux aarch64
-        run: |
-          cargo zigbuild --release --locked --target aarch64-unknown-linux-musl
-          bash scripts/package.sh aarch64-unknown-linux-musl repos-manager-linux-aarch64.tar.gz
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build Windows x86_64
+      - name: Build
         env:
+          # Rust's musl targets are self-contained; the GNU cross gcc only links.
+          # ring compiles C, so the aarch64 cross compiler is needed for it too.
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
         run: |
-          cargo build --release --locked --target x86_64-pc-windows-gnu
-          bash scripts/package.sh x86_64-pc-windows-gnu repos-manager-windows-x86_64.zip
-
-      - name: Build Windows installer
-        run: |
-          version="${TAG#v}"
-          makensis -V2 \
-            -DVERSION="$version" \
-            -DVIVERSION="${version%%[-+]*}.0" \
-            -DBINARY="$PWD/target/x86_64-pc-windows-gnu/release/repos-manager.exe" \
-            -DOUTFILE="$PWD/dist/repos-manager-windows-x86_64-setup.exe" \
-            install/windows/repos-manager.nsi
-
-      - name: Checksums
-        working-directory: dist
-        run: |
-          sha256sum -- *.tar.gz *.zip *.exe > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Release notes
-        run: |
-          version="${TAG#v}"
-          awk -v h="## v${version}" '$0 == h { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "Release ${TAG}" > notes.md
-          fi
-          cat notes.md
-
-      - name: Publish
-        run: |
-          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
-          auth=(-H "Authorization: token ${TOKEN}")
-          prerelease=false
-          [[ "$TAG" == *-* ]] && prerelease=true
-
-          id=$(curl -fsS "${auth[@]}" "$api/releases/tags/$TAG" | jq -r .id) || id=""
-          if [[ -z "$id" ]]; then
-            id=$(jq -n --arg tag "$TAG" --rawfile body notes.md --argjson pre "$prerelease" \
-                '{tag_name: $tag, name: $tag, body: $body, prerelease: $pre}' \
-              | curl -fsS "${auth[@]}" -H 'Content-Type: application/json' -d @- "$api/releases" \
-              | jq -r .id)
-          fi
-          echo "Release id: $id"
-
-          existing=$(curl -fsS "${auth[@]}" "$api/releases/$id/assets")
-          for f in dist/*; do
-            name=$(basename "$f")
-            # Replace assets on re-runs instead of failing on duplicates.
-            for old in $(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<< "$existing"); do
-              curl -fsS -X DELETE "${auth[@]}" "$api/releases/$id/assets/$old"
-            done
-            curl -fsS "${auth[@]}" -F "attachment=@$f" "$api/releases/$id/assets?name=$name" > /dev/null
-            echo "Uploaded $name"
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu; do
+            cargo build --release --locked --target "$target"
           done
+
+      - name: Package
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          out=dist/release
+          mkdir -p "$out"
+
+          bins=$(mktemp -d)
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu; do
+            bin=repos-manager
+            case "$target" in *windows*) bin=repos-manager.exe ;; esac
+            stage=$(mktemp -d)
+            cp LICENSE readme.md "target/$target/release/$bin" "$stage/"
+            case "$target" in
+              *windows*) (cd "$stage" && zip -q "$OLDPWD/$out/repos-manager-$target.zip" LICENSE readme.md "$bin") ;;
+              *)         tar -czf "$out/repos-manager-$target.tar.gz" -C "$stage" LICENSE readme.md "$bin" ;;
+            esac
+            mkdir -p "$bins/$target"
+            cp "$stage/$bin" "$bins/$target/"
+          done
+
+          makensis -V2 "-DVERSION=$version" "-DVIVERSION=${version%%[-+]*}.0" -DARCH=x86_64 \
+            "-DBINARY=$PWD/target/x86_64-pc-windows-gnu/release/repos-manager.exe" \
+            "-DOUTFILE=$PWD/$out/repos-manager-x86_64-setup.exe" \
+            installers/repos-manager.nsi
+
+          # SHA256SUMS covers the downloads, SHA256SUMS-binaries the binary
+          # inside each archive, listed as <target>/<binary>.
+          (cd "$out" && sha256sum repos-manager-* > SHA256SUMS)
+          (cd "$bins" && sha256sum */repos-manager*) > "$out/SHA256SUMS-binaries"
+          cat "$out/SHA256SUMS" "$out/SHA256SUMS-binaries"
+
+      # override: a release that already exists for this tag (a re-run, or a
+      # tag pushed again after a fix) is deleted and published again.
+      - uses: actions/forgejo-release@v2.13.4
+        with:
+          direction: upload
+          release-dir: dist/release
+          override: true
