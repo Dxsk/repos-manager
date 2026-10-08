@@ -1,0 +1,94 @@
+# Mirrors GitHub issues and pull requests to the upstream Forgejo repository
+# as plain issues, so the maintainer gets notified there. No code is moved:
+# PRs are reviewed and fetched from GitHub by hand.
+#
+# Each GitHub item maps to one forge issue titled "[GitHub issue #N] ..." or
+# "[GitHub PR #N] ...", opened, edited, closed and reopened along with it.
+#
+# pull_request_target runs with secrets on PRs from forks: nothing here may
+# check out or run PR code. Titles and bodies are user controlled, so they
+# only reach the script through env vars, never through ${{ }} interpolation.
+#
+# FORGE_TOKEN: token of a dedicated forge bot account (not the maintainer's,
+# Forgejo does not notify people about their own actions). The repository is
+# public, so the bot needs no extra permission to open and close its issues.
+name: Forward to Forgejo
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened]
+  pull_request_target:
+    types: [opened, edited, closed, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forward-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  FORGE_URL: https://forge.infrasouveraine.fr
+  FORGE_REPO: dxsk/repos-manager
+  FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+  EVENT: ${{ github.event_name }}
+  ACTION: ${{ github.event.action }}
+  NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+  URL: ${{ github.event.issue.html_url || github.event.pull_request.html_url }}
+  GH_TITLE: ${{ github.event.issue.title || github.event.pull_request.title }}
+  GH_BODY: ${{ github.event.issue.body || github.event.pull_request.body }}
+  AUTHOR: ${{ github.event.issue.user.login || github.event.pull_request.user.login }}
+  MERGED: ${{ github.event.pull_request.merged }}
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync the forge issue
+        run: |
+          set -euo pipefail
+          [ -n "$FORGE_TOKEN" ] || { echo "::error::FORGE_TOKEN secret is not set"; exit 1; }
+
+          api="$FORGE_URL/api/v1/repos/$FORGE_REPO"
+          forge() { curl -fsS -H "Authorization: token $FORGE_TOKEN" -H 'Content-Type: application/json' "$@"; }
+
+          kind=issue
+          [ "$EVENT" = pull_request_target ] && kind=PR
+          prefix="[GitHub $kind #$NUMBER]"
+
+          find_issue() {
+            jq -c --arg p "$prefix " '[.[] | select(.title | startswith($p))] | first // {}'
+          }
+          # Search by number first, then fall back to the most recent issues.
+          existing=$(forge -G "$api/issues" --data-urlencode "q=$NUMBER" \
+            -d state=all -d type=issues -d limit=50 | find_issue)
+          if [ "$existing" = '{}' ]; then
+            existing=$(forge -G "$api/issues" -d state=all -d type=issues -d limit=50 | find_issue)
+          fi
+          index=$(jq -r '.number // empty' <<< "$existing")
+
+          case "$ACTION" in
+            closed)   state=closed ;;
+            *)        state=open ;;
+          esac
+          status="Open on GitHub"
+          if [ "$state" = closed ]; then
+            status="Closed on GitHub"
+            [ "$MERGED" = true ] && status="Merged on GitHub"
+          fi
+
+          body=$(printf '%s by @%s: %s\n\n_%s. Mirrored from GitHub, reply there._\n\n---\n\n%s' \
+            "$kind" "$AUTHOR" "$URL" "$status" "$GH_BODY")
+          payload=$(jq -n --arg t "$prefix $GH_TITLE" --arg b "$body" --arg s "$state" \
+            '{title: $t, body: $b, state: $s}')
+
+          if [ -z "$index" ]; then
+            index=$(forge -X POST "$api/issues" -d "$(jq 'del(.state)' <<< "$payload")" | jq -r .number)
+            echo "Opened forge issue #$index"
+            if [ "$state" = closed ]; then
+              forge -X PATCH "$api/issues/$index" -d '{"state":"closed"}' > /dev/null
+            fi
+          else
+            forge -X PATCH "$api/issues/$index" -d "$payload" > /dev/null
+            echo "Updated forge issue #$index ($state)"
+          fi
