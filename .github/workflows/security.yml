@@ -2,12 +2,12 @@ name: Security Audit
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - 'site/package.json'
       - 'site/pnpm-lock.yaml'
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - 'site/package.json'
       - 'site/pnpm-lock.yaml'

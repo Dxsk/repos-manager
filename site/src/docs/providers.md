@@ -14,7 +14,7 @@ order: 3
 | Bitbucket | Beta | API fallback implemented, needs more testing |
 | Radicle | Beta | Experimental, peer-to-peer |
 
-Bitbucket and Radicle support is functional but has not been extensively tested in production. If you encounter a bug, please [open an issue](https://forge.infrasouveraine.fr/dxsk/repos-manager/issues). Contributions and bug reports are welcome.
+Bitbucket and Radicle support is functional but has not been extensively tested in production. If you encounter a bug, please [open an issue](https://github.com/Dxsk/repos-manager/issues). Contributions and bug reports are welcome.
 
 repos-manager drives each provider's official CLI, which must be in your `PATH`. `repos-manager login` without argument runs the login flow of every CLI it finds.
 

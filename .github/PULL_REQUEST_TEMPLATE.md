@@ -8,4 +8,4 @@ What does this PR do?
 - [ ] Lints pass (`make lint`)
 - [ ] Entry added under `## Unreleased` in `CHANGELOG.md`
 - [ ] Documentation updated (if applicable)
-- [ ] Branched from `develop`
+- [ ] Branched from `main`

@@ -77,7 +77,7 @@ The portable `repos-manager-x86_64-pc-windows-msvc.zip` and `repos-manager-aarch
 Requires a recent stable [Rust toolchain](https://rustup.rs) and `make`:
 
 ```bash
-git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+git clone https://github.com/Dxsk/repos-manager.git
 cd repos-manager
 make install        # cargo build --release, then copy to ~/.local/bin
 make completions    # bash, zsh and fish completions in your user directories
@@ -88,7 +88,7 @@ Change the prefix with `make install PREFIX=/usr/local` (packagers can also set 
 Or install straight from the repository with cargo:
 
 ```bash
-cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+cargo install --git https://github.com/Dxsk/repos-manager.git
 ```
 
 ### Shell completions

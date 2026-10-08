@@ -10,7 +10,7 @@
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)](#installation)
 [![License](https://img.shields.io/github/license/Dxsk/repos-manager)](LICENSE)
 
-[Forgejo (main repository)](https://forge.infrasouveraine.fr/dxsk/repos-manager) · [GitHub mirror](https://github.com/Dxsk/repos-manager) · [Documentation](https://repos-manager.dxscloud.fr)
+[GitHub](https://github.com/Dxsk/repos-manager) · [Documentation](https://repos-manager.dxscloud.fr) · [Upstream (Forgejo)](https://forge.infrasouveraine.fr/dxsk/repos-manager)
 
 </div>
 
@@ -114,7 +114,7 @@ If you would rather not install anything, grab the portable `.zip` and put `repo
 You need a stable [Rust toolchain](https://rustup.rs) and `make`.
 
 ```sh
-git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+git clone https://github.com/Dxsk/repos-manager.git
 cd repos-manager
 make install                    # builds and installs to ~/.local/bin/repos-manager
 make install PREFIX=/usr/local  # or anywhere else
@@ -125,7 +125,7 @@ make uninstall
 Packagers can stage the install with `DESTDIR`. Cargo works too:
 
 ```sh
-cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git
+cargo install --git https://github.com/Dxsk/repos-manager.git
 ```
 
 </details>
@@ -424,7 +424,7 @@ makensis /DVERSION=1.0.0 /DARCH=x86_64 /DBINARY="$PWD\target\release\repos-manag
 
 `repos-manager-x86_64-setup.exe` is written next to the script unless you pass `/DOUTFILE=path`.
 
-The full contributing guide is in [CONTRIBUTING.md](CONTRIBUTING.md) and on the [documentation site](https://repos-manager.dxscloud.fr/docs/contributing/). Issues and pull requests go to the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/issues).
+The full contributing guide is in [CONTRIBUTING.md](CONTRIBUTING.md) and on the [documentation site](https://repos-manager.dxscloud.fr/docs/contributing/). Issues and pull requests go to [GitHub](https://github.com/Dxsk/repos-manager/issues). Report vulnerabilities privately through a [security advisory](https://github.com/Dxsk/repos-manager/security/advisories/new), see [SECURITY.md](SECURITY.md).
 
 </details>
 

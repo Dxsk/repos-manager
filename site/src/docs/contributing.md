@@ -6,19 +6,17 @@ order: 7
 
 ## Where to contribute
 
-The primary repository is on the Forgejo forge: [forge.infrasouveraine.fr/dxsk/repos-manager](https://forge.infrasouveraine.fr/dxsk/repos-manager). Open issues and pull requests there. [GitHub](https://github.com/Dxsk/repos-manager) is a read-only mirror of `main` and tags.
+Issues and pull requests are handled on [GitHub](https://github.com/Dxsk/repos-manager). Development happens upstream on the maintainer's Forgejo instance and is mirrored to GitHub, so an accepted pull request is landed upstream and appears on GitHub through the mirror.
+
+Security issues are reported privately through a [GitHub security advisory](https://github.com/Dxsk/repos-manager/security/advisories/new), never in a public issue.
 
 ## Setup
 
 You need a recent stable [Rust toolchain](https://rustup.rs) (with `rustfmt` and `clippy`), `make` and `git` 2.28 or newer.
 
 ```bash
-git clone ssh://git@git.infrasouveraine.fr/dxsk/repos-manager.git
-# or over HTTPS
-git clone https://forge.infrasouveraine.fr/dxsk/repos-manager.git
-
+git clone https://github.com/Dxsk/repos-manager.git
 cd repos-manager
-git switch develop
 make build
 ```
 
@@ -67,7 +65,7 @@ CI runs `cargo fmt --check` and clippy with warnings as errors, so run `make lin
 
 ## CI pipeline
 
-CI runs on both forges. The forge checks every push and pull request to `main` and `develop`; GitHub runs its matrix when `main` is mirrored there:
+GitHub runs CI on every pull request and on `main`. The upstream forge runs its own checks before anything is mirrored:
 
 | Where | Job | What it does |
 |-------|-----|-------------|
@@ -79,7 +77,7 @@ All checks must pass before merging.
 
 ## Releases
 
-Releases are cut by hand from `main` on the forge. There is no automatic version bump.
+Releases are cut by the maintainer, by hand, from `main` on the upstream forge. There is no automatic version bump.
 
 1. Describe your changes under `## Unreleased` in `CHANGELOG.md`, grouped as `### Added`, `### Changed`, `### Removed` and `### Fixed`. Contributors do this in their pull request.
 2. The maintainer runs `make release V=x.y.z` on a clean tree. It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the annotated `vx.y.z` tag. Nothing is pushed yet.
@@ -87,7 +85,7 @@ Releases are cut by hand from `main` on the forge. There is no automatic version
 
 The tag starts the Forgejo release (Linux x86_64 and aarch64 musl, `x86_64-pc-windows-gnu` zip and the x86_64 installer). The forge push mirror then forwards `main` and the tag to GitHub, which builds the full release: Linux, macOS, Windows x86_64 and ARM64 (`msvc`) and both installers. Both releases ship `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub, so its release must carry every asset.
 
-Since the mirror overwrites GitHub on every sync, never commit or tag directly on GitHub.
+Since the mirror overwrites GitHub `main` on every sync, pull requests are never merged with the GitHub button: the maintainer lands them upstream (keeping the author) and the mirror closes the loop.
 
 ## Adding a provider
 
@@ -204,15 +202,14 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 ├── <span style="color:#58a6ff">tests/</span>
 │   └── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># End-to-end CLI tests</span>
 ├── <span style="color:#58a6ff">installers/</span>              <span style="color:#8b949e"># install.sh, install.ps1, NSIS installer</span>
-├── <span style="color:#58a6ff">scripts/</span>                 <span style="color:#8b949e"># Release and CI helpers</span>
 └── <span style="color:#58a6ff">site/</span>                    <span style="color:#8b949e"># This documentation site (Eleventy)</span></code></pre>
 
 ## Pull requests
 
 | Rule | Details |
 |------|---------|
-| Where | Pull requests on the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/pulls) |
-| Branch from | `develop` |
+| Where | Pull requests on [GitHub](https://github.com/Dxsk/repos-manager/pulls), from a fork |
+| Branch from | `main` |
 | Scope | One feature per PR |
 | Tests | Must pass (`make test`) |
 | Lint | Must pass (`make lint`) |

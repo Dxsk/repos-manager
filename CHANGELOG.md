@@ -12,7 +12,7 @@ Rewritten in Rust. repos-manager now ships as a single native binary for Linux (
 - `installers/install.sh` for Linux and macOS (`curl -fsSL .../installers/install.sh | sh`), installing the latest release to `~/.local/bin` after checking `SHA256SUMS`, with `--version` (or `REPOS_MANAGER_VERSION`), `--prefix` (or `PREFIX`), `--source github|forge` and `--uninstall`
 - `installers/install.ps1` for Windows, installing to `%LOCALAPPDATA%\Programs\repos-manager` and adding it to the user `PATH`, with `-Version`, `-Source`, `-InstallDir` and `-Uninstall`
 - Per-user NSIS installers, `repos-manager-x86_64-setup.exe` and `repos-manager-aarch64-setup.exe`
-- Root `Makefile` with `build`, `test`, `coverage`, `lint`, `install`, `uninstall`, `completions` and `release` targets. Build from source with `make install` or `cargo install --git https://forge.infrasouveraine.fr/dxsk/repos-manager.git`
+- Root `Makefile` with `build`, `test`, `coverage`, `lint`, `install`, `uninstall`, `completions` and `release` targets. Build from source with `make install` or `cargo install --git https://github.com/Dxsk/repos-manager.git`
 - Release assets named by target triple: `repos-manager-<target>.tar.gz` for `x86_64`/`aarch64-unknown-linux-musl` and `x86_64`/`aarch64-apple-darwin`, `repos-manager-<target>.zip` for `x86_64`/`aarch64-pc-windows-msvc`, plus the installers, `SHA256SUMS` and `SHA256SUMS-binaries`
 - Windows ARM64 builds (zip and installer) on the GitHub release
 - Releases built on both forges: Forgejo publishes the Linux musl archives, an `x86_64-pc-windows-gnu` zip and the x86_64 installer; GitHub publishes every asset
@@ -30,7 +30,7 @@ Rewritten in Rust. repos-manager now ships as a single native binary for Linux (
 - The sync lock is per host (`<base_dir>/<host>/.repos-manager.lock`), so different hosts can sync concurrently (#5)
 - The bats suite is replaced by `cargo test` (unit tests per module plus end-to-end CLI tests), linted with `cargo fmt` and `cargo clippy`
 - Releases are cut by hand: changes go under `## Unreleased`, then `make release V=x.y.z` bumps the version, dates this file, commits and tags, and `git push --follow-tags` starts the releases. Versions are no longer bumped automatically from commit prefixes
-- The primary repository is now the Forgejo forge at https://forge.infrasouveraine.fr/dxsk/repos-manager, where issues and pull requests are handled. GitHub (https://github.com/Dxsk/repos-manager) is a read-only mirror of `main` and tags, fed by the forge push mirror
+- Development moves upstream to a Forgejo instance (https://forge.infrasouveraine.fr/dxsk/repos-manager), push-mirrored to GitHub with `main` and tags only. Issues, pull requests and security reports stay on GitHub (https://github.com/Dxsk/repos-manager), with private vulnerability reporting enabled
 - The readme and every docs page describe the Rust binary: install methods per OS, shell completions, updating, Windows notes, tea config locations, the Makefile and the release process
 
 ### Removed
