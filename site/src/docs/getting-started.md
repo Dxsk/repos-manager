@@ -29,6 +29,16 @@ repos-manager is a single native binary for Linux (x86_64, aarch64), macOS (x86_
 
 Releases are published on [GitHub Releases](https://github.com/Dxsk/repos-manager/releases), which has every platform, and on the [forge](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases), which carries the Linux and Windows x86_64 builds. Every release ships `SHA256SUMS` (archives and installers) and `SHA256SUMS-binaries` (the binary inside each archive). The install scripts verify downloads against `SHA256SUMS`.
 
+### Package managers
+
+| Where | Package | Command |
+|-------|---------|---------|
+| [crates.io](https://crates.io/crates/repos-manager) | `repos-manager` | `cargo install repos-manager` |
+| [AUR](https://aur.archlinux.org/packages/repos-manager-bin) | `repos-manager-bin` (prebuilt) | `yay -S repos-manager-bin` |
+| [AUR](https://aur.archlinux.org/packages/repos-manager) | `repos-manager` (built from source) | `yay -S repos-manager` |
+
+The AUR packages ship the bash, zsh and fish completions. Update package-managed installs with the package manager itself: `repos-manager update` detects them and prints the right command.
+
 ### Linux and macOS
 
 ```bash
@@ -85,9 +95,10 @@ make completions    # bash, zsh and fish completions in your user directories
 
 Change the prefix with `make install PREFIX=/usr/local` (packagers can also set `DESTDIR`). Remove everything with `make uninstall`.
 
-Or install straight from the repository with cargo:
+Or install with cargo, from crates.io or straight from the repository:
 
 ```bash
+cargo install repos-manager
 cargo install --git https://github.com/Dxsk/repos-manager.git
 ```
 

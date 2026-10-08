@@ -7,6 +7,8 @@
 [![Forgejo CI](https://forge.infrasouveraine.fr/dxsk/repos-manager/badges/workflows/ci.yml/badge.svg?label=Forgejo%20CI)](https://forge.infrasouveraine.fr/dxsk/repos-manager/actions?workflow=ci.yml)
 [![GitHub CI](https://img.shields.io/github/actions/workflow/status/Dxsk/repos-manager/ci.yml?branch=main&label=GitHub%20CI&logo=github)](https://github.com/Dxsk/repos-manager/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Dxsk/repos-manager?logo=git&logoColor=white)](https://github.com/Dxsk/repos-manager/releases/latest)
+[![crates.io](https://img.shields.io/crates/v/repos-manager?logo=rust&logoColor=white)](https://crates.io/crates/repos-manager)
+[![AUR](https://img.shields.io/aur/version/repos-manager-bin?logo=archlinux&logoColor=white&label=AUR)](https://aur.archlinux.org/packages/repos-manager-bin)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)](#installation)
 [![License](https://img.shields.io/github/license/Dxsk/repos-manager)](LICENSE)
 
@@ -43,6 +45,21 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 ## Installation
 
 Prebuilt binaries for every release are on the [GitHub releases page](https://github.com/Dxsk/repos-manager/releases), which has every platform. The [Forgejo releases](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases) carry the Linux and Windows x86_64 builds.
+
+<details open>
+<summary><b>Package managers</b></summary>
+
+<br>
+
+| Where | Package | Command |
+|---|---|---|
+| [crates.io](https://crates.io/crates/repos-manager) | `repos-manager` | `cargo install repos-manager` |
+| [AUR](https://aur.archlinux.org/packages/repos-manager-bin) (Arch, Manjaro, CachyOS...) | `repos-manager-bin` (prebuilt) | `yay -S repos-manager-bin` |
+| [AUR](https://aur.archlinux.org/packages/repos-manager) | `repos-manager` (built from source) | `yay -S repos-manager` |
+
+The AUR packages also install the bash, zsh and fish completions. Update these installs through the package manager: `repos-manager update` detects them and tells you which command to run instead of replacing the binary.
+
+</details>
 
 <details open>
 <summary><b>Linux and macOS</b></summary>
@@ -122,9 +139,10 @@ make completions                # bash, zsh and fish completions in your user di
 make uninstall
 ```
 
-Packagers can stage the install with `DESTDIR`. Cargo works too:
+Packagers can stage the install with `DESTDIR`. Cargo works too, from crates.io or straight from the repository:
 
 ```sh
+cargo install repos-manager
 cargo install --git https://github.com/Dxsk/repos-manager.git
 ```
 
@@ -398,6 +416,8 @@ repos-manager update -y   # no prompt
 ```
 
 `update` downloads the GitHub release asset for your platform (the `msvc` zip on Windows), verifies it against the release's `SHA256SUMS` and replaces the binary in place. Re-running the install script works too.
+
+Installed through a package manager (AUR, `cargo install`, and later Homebrew, Scoop or winget)? Then `update` does not touch the binary and the banner shows the package manager's command instead, for example `run: cargo install repos-manager`.
 
 ### Upgrading from 0.x
 

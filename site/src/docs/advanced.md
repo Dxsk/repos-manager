@@ -39,6 +39,8 @@ repos-manager update --yes  # no prompt, for scripts
 
 It queries the GitHub Releases API, downloads the asset built for the running platform, verifies it against the release `SHA256SUMS` and replaces the binary in place. A checksum mismatch aborts the update without touching the installed binary.
 
+Installs owned by a package manager are left alone: when the binary lives under `/usr/bin` (AUR and other distro packages), a Homebrew prefix, a Scoop or winget folder or `~/.cargo/bin`, `update` exits with the package manager's command (`brew upgrade repos-manager`, `cargo install repos-manager`...) and the banner shows that command too.
+
 Release assets are named after the Rust target triple:
 
 | Platform | Asset |
