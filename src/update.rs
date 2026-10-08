@@ -80,11 +80,37 @@ fn cache_is_stale(path: &Path, ttl: Duration) -> bool {
 }
 
 /// Banner text for the cached latest version, if it is newer than this build.
-fn banner_message(cached: &str) -> Option<String> {
+const SELF_UPDATE_HINT: &str = "run: repos-manager update";
+
+/// How to update when a package manager owns the binary: replacing it in
+/// place would fail without root, or desync the package manager's records.
+pub fn package_manager_hint(exe: &Path) -> Option<&'static str> {
+    let p = exe.to_string_lossy().replace('\\', "/").to_lowercase();
+    if p.contains("/cellar/") || p.starts_with("/opt/homebrew/") || p.contains("/linuxbrew/") {
+        Some("run: brew upgrade repos-manager")
+    } else if p.contains("/scoop/apps/") {
+        Some("run: scoop update repos-manager")
+    } else if p.contains("/microsoft/winget/") {
+        Some("run: winget upgrade repos-manager")
+    } else if p.contains("/.cargo/bin/") {
+        Some("run: cargo install repos-manager")
+    } else if p.starts_with("/usr/bin/") || p.starts_with("/bin/") {
+        Some("update it with your system package manager")
+    } else {
+        None
+    }
+}
+
+fn managed_hint() -> Option<&'static str> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| package_manager_hint(&p))
+}
+
+fn banner_message(cached: &str, hint: &str) -> Option<String> {
     let latest = cached.trim();
-    is_newer(latest, CURRENT).then(|| {
-        format!("⬆ repos-manager {latest} available (current {CURRENT}), run: repos-manager update")
-    })
+    is_newer(latest, CURRENT)
+        .then(|| format!("⬆ repos-manager {latest} available (current {CURRENT}), {hint}"))
 }
 
 pub fn banner(settings: &Settings) {
@@ -93,7 +119,7 @@ pub fn banner(settings: &Settings) {
     }
     if let Some(msg) = fs::read_to_string(cache_path())
         .ok()
-        .and_then(|c| banner_message(&c))
+        .and_then(|c| banner_message(&c, managed_hint().unwrap_or(SELF_UPDATE_HINT)))
     {
         eprintln!("{}", output::yellow(&msg));
     }
@@ -261,6 +287,9 @@ fn confirm(prompt: &str) -> Result<bool> {
 }
 
 pub fn self_update(assume_yes: bool) -> Result<()> {
+    if let Some(hint) = managed_hint() {
+        bail!("this install is managed by a package manager, {hint}");
+    }
     output::info("Checking for updates...");
     let release = fetch_release(&api_url(), Duration::from_secs(15))?;
     let latest = release.tag_name.trim_start_matches('v');
@@ -401,14 +430,46 @@ mod tests {
 
     #[test]
     fn banner_only_for_newer_versions() {
-        let msg = banner_message("99.0.0\n").unwrap();
+        let msg = banner_message("99.0.0\n", SELF_UPDATE_HINT).unwrap();
         assert!(
             msg.contains("99.0.0 available") && msg.contains(CURRENT),
             "{msg}"
         );
-        assert_eq!(banner_message(CURRENT), None);
-        assert_eq!(banner_message("not a version"), None);
-        assert_eq!(banner_message(""), None);
+        assert!(msg.ends_with(SELF_UPDATE_HINT));
+        assert_eq!(banner_message(CURRENT, SELF_UPDATE_HINT), None);
+        assert_eq!(banner_message("not a version", SELF_UPDATE_HINT), None);
+        assert_eq!(banner_message("", SELF_UPDATE_HINT), None);
+    }
+
+    #[test]
+    fn package_manager_installs_are_detected() {
+        let hint = |p: &str| package_manager_hint(Path::new(p));
+        let system = Some("update it with your system package manager");
+        let brew = Some("run: brew upgrade repos-manager");
+        assert_eq!(hint("/usr/bin/repos-manager"), system);
+        assert_eq!(hint("/opt/homebrew/bin/repos-manager"), brew);
+        assert_eq!(
+            hint("/usr/local/Cellar/repos-manager/1.0.0/bin/repos-manager"),
+            brew
+        );
+        assert_eq!(
+            hint(r"C:\Users\me\scoop\apps\repos-manager\current\repos-manager.exe"),
+            Some("run: scoop update repos-manager")
+        );
+        assert_eq!(
+            hint(r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\x\repos-manager.exe"),
+            Some("run: winget upgrade repos-manager")
+        );
+        assert_eq!(
+            hint("/home/me/.cargo/bin/repos-manager"),
+            Some("run: cargo install repos-manager")
+        );
+        assert_eq!(hint("/home/me/.local/bin/repos-manager"), None);
+        assert_eq!(hint("/usr/local/bin/repos-manager"), None);
+        assert_eq!(
+            hint(r"C:\Users\me\AppData\Local\Programs\repos-manager\repos-manager.exe"),
+            None
+        );
     }
 
     #[test]
