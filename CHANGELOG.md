@@ -10,6 +10,8 @@
 ### Fixed
 
 - Updating a clone of an empty remote repository no longer fails with `couldn't find remote ref HEAD`, it is reported as skipped (`empty repository`)
+- On Windows, a repository tracking a file name Windows forbids (`"`, `:`, `CON`...) is now reported as skipped with the offending path, instead of a half-done clone that was then skipped as dirty on every sync
+- A failed clone no longer leaves a partial directory behind
 
 ### Security
 
