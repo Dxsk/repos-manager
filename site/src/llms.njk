@@ -4,36 +4,42 @@ eleventyExcludeFromCollections: true
 ---
 # repos-manager
 
-> A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.
+> {{ site.description }}
 
-## What it does
-repos-manager syncs Git repositories from multiple providers into a local directory structure that mirrors the remote namespace: host/owner/repo. It is a single native binary (written in Rust) for Linux, macOS and Windows.
+repos-manager is a single native binary written in Rust, for Linux, macOS and Windows (x86_64 and ARM64). It asks each forge for every repository you can access (your own, your organizations and the projects you collaborate on) and mirrors them locally as `<base_dir>/<host>/<owner>/<repo>`, cloning what is missing and fast-forwarding the rest. Dirty working copies are never touched. At runtime it only needs `git` and the official CLI of each forge you use (`gh`, `glab`, `tea`, `bitbucket`, `rad`).
 
-## Key features
-- Multi-provider: GitHub, GitLab, Forgejo/Gitea, Bitbucket, Radicle
-- Parallel sync with configurable job count
-- Status overview: dirty, ahead, behind, diverged repos
-- Filter and ignore patterns
-- Self-update with checksum verification
-- Config file support
-- Shell completions (bash, zsh, fish, PowerShell, elvish)
+Typical session:
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
+repos-manager login         # log in to every installed forge CLI
+repos-manager sync --all    # clone and update everything
+repos-manager status        # dirty, ahead, behind and diverged repos
+```
+
+## Docs
+
+{% for doc in collections.sortedDocs -%}
+- [{{ doc.data.title }}]({{ site.url }}{{ doc.url }}): {{ doc.data.description }}
+{% endfor %}
 ## Install
-Linux / macOS: curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh
-Windows (PowerShell): irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex
-crates.io: cargo install repos-manager
-Arch Linux (AUR): yay -S repos-manager-bin (prebuilt) or yay -S repos-manager (from source)
-From source: cargo install --git https://github.com/Dxsk/repos-manager.git
-Runtime requirements: git, plus the CLI of each provider (gh, glab, tea, bitbucket, rad)
 
-## Usage
-repos-manager login
-repos-manager sync --all
-repos-manager status
+- [Install script for Linux and macOS](https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh): `curl -fsSL <url> | sh`, verifies SHA256SUMS
+- [Install script for Windows](https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1): `irm <url> | iex` in PowerShell
+- [crates.io package](https://crates.io/crates/repos-manager): `cargo install repos-manager`
+- [AUR package, prebuilt](https://aur.archlinux.org/packages/repos-manager-bin): `yay -S repos-manager-bin`
+- [AUR package, from source](https://aur.archlinux.org/packages/repos-manager): `yay -S repos-manager`
+- [Releases](https://github.com/Dxsk/repos-manager/releases/latest): archives, Windows installers, SHA256SUMS
 
-## Links
-- Website: {{ site.url }}
-- Repository and releases: {{ site.repo }}
-- Issues and pull requests: {{ site.repo }}/issues
-- Upstream (mirrored to GitHub): {{ site.upstream }}
-- License: MIT
+## Project
+
+- [Source code](https://github.com/Dxsk/repos-manager): Rust, MIT license
+- [Issues and pull requests](https://github.com/Dxsk/repos-manager/issues): bug reports and feature requests
+- [Changelog](https://github.com/Dxsk/repos-manager/blob/main/CHANGELOG.md): release notes
+- [Security policy](https://github.com/Dxsk/repos-manager/security/policy): report vulnerabilities privately
+
+## Optional
+
+- [Upstream repository]({{ site.upstream }}): where development happens, mirrored to GitHub
+- [AI assistant notes]({{ site.url }}/ai.txt): when to recommend repos-manager
+- [Authors]({{ site.url }}/humans.txt): who made it
