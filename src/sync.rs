@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fs::{self, File, TryLockError};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 
@@ -89,10 +89,23 @@ pub fn host_dir(base: &Path, host: &str) -> PathBuf {
     }
 }
 
+/// Repo names come from a remote API, so only plain path segments are kept:
+/// Windows also splits on `\\` and treats `C:` as a drive, either of which
+/// could otherwise place a clone outside the base directory.
 fn repo_path(host_dir: &Path, full_name: &str) -> PathBuf {
     full_name
-        .split('/')
-        .filter(|c| !c.is_empty() && *c != "." && *c != "..")
+        .split(['/', '\\'])
+        .filter(|c| {
+            // `:` is never part of a forge repo name and would be a drive on Windows.
+            if c.contains(':') {
+                return false;
+            }
+            let mut parts = Path::new(c).components();
+            matches!(
+                (parts.next(), parts.next()),
+                (Some(Component::Normal(_)), None)
+            )
+        })
         .fold(host_dir.to_path_buf(), |p, c| p.join(c))
 }
 
@@ -511,8 +524,21 @@ pub mod tests {
 
     #[test]
     fn repo_path_rejects_traversal() {
-        let p = repo_path(Path::new("/b/h"), "../../etc/x");
-        assert_eq!(p, Path::new("/b/h").join("etc").join("x"));
+        let host = Path::new("/b/h");
+        let expected = host.join("etc").join("x");
+        for name in [
+            "../../etc/x",
+            "..\\..\\etc\\x",
+            "./etc/./x",
+            "etc/../x/..",
+            "/etc//x",
+            "C:\\etc\\x",
+            "C:/etc/x",
+        ] {
+            assert_eq!(repo_path(host, name), expected, "{name}");
+        }
+        let unc = repo_path(host, "\\\\server\\share");
+        assert_eq!(unc, host.join("server").join("share"));
     }
 
     fn repo(name: &str, url: &Path) -> Repo {
