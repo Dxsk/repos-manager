@@ -353,3 +353,22 @@ pub mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn paginated_output_keeps_every_item(pages in prop::collection::vec(prop::collection::vec(any::<u32>(), 0..20), 0..10)) {
+            let raw: String = pages
+                .iter()
+                .map(|p| serde_json::to_string(&p.iter().map(|n| serde_json::json!({ "id": n })).collect::<Vec<_>>()).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let items = parse_paginated(&raw).unwrap();
+            prop_assert_eq!(items.len(), pages.iter().map(Vec::len).sum::<usize>());
+        }
+    }
+}

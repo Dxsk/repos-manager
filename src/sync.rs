@@ -452,6 +452,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             &candidates,
             cfg!(windows),
             cfg!(any(windows, target_os = "macos")),
+            origin_url,
         );
         for (n, (repo, path)) in kept.into_iter().enumerate() {
             let full_name = &repo.full_name;
@@ -620,10 +621,12 @@ fn path_conflicts(
     repos: &[(String, &Path, String)],
     windows: bool,
     case_insensitive: bool,
+    origin: impl Fn(&Path) -> Option<String>,
 ) -> HashMap<usize, String> {
     let mut losers = HashMap::new();
-    let mut owner: HashMap<String, usize> = HashMap::new();
-    for (i, (name, path, url)) in repos.iter().enumerate() {
+    // Repos grouped by the directory they would share.
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, (name, _, _)) in repos.iter().enumerate() {
         if windows && git::invalid_on_windows(name) {
             losers.insert(i, "name not allowed on Windows".to_string());
             continue;
@@ -634,31 +637,41 @@ fn path_conflicts(
         } else {
             name.clone()
         };
-        let Some(&j) = owner.get(&key) else {
-            owner.insert(key, i);
-            continue;
-        };
-        let on_disk = git::run(path, &["remote", "get-url", "origin"]).ok();
-        let (winner, loser) = if on_disk.as_deref() == Some(url.as_str()) {
-            (i, j)
-        } else {
-            (j, i)
-        };
-        owner.insert(key, winner);
-        losers.remove(&winner);
-        losers.insert(loser, format!("same directory as {}", repos[winner].0));
+        groups.entry(key).or_default().push(i);
     }
-    for (key, &i) in &owner {
-        let mut prefix = key.as_str();
-        while let Some(cut) = prefix.rfind('/') {
-            prefix = &prefix[..cut];
-            if let Some(&parent) = owner.get(prefix) {
-                losers.insert(i, format!("nested inside {}", repos[parent].0));
-                break;
-            }
+    let winner = |members: &[usize]| {
+        let (_, path, _) = &repos[members[0]];
+        let on_disk = origin(path);
+        members
+            .iter()
+            .copied()
+            .find(|&m| on_disk.as_deref() == Some(repos[m].2.as_str()))
+            .unwrap_or(members[0])
+    };
+    for (key, members) in &groups {
+        // The outermost ancestor has no ancestor itself, so its winner is kept.
+        let ancestor = key
+            .match_indices('/')
+            .find_map(|(cut, _)| groups.get(&key[..cut]));
+        if let Some(parent) = ancestor {
+            let reason = format!("nested inside {}", repos[winner(parent)].0);
+            losers.extend(members.iter().map(|&m| (m, reason.clone())));
+        } else if members.len() > 1 {
+            let w = winner(members);
+            let reason = format!("same directory as {}", repos[w].0);
+            losers.extend(
+                members
+                    .iter()
+                    .filter(|&&m| m != w)
+                    .map(|&m| (m, reason.clone())),
+            );
         }
     }
     losers
+}
+
+fn origin_url(repo: &Path) -> Option<String> {
+    git::run(repo, &["remote", "get-url", "origin"]).ok()
 }
 
 fn repo_name(host_dir: &Path, repo: &Path) -> String {
@@ -1329,7 +1342,9 @@ pub mod tests {
             .iter()
             .map(|n| (n.to_string(), Path::new("/nonexistent"), String::new()))
             .collect();
-        let mut out: Vec<_> = path_conflicts(&repos, windows, ci).into_iter().collect();
+        let mut out: Vec<_> = path_conflicts(&repos, windows, ci, |_| None)
+            .into_iter()
+            .collect();
         out.sort();
         out
     }
@@ -1376,7 +1391,7 @@ pub mod tests {
                 bare.to_str().unwrap().to_string(),
             ),
         ];
-        let losers = path_conflicts(&repos, true, true);
+        let losers = path_conflicts(&repos, true, true, origin_url);
         assert_eq!(losers.keys().collect::<Vec<_>>(), [&0]);
     }
 
@@ -1452,5 +1467,138 @@ pub mod tests {
         let mut found = find_repos(tmp.path());
         found.sort();
         assert_eq!(found, [outer, tmp.path().join("b").join("c")]);
+    }
+}
+
+#[cfg(test)]
+mod properties {
+    use super::tests::{bare_remote, git};
+    use super::*;
+    use proptest::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn names() -> impl Strategy<Value = Vec<String>> {
+        // A tiny alphabet so collisions, nesting and reserved names show up often.
+        let segment = prop::sample::select(vec!["a", "A", "b", "aux", "x.", "p"]);
+        let name = prop::collection::vec(segment, 1..4).prop_map(|s| s.join("/"));
+        prop::collection::btree_set(name, 0..12).prop_map(|s| s.into_iter().collect())
+    }
+
+    fn is_proper_prefix(parent: &str, child: &str) -> bool {
+        child.len() > parent.len()
+            && child.starts_with(parent)
+            && child.as_bytes()[parent.len()] == b'/'
+    }
+
+    proptest! {
+        #[test]
+        fn repo_path_never_leaves_the_host_dir(name in r"[a-zA-Z0-9._:/\\ -]{0,40}") {
+            let host = Path::new("/b/h");
+            let p = repo_path(host, &name);
+            let rel = p.strip_prefix(host).unwrap();
+            for c in rel.components() {
+                prop_assert!(matches!(c, Component::Normal(_)), "{name:?} gave {p:?}");
+            }
+            prop_assert!(!rel.to_string_lossy().contains(':'));
+        }
+
+        #[test]
+        fn path_conflicts_leave_an_injective_prefix_free_set(
+            names in names(),
+            windows in any::<bool>(),
+            ci in any::<bool>(),
+        ) {
+            let repos: Vec<_> = names
+                .iter()
+                .map(|n| (n.clone(), Path::new("/nonexistent"), String::new()))
+                .collect();
+            let losers = path_conflicts(&repos, windows, ci, |_| None);
+            let key = |i: usize| if ci { names[i].to_lowercase() } else { names[i].clone() };
+            let winners: Vec<usize> = (0..names.len()).filter(|i| !losers.contains_key(i)).collect();
+
+            for (x, &i) in winners.iter().enumerate() {
+                prop_assert!(!(windows && git::invalid_on_windows(&names[i])));
+                for &j in &winners[x + 1..] {
+                    prop_assert_ne!(key(i), key(j), "{} and {} share a directory", names[i], names[j]);
+                    prop_assert!(!is_proper_prefix(&key(i), &key(j)) && !is_proper_prefix(&key(j), &key(i)),
+                        "{} and {} nest", names[i], names[j]);
+                }
+            }
+            // Every loser is justified by a winner, so nothing is dropped for no reason.
+            for (&i, reason) in &losers {
+                if reason == "name not allowed on Windows" {
+                    prop_assert!(windows && git::invalid_on_windows(&names[i]));
+                    continue;
+                }
+                let (kind, other) = reason.split_once(' ').map(|(_, r)| r.rsplit_once(' ').unwrap()).unwrap();
+                let w = winners.iter().copied().find(|&w| names[w] == other);
+                prop_assert!(w.is_some(), "{} lost to {other}, which is not kept", names[i]);
+                let w = w.unwrap();
+                match kind {
+                    "directory as" => prop_assert_eq!(key(w), key(i)),
+                    "inside" => prop_assert!(is_proper_prefix(&key(w), &key(i))),
+                    _ => prop_assert!(false, "unknown reason {reason}"),
+                }
+            }
+        }
+
+        #[test]
+        fn pool_returns_every_result_within_the_limit(n in 0usize..40, parallel in 1usize..8) {
+            let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+            let mut out = pool((0..n).collect(), parallel, |i| {
+                let c = now.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(c, Ordering::SeqCst);
+                std::thread::yield_now();
+                now.fetch_sub(1, Ordering::SeqCst);
+                i
+            });
+            out.sort();
+            prop_assert_eq!(out, (0..n).collect::<Vec<_>>());
+            prop_assert!(peak.load(Ordering::SeqCst) <= parallel);
+        }
+    }
+
+    proptest! {
+        // Each case clones real repos, so keep the count low.
+        #![proptest_config(ProptestConfig::with_cases(6))]
+
+        #[test]
+        fn sync_accounts_for_every_repo_and_is_idempotent(
+            picked in prop::sample::subsequence(vec!["u/a", "u/b", "u/c", "o/d", "o/bad"], 0..=5),
+            ignore in prop::sample::select(vec!["", "u/a", "o/*"]),
+        ) {
+            let tmp = tempfile::tempdir().unwrap();
+            let bare = bare_remote(tmp.path());
+            let base = tmp.path().join("base");
+            fs::create_dir_all(&base).unwrap();
+            fs::write(base.join(".repos-ignore"), ignore).unwrap();
+            let host = base.join("h");
+            let settings = Settings::for_tests(&base);
+            let missing = tmp.path().join("missing.git");
+            let repos = || -> Vec<Repo> {
+                picked.iter().map(|n| {
+                    let url = if n.ends_with("bad") { &missing } else { &bare };
+                    let url = url.to_str().unwrap().to_string();
+                    Repo { full_name: n.to_string(), ssh_url: url.clone(), https_url: url }
+                }).collect()
+            };
+            let run = || {
+                let h = Listed { dir: host.clone(), repos: repos(), label: None, complete: true, announced: false };
+                sync_listed(&[h], &settings, &SyncOptions::default()).remove(0).unwrap()
+            };
+            let total = |s: &Summary| s.cloned + s.updated + s.skipped + s.errored;
+
+            let first = run();
+            prop_assert_eq!(total(&first), picked.len());
+            let second = run();
+            prop_assert_eq!(total(&second), picked.len());
+            prop_assert_eq!(second.cloned, 0);
+            prop_assert_eq!(second.updated, first.cloned + first.updated);
+            prop_assert_eq!(second.errored, first.errored);
+            for r in find_repos(&host) {
+                prop_assert!(!git::is_dirty(&r), "{} left dirty", r.display());
+            }
+            let _ = git;
+        }
     }
 }
