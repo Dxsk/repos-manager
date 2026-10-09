@@ -703,6 +703,15 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 .doc-content h2 { font-size: 1.5em; margin-top: 2em; margin-bottom: 0.5em; color: var(--accent-green); }
 .doc-content h3 { font-size: 1.2em; margin-top: 1.5em; margin-bottom: 0.5em; color: var(--accent-orange); }
 .doc-content p { margin-bottom: 1em; }
+
+/* Links inside running text are underlined: color alone is not enough for
+   readers who do not perceive it (link vs text contrast is only 1.2:1). */
+.install-note a, .subtitle a, .quickstart-more a, .compare-intro a, .compare-note a,
+.doc-content p a, .doc-content li a, .doc-content td a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
 /* Long inline paths would otherwise widen the page on phones. */
 .doc-content p code, .doc-content li code { overflow-wrap: anywhere; }
 .doc-content ul, .doc-content ol { margin-bottom: 1em; padding-left: 1.5em; }
@@ -861,9 +870,11 @@ pre[class*="language-"] {
   50% { opacity: 0; }
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Movement only, no opacity: text is never rendered half transparent, which
+   keeps it readable and lets contrast audits see its real colors. */
+@keyframes slideUp {
+  from { transform: translateY(6px); }
+  to { transform: translateY(0); }
 }
 
 @keyframes typewriter {
@@ -913,7 +924,7 @@ pre[class*="language-"] {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-  animation: fadeInUp 0.8s ease-out 0.2s both;
+  animation: slideUp 0.6s ease-out both;
 }
 
 .terminal-titlebar {
@@ -959,7 +970,7 @@ pre[class*="language-"] {
 /* Lines are in the HTML from the start and only revealed by JS, so the
    terminal never grows and nothing below it moves. */
 .js .terminal-line:not(.shown) { visibility: hidden; }
-.js .terminal-line.shown { animation: fadeInUp 0.3s ease-out; }
+.js .terminal-line.shown { animation: slideUp 0.25s ease-out; }
 .js .terminal-line.shown:has(.terminal-cmd) { animation: none; }
 .terminal-cmd .untyped { visibility: hidden; }
 /* The caret is an empty inline span between typed and untyped text: it adds
@@ -1043,13 +1054,9 @@ pre[class*="language-"] {
 
 /* Typing stays on (text, not motion); slides and fades are what reduced
    motion turns off. */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 @media (prefers-reduced-motion: reduce) {
   .terminal-demo { animation: none; }
-  .js .terminal-line.shown { animation: fadeIn 0.35s ease-out; }
+  .js .terminal-line.shown { animation: none; }
   .will-animate { transform: none; transition: none; }
 }
 
