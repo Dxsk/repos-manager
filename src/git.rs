@@ -1,22 +1,103 @@
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::sync::OnceLock;
 
 use anyhow::{Result, bail};
 
+use crate::process;
+
+/// Dead SSH links are dropped after 60s, and prompts (unknown host key,
+/// passphrase without agent) fail at once: a background job has no one to
+/// answer them and would wait forever.
+const SSH_COMMAND: &str = "ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4";
+
 /// Run `git -C <dir> <args>` and return trimmed stdout, or stderr as the error.
 pub fn run(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .stdin(Stdio::null())
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir);
+    if matches!(args.first(), Some(&("clone" | "fetch" | "pull" | "remote"))) {
+        let mut user = global_settings().clone();
+        user.extend(repo_settings(&dir.join(".git").join("config")));
+        let env_ssh = ["GIT_SSH_COMMAND", "GIT_SSH"]
+            .iter()
+            .any(|k| std::env::var_os(k).is_some());
+        let (config, ssh) = network_guards(&user, env_ssh);
+        for c in config {
+            cmd.arg("-c").arg(c);
+        }
+        if let Some(ssh) = ssh {
+            cmd.env("GIT_SSH_COMMAND", ssh);
+        }
+    }
+    cmd.args(args)
         // Never block on a credential prompt from a background job.
         .env("GIT_TERMINAL_PROMPT", "0")
-        .output()?;
+        .env("GCM_INTERACTIVE", "never");
+    let out = process::output(&mut cmd, process::timeout("GIT", 3600))?;
     if !out.status.success() {
         bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+const GUARDED: [&str; 3] = ["core.sshcommand", "http.lowspeedlimit", "http.lowspeedtime"];
+
+/// Guarded settings set in the system or global config, read once per run.
+fn global_settings() -> &'static Vec<String> {
+    static GLOBAL: OnceLock<Vec<String>> = OnceLock::new();
+    GLOBAL.get_or_init(|| {
+        // Run outside any repository so only system and global levels count.
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(std::env::temp_dir())
+            .args(["config", "--get-regexp", r"^(core|http)\."])
+            .output();
+        let Ok(out) = out else { return Vec::new() };
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.split_whitespace().next())
+            .map(str::to_lowercase)
+            .filter(|k| GUARDED.contains(&k.as_str()))
+            .collect()
+    })
+}
+
+/// Guarded settings in a repo's own config, parsed directly: spawning git
+/// for this on every fetch cost about 10% of a sync.
+fn repo_settings(config: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(config) else {
+        return Vec::new();
+    };
+    let mut section = String::new();
+    let mut found = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if let Some(head) = line.strip_prefix('[') {
+            section = head
+                .split(|c: char| c == ']' || c.is_whitespace() || c == '"')
+                .next()
+                .unwrap_or_default()
+                .to_lowercase();
+        } else if let Some(key) = line.split('=').next() {
+            let key = format!("{section}.{}", key.trim().to_lowercase());
+            if GUARDED.contains(&key.as_str()) {
+                found.push(key);
+            }
+        }
+    }
+    found
+}
+
+/// Stall guards for network commands, skipping anything the user configured.
+fn network_guards(user: &[String], env_ssh: bool) -> (Vec<String>, Option<String>) {
+    let set = |k: &str| user.iter().any(|u| u == k);
+    let mut config = Vec::new();
+    // Below 1 KB/s for a minute, an HTTPS transfer is treated as dead.
+    if !set("http.lowspeedlimit") && !set("http.lowspeedtime") {
+        config.push("http.lowSpeedLimit=1000".to_string());
+        config.push("http.lowSpeedTime=60".to_string());
+    }
+    let ssh = (!env_ssh && !set("core.sshcommand")).then(|| SSH_COMMAND.to_string());
+    (config, ssh)
 }
 
 pub fn is_dirty(dir: &Path) -> bool {
@@ -48,6 +129,39 @@ pub fn invalid_on_windows(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_guards_never_override_the_user() {
+        let (config, ssh) = network_guards(&[], false);
+        assert_eq!(config, ["http.lowSpeedLimit=1000", "http.lowSpeedTime=60"]);
+        assert_eq!(ssh.as_deref(), Some(SSH_COMMAND));
+
+        let user = [
+            "core.sshcommand".to_string(),
+            "http.lowspeedtime".to_string(),
+        ];
+        assert_eq!(network_guards(&user, false), (vec![], None));
+        assert_eq!(network_guards(&[], true).1, None);
+    }
+
+    #[test]
+    fn repo_settings_match_what_git_reads() {
+        let tmp = tempfile::tempdir().unwrap();
+        run(tmp.path(), &["init", "--quiet"]).unwrap();
+        let config = tmp.path().join(".git").join("config");
+        assert!(repo_settings(&config).is_empty());
+        run(tmp.path(), &["config", "core.sshCommand", "ssh -i key"]).unwrap();
+        run(
+            tmp.path(),
+            &["config", "http.https://h.example.lowSpeedTime", "5"],
+        )
+        .unwrap();
+        run(tmp.path(), &["config", "user.name", "x"]).unwrap();
+        assert_eq!(
+            repo_settings(&config),
+            ["core.sshcommand", "http.lowspeedtime"]
+        );
+    }
 
     #[test]
     fn detects_paths_windows_cannot_hold() {

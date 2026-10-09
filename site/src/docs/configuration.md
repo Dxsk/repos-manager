@@ -112,6 +112,8 @@ If `hosts` is missing or empty for a provider, `repos-manager` falls back to the
 | `REPOS_MANAGER_NO_UPDATE_CHECK` | Set to `1` to skip the background update check | Unset |
 | `REPOS_MANAGER_UPDATE_TTL` | Seconds between update checks (cache TTL) | `86400` |
 | `REPOS_MANAGER_UPDATE_CACHE` | Path to the cached latest-version file | `<cache dir>/repos-manager/latest-version` |
+| `REPOS_MANAGER_GIT_TIMEOUT` | Seconds before a single git command is killed | `3600` |
+| `REPOS_MANAGER_LIST_TIMEOUT` | Seconds before a provider CLI listing is killed | `300` |
 | `REPOS_MANAGER_UPDATE_URL` | Release API endpoint used by the update check and `update` | GitHub Releases API |
 | `TEA_CONFIG` | Path to tea's config file, read by the Forgejo provider | tea's default location (see Providers) |
 | `NO_COLOR` | Disable colored output | Unset |
