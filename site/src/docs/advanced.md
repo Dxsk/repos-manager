@@ -20,6 +20,8 @@ Or set it in your config file:
 ```
 {% endraw %}
 
+The limit applies to the whole run: with `sync --all` or several hosts, every host lists its repositories at the same time, then all clones and updates share one queue of `parallel` jobs. Each result line shows a `[done/total]` counter, and in an interactive terminal a live status line lists the repositories in progress.
+
 For large organizations (100+ repos), higher parallelism helps. For slow connections, lower it to avoid timeouts.
 
 ## Concurrent sync protection
