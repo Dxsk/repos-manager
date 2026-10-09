@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use ureq::Agent;
 
-use super::{ListError, Repo, has_cli, run_interactive, str_field, with_git_suffix};
+use super::{ListError, Repo, has_cli, run_interactive, str_field, u64_field, with_git_suffix};
 use crate::config::home_dir;
 use crate::http;
 
@@ -88,6 +88,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
             full_name: str_field(r, "full_name"),
             ssh_url: str_field(r, "ssh_url"),
             https_url: with_git_suffix(&str_field(r, "html_url")),
+            size_kb: u64_field(r, "size"),
         })
         .filter(|r| !r.full_name.is_empty())
         .collect()

@@ -12,7 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 
-use super::{ListError, Repo, has_cli, run_capture, run_interactive, str_field};
+use super::{ListError, Repo, has_cli, run_capture, run_interactive, str_field, u64_field};
 use crate::{config, http, output};
 
 fn creds_path() -> PathBuf {
@@ -66,6 +66,8 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
             full_name: str_field(r, "full_name"),
             ssh_url: clone_link(r, "ssh"),
             https_url: clone_link(r, "https"),
+            // Bitbucket reports bytes.
+            size_kb: u64_field(r, "size") / 1024,
         })
         .filter(|r| !r.full_name.is_empty())
         .collect()

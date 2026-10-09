@@ -237,22 +237,70 @@ fn rename_dir(from: &Path, to: &Path) -> Result<()> {
 
 struct Job {
     host: usize,
+    /// Clones before updates, biggest clone first.
+    weight: u64,
     path: PathBuf,
     url: String,
     name: String,
 }
 
-fn pool<T: Send, R: Send>(items: Vec<T>, parallel: usize, work: impl Fn(T) -> R + Sync) -> Vec<R> {
-    let queue = Mutex::new(items.into_iter());
+/// Jobs per host never exceed sshd's default `MaxStartups` (10): connections
+/// still authenticating are a subset of the open ones, so sshd can never
+/// start dropping ours at random.
+const PER_HOST: usize = 10;
+
+/// Run `work` on at most `parallel` threads, never more than `cap` per group.
+/// A free worker serves the group with the fewest running, then the one whose
+/// next item is heaviest: spreading spares any single server, and heaviest
+/// first keeps the makespan within 4/3 of optimal (LPT).
+fn schedule<T: Send, R: Send>(
+    items: Vec<T>,
+    parallel: usize,
+    cap: usize,
+    key: impl Fn(&T) -> (usize, u64),
+    work: impl Fn(T) -> R + Sync,
+) -> Vec<R> {
+    let groups = items.iter().map(|i| key(i).0 + 1).max().unwrap_or(0);
+    let mut queues: Vec<Vec<(u64, T)>> = (0..groups).map(|_| Vec::new()).collect();
+    for item in items {
+        let (g, w) = key(&item);
+        queues[g].push((w, item));
+    }
+    for q in &mut queues {
+        // Stable, so equal weights keep their listing order.
+        q.sort_by_key(|(w, _)| std::cmp::Reverse(*w));
+        q.reverse();
+    }
+    let state = Mutex::new((queues, vec![0usize; groups]));
+    let freed = std::sync::Condvar::new();
     let results = Mutex::new(Vec::new());
     thread::scope(|s| {
         for _ in 0..parallel {
             s.spawn(|| {
                 loop {
-                    let next = queue.lock().unwrap().next();
-                    let Some(item) = next else { break };
+                    let mut st = state.lock().unwrap();
+                    let (g, item) = loop {
+                        let (queues, running) = &mut *st;
+                        let pick = (0..queues.len())
+                            .filter(|&g| !queues[g].is_empty() && running[g] < cap)
+                            .min_by_key(|&g| {
+                                let head = queues[g].last().map_or(0, |(w, _)| *w);
+                                (running[g], std::cmp::Reverse(head))
+                            });
+                        if let Some(g) = pick {
+                            running[g] += 1;
+                            break (g, queues[g].pop().unwrap().1);
+                        }
+                        if queues.iter().all(Vec::is_empty) {
+                            return;
+                        }
+                        st = freed.wait(st).unwrap();
+                    };
+                    drop(st);
                     let r = work(item);
                     results.lock().unwrap().push(r);
+                    state.lock().unwrap().1[g] -= 1;
+                    freed.notify_all();
                 }
             });
         }
@@ -262,19 +310,25 @@ fn pool<T: Send, R: Send>(items: Vec<T>, parallel: usize, work: impl Fn(T) -> R 
 
 fn run_parallel(jobs: Vec<Job>, parallel: usize) -> Vec<(usize, Outcome)> {
     let progress = output::Progress::new(jobs.len());
-    pool(jobs, parallel, |job| {
-        progress.start(&job.name);
-        let (outcome, detail) = sync_repo(&job.path, &job.url);
-        progress.finish(&job.name, |counter| {
-            let msg = format!("{counter} {} ({detail})", job.name);
-            match outcome {
-                Outcome::Cloned | Outcome::Updated => output::success(&msg),
-                Outcome::Skipped => output::warn(&msg),
-                Outcome::Errored => output::error(&msg),
-            }
-        });
-        (job.host, outcome)
-    })
+    schedule(
+        jobs,
+        parallel,
+        PER_HOST,
+        |j| (j.host, j.weight),
+        |job| {
+            progress.start(&job.name);
+            let (outcome, detail) = sync_repo(&job.path, &job.url);
+            progress.finish(&job.name, |counter| {
+                let msg = format!("{counter} {} ({detail})", job.name);
+                match outcome {
+                    Outcome::Cloned | Outcome::Updated => output::success(&msg),
+                    Outcome::Skipped => output::warn(&msg),
+                    Outcome::Errored => output::error(&msg),
+                }
+            });
+            (job.host, outcome)
+        },
+    )
 }
 
 struct Listed {
@@ -472,6 +526,11 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             }
             jobs.push(Job {
                 host: i,
+                weight: if path.join(".git").is_dir() {
+                    0
+                } else {
+                    repo.size_kb + 1
+                },
                 path,
                 url: url(repo),
                 name: match &h.label {
@@ -763,13 +822,19 @@ pub mod tests {
         use std::time::Duration;
         for parallel in [1, 3] {
             let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
-            let out = pool((0..12).collect(), parallel, |i: i32| {
-                let n = now.fetch_add(1, Ordering::SeqCst) + 1;
-                peak.fetch_max(n, Ordering::SeqCst);
-                thread::sleep(Duration::from_millis(20));
-                now.fetch_sub(1, Ordering::SeqCst);
-                i
-            });
+            let out = schedule(
+                (0..12).collect(),
+                parallel,
+                usize::MAX,
+                |_| (0, 0),
+                |i: i32| {
+                    let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(n, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(20));
+                    now.fetch_sub(1, Ordering::SeqCst);
+                    i
+                },
+            );
             let mut out = out;
             out.sort();
             assert_eq!(out, (0..12).collect::<Vec<_>>());
@@ -984,6 +1049,38 @@ pub mod tests {
     }
 
     #[test]
+    fn schedule_runs_heaviest_first_across_hosts() {
+        // (host, weight)
+        let items = vec![(0, 1), (0, 5), (0, 3), (1, 2), (1, 9)];
+        let order = schedule(items, 1, usize::MAX, |&i| i, |i| i);
+        assert_eq!(order, [(1, 9), (0, 5), (0, 3), (1, 2), (0, 1)]);
+    }
+
+    #[test]
+    fn schedule_caps_each_host() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+        let now = [AtomicUsize::new(0), AtomicUsize::new(0)];
+        let peak = [AtomicUsize::new(0), AtomicUsize::new(0)];
+        let items: Vec<usize> = (0..24).map(|i| i % 2).collect();
+        schedule(
+            items,
+            8,
+            3,
+            |&g| (g, 0),
+            |g| {
+                let n = now[g].fetch_add(1, Ordering::SeqCst) + 1;
+                peak[g].fetch_max(n, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(15));
+                now[g].fetch_sub(1, Ordering::SeqCst);
+            },
+        );
+        for p in &peak {
+            assert_eq!(p.load(Ordering::SeqCst), 3);
+        }
+    }
+
+    #[test]
     fn bad_url_errors() {
         let tmp = tempfile::tempdir().unwrap();
         let dest = tmp.path().join("fail");
@@ -1028,6 +1125,7 @@ pub mod tests {
             full_name: name.into(),
             ssh_url: url.clone(),
             https_url: url,
+            ..Default::default()
         }
     }
 
@@ -1543,9 +1641,38 @@ mod properties {
         }
 
         #[test]
+        fn schedule_respects_both_limits(
+            groups in prop::collection::vec(0usize..4, 0..40),
+            parallel in 1usize..8,
+            cap in 1usize..4,
+        ) {
+            let now: Vec<AtomicUsize> = (0..4).map(|_| AtomicUsize::new(0)).collect();
+            let peak: Vec<AtomicUsize> = (0..4).map(|_| AtomicUsize::new(0)).collect();
+            let total = AtomicUsize::new(0);
+            let total_peak = AtomicUsize::new(0);
+            let items: Vec<(usize, usize)> = groups.iter().copied().enumerate().collect();
+            let mut out = schedule(items, parallel, cap, |&(i, g)| (g, i as u64), |(i, g)| {
+                let n = now[g].fetch_add(1, Ordering::SeqCst) + 1;
+                peak[g].fetch_max(n, Ordering::SeqCst);
+                let t = total.fetch_add(1, Ordering::SeqCst) + 1;
+                total_peak.fetch_max(t, Ordering::SeqCst);
+                std::thread::yield_now();
+                total.fetch_sub(1, Ordering::SeqCst);
+                now[g].fetch_sub(1, Ordering::SeqCst);
+                i
+            });
+            out.sort();
+            prop_assert_eq!(out, (0..groups.len()).collect::<Vec<_>>());
+            prop_assert!(total_peak.load(Ordering::SeqCst) <= parallel);
+            for p in &peak {
+                prop_assert!(p.load(Ordering::SeqCst) <= cap);
+            }
+        }
+
+        #[test]
         fn pool_returns_every_result_within_the_limit(n in 0usize..40, parallel in 1usize..8) {
             let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
-            let mut out = pool((0..n).collect(), parallel, |i| {
+            let mut out = schedule((0..n).collect(), parallel, usize::MAX, |_| (0, 0), |i| {
                 let c = now.fetch_add(1, Ordering::SeqCst) + 1;
                 peak.fetch_max(c, Ordering::SeqCst);
                 std::thread::yield_now();
@@ -1579,7 +1706,7 @@ mod properties {
                 picked.iter().map(|n| {
                     let url = if n.ends_with("bad") { &missing } else { &bare };
                     let url = url.to_str().unwrap().to_string();
-                    Repo { full_name: n.to_string(), ssh_url: url.clone(), https_url: url }
+                    Repo { full_name: n.to_string(), ssh_url: url.clone(), https_url: url, ..Default::default() }
                 }).collect()
             };
             let run = || {

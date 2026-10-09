@@ -6,6 +6,7 @@
 
 - All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
 - Updates fetch once and fast-forward the already fetched default branch instead of running a second `git pull`, about twice as fast on many repositories. Result lines now say `updated` or `up to date`
+- Jobs are scheduled instead of run in listing order: clones before updates and the biggest clone first (from the size the API reports), each free worker taking work from the host with the fewest jobs running, and never more than 10 jobs per host so sshd's default `MaxStartups` never drops connections
 - Each result line shows a `[done/total]` counter, and an interactive terminal shows a live status line with the repositories in progress
 
 ### Fixed
