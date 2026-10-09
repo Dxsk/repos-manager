@@ -145,18 +145,8 @@ fn provider_cmd(provider: Provider, action: ProviderAction, mut settings: Settin
             if hosts.is_empty() {
                 bail!("no hosts configured for provider {provider}");
             }
-            let multi = hosts.len() > 1;
-            let mut failed = false;
-            for host in &hosts {
-                if multi {
-                    output::heading(&format!("--- {provider} @ {host} ---"));
-                }
-                if let Err(e) = sync::sync_host(provider, host, &settings, &opts) {
-                    output::error(&format!("{host}: {e:#}"));
-                    failed = true;
-                }
-            }
-            if failed {
+            let targets: Vec<_> = hosts.into_iter().map(|h| (provider, h)).collect();
+            if !sync::sync_hosts(&targets, &settings, &opts) {
                 bail!("sync finished with errors");
             }
             Ok(())
@@ -186,6 +176,7 @@ fn login(provider: Option<Provider>) -> Result<()> {
 
 /// One failing provider or host never stops the others.
 fn sync_all(settings: &Settings, opts: &SyncOptions) {
+    let mut targets = Vec::new();
     for provider in Provider::ALL {
         if !provider.available() {
             output::debug(&format!(
@@ -194,13 +185,14 @@ fn sync_all(settings: &Settings, opts: &SyncOptions) {
             ));
             continue;
         }
-        for host in settings.hosts(provider) {
-            output::heading(&format!("=== Syncing {provider} @ {host} ==="));
-            if let Err(e) = sync::sync_host(provider, host, settings, opts) {
-                output::error(&format!("{host}: {e:#}"));
-            }
-        }
+        targets.extend(
+            settings
+                .hosts(provider)
+                .iter()
+                .map(|h| (provider, h.clone())),
+        );
     }
+    sync::sync_hosts(&targets, settings, opts);
 }
 
 #[cfg(test)]

@@ -96,11 +96,12 @@ fn repo_path(host_dir: &Path, full_name: &str) -> PathBuf {
         .fold(host_dir.to_path_buf(), |p, c| p.join(c))
 }
 
-pub fn sync_repo(local_path: &Path, clone_url: &str, full_name: &str) -> Outcome {
+/// Clone or update one repository, returning the outcome and a short detail
+/// for the report line.
+pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
     if local_path.join(".git").is_dir() {
         if git::is_dirty(local_path) {
-            output::warn(&format!("{full_name} (dirty, skipped)"));
-            return Outcome::Skipped;
+            return (Outcome::Skipped, "dirty, skipped".into());
         }
         // Pull origin HEAD explicitly so clones without upstream tracking
         // (manual clones, renamed default branch) still update.
@@ -111,14 +112,8 @@ pub fn sync_repo(local_path: &Path, clone_url: &str, full_name: &str) -> Outcome
             )
         });
         match res {
-            Ok(_) => {
-                output::success(&format!("{full_name} (updated)"));
-                Outcome::Updated
-            }
-            Err(e) => {
-                output::error(&format!("{full_name} (update failed): {e}"));
-                Outcome::Errored
-            }
+            Ok(_) => (Outcome::Updated, "updated".into()),
+            Err(e) => (Outcome::Errored, format!("update failed: {e}")),
         }
     } else {
         if let Some(parent) = local_path.parent() {
@@ -127,29 +122,32 @@ pub fn sync_repo(local_path: &Path, clone_url: &str, full_name: &str) -> Outcome
         let parent = local_path.parent().unwrap_or(Path::new("."));
         let target = local_path.to_string_lossy();
         match git::run(parent, &["clone", "--quiet", clone_url, &target]) {
-            Ok(_) => {
-                output::success(&format!("{full_name} (cloned)"));
-                Outcome::Cloned
-            }
-            Err(e) => {
-                output::error(&format!("{full_name} (clone failed): {e}"));
-                Outcome::Errored
-            }
+            Ok(_) => (Outcome::Cloned, "cloned".into()),
+            Err(e) => (Outcome::Errored, format!("clone failed: {e}")),
         }
     }
 }
 
-fn run_parallel(jobs: Vec<(PathBuf, String, String)>, parallel: usize) -> Vec<Outcome> {
-    let queue = Mutex::new(jobs.into_iter());
+struct Job {
+    host: usize,
+    path: PathBuf,
+    url: String,
+    name: String,
+}
+
+/// Run `work` over `items` with at most `parallel` threads pulling from one
+/// shared queue.
+fn pool<T: Send, R: Send>(items: Vec<T>, parallel: usize, work: impl Fn(T) -> R + Sync) -> Vec<R> {
+    let queue = Mutex::new(items.into_iter());
     let results = Mutex::new(Vec::new());
     thread::scope(|s| {
         for _ in 0..parallel {
             s.spawn(|| {
                 loop {
                     let next = queue.lock().unwrap().next();
-                    let Some((path, url, name)) = next else { break };
-                    let outcome = sync_repo(&path, &url, &name);
-                    results.lock().unwrap().push(outcome);
+                    let Some(item) = next else { break };
+                    let r = work(item);
+                    results.lock().unwrap().push(r);
                 }
             });
         }
@@ -157,95 +155,185 @@ fn run_parallel(jobs: Vec<(PathBuf, String, String)>, parallel: usize) -> Vec<Ou
     results.into_inner().unwrap()
 }
 
-pub fn sync_host(
-    provider: Provider,
-    host: &str,
-    settings: &Settings,
-    opts: &SyncOptions,
-) -> Result<()> {
-    let dir = host_dir(&settings.base_dir, host);
-    let _lock = HostLock::acquire(&dir)?;
+/// All jobs share one queue whatever their host, so `parallel` bounds the
+/// total number of git processes.
+fn run_parallel(jobs: Vec<Job>, parallel: usize) -> Vec<(usize, Outcome)> {
+    let progress = output::Progress::new(jobs.len());
+    pool(jobs, parallel, |job| {
+        progress.start(&job.name);
+        let (outcome, detail) = sync_repo(&job.path, &job.url);
+        progress.finish(&job.name, |counter| {
+            let msg = format!("{counter} {} ({detail})", job.name);
+            match outcome {
+                Outcome::Cloned | Outcome::Updated => output::success(&msg),
+                Outcome::Skipped => output::warn(&msg),
+                Outcome::Errored => output::error(&msg),
+            }
+        });
+        (job.host, outcome)
+    })
+}
 
-    output::info(&format!("Fetching repository list from {host}..."));
-    let repos = match provider.list_repos(host) {
-        Ok(r) => r,
-        Err(ListError::Skip(reason)) => {
-            output::warn(&format!("Skipping {host}: {reason}"));
-            return Ok(());
+/// A host whose repository list is known and whose lock is held.
+struct Listed {
+    dir: PathBuf,
+    repos: Vec<Repo>,
+    /// Set when several hosts sync together: (heading, host).
+    label: Option<(String, String)>,
+}
+
+/// Sync several hosts at once: listing runs concurrently per host, then all
+/// clones and updates share one queue. Returns false if any host failed.
+pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
+    let multi = targets.len() > 1;
+    let listings: Vec<_> = thread::scope(|s| {
+        let handles: Vec<_> = targets
+            .iter()
+            .map(|(provider, host)| {
+                s.spawn(move || -> Result<_> {
+                    let dir = host_dir(&settings.base_dir, host);
+                    let lock = HostLock::acquire(&dir)?;
+                    output::info(&format!("Fetching repository list from {host}..."));
+                    Ok((lock, dir, provider.list_repos(host)))
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    let mut ok = true;
+    // Locks stay held until every job of every host is done.
+    let mut locks = Vec::new();
+    let mut hosts = Vec::new();
+    for ((provider, host), res) in targets.iter().zip(listings) {
+        let heading = format!("--- {provider} @ {host} ---");
+        match res {
+            Ok((lock, dir, Ok(repos))) => {
+                locks.push(lock);
+                hosts.push(Listed {
+                    dir,
+                    repos,
+                    label: multi.then(|| (heading, host.clone())),
+                });
+            }
+            Ok((_, _, Err(ListError::Skip(reason)))) => {
+                if multi {
+                    output::heading(&heading);
+                }
+                output::warn(&format!("Skipping {host}: {reason}"));
+            }
+            Ok((_, _, Err(ListError::Fail(e)))) | Err(e) => {
+                if multi {
+                    output::heading(&heading);
+                }
+                output::error(&format!("{host}: {e:#}"));
+                ok = false;
+            }
         }
-        Err(ListError::Fail(e)) => return Err(e),
-    };
-    sync_listed(&dir, repos, settings, opts)?;
-    Ok(())
+    }
+
+    for res in sync_listed(&hosts, settings, opts) {
+        if let Err(e) = res {
+            output::error(&format!("{e:#}"));
+            ok = false;
+        }
+    }
+    drop(locks);
+    ok
 }
 
 /// Everything after listing: filter, clone/update, prune, report.
-fn sync_listed(
-    dir: &Path,
-    repos: Vec<Repo>,
-    settings: &Settings,
-    opts: &SyncOptions,
-) -> Result<Summary> {
-    output::info(&format!("Found {} repositories", repos.len()));
-    output::blank();
-
+fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec<Result<Summary>> {
     let filter = RepoFilter::load(&settings.base_dir, opts.filter.clone());
-    let mut skipped = 0;
-    let mut synced: HashSet<PathBuf> = HashSet::new();
     let mut jobs = Vec::new();
+    // Per host: paths kept by this sync (for prune) and repos skipped by the filter.
+    let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
 
-    for repo in repos {
-        let full_name = &repo.full_name;
-        match filter.decide(full_name) {
-            Decision::Drop => continue,
-            Decision::Ignored => {
-                output::skip(&format!("{full_name} (ignored)"));
-                skipped += 1;
+    for (i, h) in hosts.iter().enumerate() {
+        if let Some((heading, _)) = &h.label {
+            output::heading(heading);
+        }
+        output::info(&format!("Found {} repositories", h.repos.len()));
+        output::blank();
+        let mut synced = HashSet::new();
+        let mut skipped = 0;
+        for repo in &h.repos {
+            let full_name = &repo.full_name;
+            match filter.decide(full_name) {
+                Decision::Drop => continue,
+                Decision::Ignored => {
+                    output::skip(&format!("{full_name} (ignored)"));
+                    skipped += 1;
+                    continue;
+                }
+                Decision::Keep => {}
+            }
+            let path = repo_path(&h.dir, full_name);
+            synced.insert(path.clone());
+            if opts.dry_run {
+                let verb = if path.join(".git").is_dir() {
+                    "update"
+                } else {
+                    "clone"
+                };
+                output::info(&format!("  [dry-run] would {verb} {full_name}"));
                 continue;
             }
-            Decision::Keep => {}
+            jobs.push(Job {
+                host: i,
+                path,
+                url: repo.clone_url(settings.use_https).to_string(),
+                name: match &h.label {
+                    Some((_, host)) => format!("{host}/{full_name}"),
+                    None => full_name.clone(),
+                },
+            });
         }
-        let path = repo_path(dir, full_name);
-        synced.insert(path.clone());
-        if opts.dry_run {
-            let verb = if path.join(".git").is_dir() {
-                "update"
-            } else {
-                "clone"
-            };
-            output::info(&format!("  [dry-run] would {verb} {full_name}"));
-            continue;
-        }
-        jobs.push((
-            path,
-            repo.clone_url(settings.use_https).to_string(),
-            full_name.clone(),
-        ));
+        plans.push((synced, skipped));
     }
 
+    let multi = hosts.len() > 1;
+    if multi && !jobs.is_empty() {
+        output::heading("--- sync ---");
+    }
     let outcomes = run_parallel(jobs, settings.parallel);
-    let count = |o: Outcome| outcomes.iter().filter(|x| **x == o).count();
-
-    if opts.prune {
-        if opts.filter.is_some() {
-            output::warn("Pruning skipped: not supported with --filter");
-        } else {
-            prune(&settings.base_dir, dir, &synced, opts.dry_run)?;
-        }
+    if multi {
+        output::heading("--- summary ---");
     }
 
-    let summary = Summary {
-        cloned: count(Outcome::Cloned),
-        updated: count(Outcome::Updated),
-        skipped: count(Outcome::Skipped) + skipped,
-        errored: count(Outcome::Errored),
-    };
-    output::blank();
-    output::info(&format!(
-        "Done: {} cloned, {} updated, {} skipped, {} errors",
-        summary.cloned, summary.updated, summary.skipped, summary.errored,
-    ));
-    Ok(summary)
+    hosts
+        .iter()
+        .zip(plans)
+        .enumerate()
+        .map(|(i, (h, (synced, skipped)))| {
+            let count = |o: Outcome| outcomes.iter().filter(|x| **x == (i, o)).count();
+            if opts.prune {
+                if opts.filter.is_some() {
+                    output::warn("Pruning skipped: not supported with --filter");
+                } else {
+                    prune(&settings.base_dir, &h.dir, &synced, opts.dry_run)?;
+                }
+            }
+            let summary = Summary {
+                cloned: count(Outcome::Cloned),
+                updated: count(Outcome::Updated),
+                skipped: count(Outcome::Skipped) + skipped,
+                errored: count(Outcome::Errored),
+            };
+            let label = match &h.label {
+                Some((_, host)) => format!(" {host}"),
+                None => {
+                    output::blank();
+                    String::new()
+                }
+            };
+            output::info(&format!(
+                "Done{label}: {} cloned, {} updated, {} skipped, {} errors",
+                summary.cloned, summary.updated, summary.skipped, summary.errored,
+            ));
+            Ok(summary)
+        })
+        .collect()
 }
 
 /// Find git working copies under `root` without descending into `.git` itself.
@@ -349,12 +437,32 @@ pub mod tests {
         let url = bare.to_str().unwrap();
         let dest = tmp.path().join("base/host/user/repo");
 
-        assert_eq!(sync_repo(&dest, url, "user/repo"), Outcome::Cloned);
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Cloned);
         assert!(dest.join(".git").is_dir());
-        assert_eq!(sync_repo(&dest, url, "user/repo"), Outcome::Updated);
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Updated);
 
         fs::write(dest.join("dirty.txt"), "x").unwrap();
-        assert_eq!(sync_repo(&dest, url, "user/repo"), Outcome::Skipped);
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Skipped);
+    }
+
+    #[test]
+    fn pool_runs_concurrently_within_the_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+        for parallel in [1, 3] {
+            let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+            let out = pool((0..12).collect(), parallel, |i: i32| {
+                let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(n, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(20));
+                now.fetch_sub(1, Ordering::SeqCst);
+                i
+            });
+            let mut out = out;
+            out.sort();
+            assert_eq!(out, (0..12).collect::<Vec<_>>());
+            assert_eq!(peak.load(Ordering::SeqCst), parallel, "parallel={parallel}");
+        }
     }
 
     #[test]
@@ -363,7 +471,7 @@ pub mod tests {
         let dest = tmp.path().join("fail");
         let missing = tmp.path().join("nonexistent.git");
         assert_eq!(
-            sync_repo(&dest, missing.to_str().unwrap(), "u/r"),
+            sync_repo(&dest, missing.to_str().unwrap()).0,
             Outcome::Errored
         );
     }
@@ -416,6 +524,19 @@ pub mod tests {
         }
     }
 
+    fn listed(dir: &Path, repos: Vec<Repo>) -> Listed {
+        Listed {
+            dir: dir.to_path_buf(),
+            repos,
+            label: None,
+        }
+    }
+
+    fn sync_one(dir: &Path, repos: Vec<Repo>, settings: &Settings, opts: &SyncOptions) -> Summary {
+        let mut out = sync_listed(&[listed(dir, repos)], settings, opts);
+        out.remove(0).unwrap()
+    }
+
     fn summary(cloned: usize, updated: usize, skipped: usize, errored: usize) -> Summary {
         Summary {
             cloned,
@@ -447,7 +568,7 @@ pub mod tests {
         };
         let opts = SyncOptions::default();
 
-        let first = sync_listed(&host, repos(), &settings, &opts).unwrap();
+        let first = sync_one(&host, repos(), &settings, &opts);
         assert_eq!(first, summary(2, 0, 1, 1));
         assert!(
             host.join("u")
@@ -460,7 +581,7 @@ pub mod tests {
         assert!(!host.join("other").exists());
 
         fs::write(host.join("u").join("a").join("dirty.txt"), "x").unwrap();
-        let second = sync_listed(&host, repos(), &settings, &opts).unwrap();
+        let second = sync_one(&host, repos(), &settings, &opts);
         assert_eq!(second, summary(0, 1, 2, 1));
     }
 
@@ -482,7 +603,7 @@ pub mod tests {
             ..Default::default()
         };
         let repos = vec![repo("u/old", &bare), repo("u/new", &bare)];
-        let s = sync_listed(&host, repos, &settings, &opts).unwrap();
+        let s = sync_one(&host, repos, &settings, &opts);
         assert_eq!(s, Summary::default());
         assert!(!host.join("u").join("new").exists());
         assert!(stale.exists());
@@ -510,7 +631,7 @@ pub mod tests {
             prune: true,
             dry_run: false,
         };
-        let s = sync_listed(&host, repos(), &settings, &filtered).unwrap();
+        let s = sync_one(&host, repos(), &settings, &filtered);
         assert_eq!(s, summary(1, 0, 0, 0));
         assert!(stale.exists(), "prune is skipped with --filter");
 
@@ -518,25 +639,51 @@ pub mod tests {
             prune: true,
             ..Default::default()
         };
-        let s = sync_listed(&host, repos(), &settings, &opts).unwrap();
+        let s = sync_one(&host, repos(), &settings, &opts);
         assert_eq!(s, summary(0, 1, 0, 0));
         assert!(!stale.exists());
         assert!(host.join("u").join("kept").exists());
     }
 
     #[test]
-    fn sync_host_refuses_a_locked_host() {
+    fn sync_hosts_refuses_a_locked_host() {
         let tmp = tempfile::tempdir().unwrap();
         let settings = Settings::for_tests(tmp.path());
         let _lock = HostLock::acquire(&host_dir(tmp.path(), "github.com")).unwrap();
-        let err = sync_host(
-            Provider::Github,
-            "github.com",
-            &settings,
-            &SyncOptions::default(),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("already running"), "{err}");
+        let targets = [(Provider::Github, "github.com".to_string())];
+        assert!(!sync_hosts(&targets, &settings, &SyncOptions::default()));
+    }
+
+    #[test]
+    fn hosts_share_one_queue_and_report_separately() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let settings = Settings::for_tests(&base);
+        let (a, b) = (base.join("a"), base.join("b"));
+        let hosts = [
+            Listed {
+                label: Some(("a".into(), "a".into())),
+                ..listed(&a, vec![repo("u/x", &bare), repo("u/y", &bare)])
+            },
+            Listed {
+                label: Some(("b".into(), "b".into())),
+                ..listed(
+                    &b,
+                    vec![
+                        repo("u/x", &bare),
+                        repo("u/bad", &tmp.path().join("no.git")),
+                    ],
+                )
+            },
+        ];
+        let out: Vec<_> = sync_listed(&hosts, &settings, &SyncOptions::default())
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(out, [summary(2, 0, 0, 0), summary(1, 0, 0, 1)]);
+        assert!(a.join("u").join("y").join(".git").is_dir());
+        assert!(b.join("u").join("x").join(".git").is_dir());
     }
 
     #[test]

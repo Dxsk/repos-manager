@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
+- Each result line shows a `[done/total]` counter, and an interactive terminal shows a live status line with the repositories in progress
+
 ## 1.0.0 (2026-10-08)
 
 Rewritten in Rust. repos-manager now ships as a single native binary for Linux (x86_64 and aarch64, static musl), macOS (x86_64 and aarch64) and Windows (x86_64 and ARM64). The commands, flags, config file (`~/.config/repos-manager/config.json`) and provider CLIs (`gh`, `glab`, `tea`, `bitbucket`, `rad`) are unchanged.
