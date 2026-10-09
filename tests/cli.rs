@@ -445,10 +445,8 @@ fn several_hosts_sync_in_one_run_without_live_progress_in_pipes() {
     assert!(o.status.success(), "{}", stderr(&o));
     let out = stdout(&o);
     for f in [&a, &b] {
-        assert!(
-            out.contains(&format!("--- forgejo @ {} ---", f.host)),
-            "{out}"
-        );
+        let heading = format!("--- forgejo @ {} ---", f.host);
+        assert_eq!(out.matches(&heading).count(), 1, "{out}");
         assert!(
             out.contains(&format!("{}/me/repo (cloned)", f.host)),
             "{out}"
