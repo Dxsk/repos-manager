@@ -26,3 +26,55 @@ pub fn is_dirty(dir: &Path) -> bool {
 pub fn available() -> bool {
     which::which("git").is_ok()
 }
+
+/// Whether a tracked path cannot exist on a Windows filesystem: reserved
+/// characters, a trailing dot or space, or a device name such as `CON`.
+pub fn invalid_on_windows(path: &str) -> bool {
+    path.split('/').any(|c| {
+        let stem = c
+            .split('.')
+            .next()
+            .unwrap_or(c)
+            .trim_end()
+            .to_ascii_uppercase();
+        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || (stem.len() == 4
+                && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+        device
+            || c.ends_with(['.', ' '])
+            || c.chars().any(|ch| ch < ' ' || r#"<>:"|?*\"#.contains(ch))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_paths_windows_cannot_hold() {
+        for bad in [
+            r#"web/"Geneva": Renew.md"#,
+            "a|b",
+            "dir./file",
+            "trailing ",
+            "CON",
+            "x/nul.txt",
+            "com1.log",
+            "LPT9",
+            "back\\slash",
+            "tab\there",
+        ] {
+            assert!(invalid_on_windows(bad), "{bad}");
+        }
+        for ok in [
+            "README.md",
+            ".github/ci.yml",
+            "console.txt",
+            "COM10",
+            "a b/c.d",
+        ] {
+            assert!(!invalid_on_windows(ok), "{ok}");
+        }
+    }
+}

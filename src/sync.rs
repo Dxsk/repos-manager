@@ -138,16 +138,46 @@ pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
             Err(e) => (Outcome::Errored, format!("update failed: {e}")),
         }
     } else {
-        if let Some(parent) = local_path.parent() {
-            let _ = fs::create_dir_all(parent);
+        let existed = local_path.exists();
+        let res = clone(local_path, clone_url);
+        // A half-done clone would look dirty and be skipped on every later run.
+        if !matches!(res, Ok(None)) && !existed {
+            let _ = fs::remove_dir_all(local_path);
         }
-        let parent = local_path.parent().unwrap_or(Path::new("."));
-        let target = local_path.to_string_lossy();
-        match git::run(parent, &["clone", "--quiet", clone_url, &target]) {
-            Ok(_) => (Outcome::Cloned, "cloned".into()),
+        match res {
+            Ok(None) => (Outcome::Cloned, "cloned".into()),
+            Ok(Some(bad)) => (
+                Outcome::Skipped,
+                format!("cannot be checked out on Windows, invalid file name: {bad}"),
+            ),
             Err(e) => (Outcome::Errored, format!("clone failed: {e}")),
         }
     }
+}
+
+/// Clone `url` into `local_path`. Returns the first tracked path Windows
+/// cannot hold when that makes a checkout impossible.
+fn clone(local_path: &Path, url: &str) -> Result<Option<String>> {
+    if let Some(parent) = local_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let parent = local_path.parent().unwrap_or(Path::new("."));
+    let target = local_path.to_string_lossy();
+    if !cfg!(windows) {
+        git::run(parent, &["clone", "--quiet", url, &target])?;
+        return Ok(None);
+    }
+    // Git for Windows refuses names such as `a"b` or `CON` (core.protectNTFS),
+    // which aborts a plain clone halfway. Check the tree before checking out.
+    git::run(parent, &["clone", "--quiet", "--no-checkout", url, &target])?;
+    let Ok(files) = git::run(local_path, &["ls-tree", "-r", "-z", "--name-only", "HEAD"]) else {
+        return Ok(None); // empty remote, nothing to check out
+    };
+    if let Some(bad) = files.split('\0').find(|p| git::invalid_on_windows(p)) {
+        return Ok(Some(bad.to_string()));
+    }
+    git::run(local_path, &["reset", "--quiet", "--hard", "HEAD"])?;
+    Ok(None)
 }
 
 struct Job {
@@ -502,6 +532,91 @@ pub mod tests {
             sync_repo(&dest, url),
             (Outcome::Skipped, "empty repository".into())
         );
+    }
+
+    /// Bare remote whose only commit tracks `names`, written straight into
+    /// the index so the seed never needs them on disk.
+    fn remote_with_paths(tmp: &Path, names: &[&str]) -> PathBuf {
+        let bare = tmp.join("odd.git");
+        let seed = tmp.join("odd-seed");
+        fs::create_dir_all(&seed).unwrap();
+        git(
+            tmp,
+            &[
+                "init",
+                "--quiet",
+                "--bare",
+                "-b",
+                "main",
+                bare.to_str().unwrap(),
+            ],
+        );
+        git(&seed, &["init", "--quiet", "-b", "main"]);
+        fs::write(seed.join("blob"), "x").unwrap();
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&seed)
+            .args(["hash-object", "-w", "blob"])
+            .output()
+            .unwrap();
+        let sha = String::from_utf8(out.stdout).unwrap().trim().to_string();
+        for n in names {
+            git(
+                &seed,
+                &[
+                    "-c",
+                    "core.protectNTFS=false",
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    &format!("100644,{sha},{n}"),
+                ],
+            );
+        }
+        git(&seed, &["commit", "--quiet", "-m", "odd"]);
+        git(&seed, &["push", "--quiet", bare.to_str().unwrap(), "main"]);
+        bare
+    }
+
+    #[test]
+    fn windows_invalid_names_skip_the_repo_cleanly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bad = r#"web/"Geneva": Renew.md"#;
+        let bare = remote_with_paths(tmp.path(), &["ok.md", bad]);
+        let dest = tmp.path().join("clone");
+
+        let (outcome, detail) = sync_repo(&dest, bare.to_str().unwrap());
+        if cfg!(windows) {
+            assert_eq!(outcome, Outcome::Skipped, "{detail}");
+            assert!(detail.contains(bad), "{detail}");
+            assert!(!dest.exists(), "no half-done clone left behind");
+        } else {
+            assert_eq!(outcome, Outcome::Cloned, "{detail}");
+        }
+    }
+
+    #[test]
+    fn windows_checkout_of_a_valid_tree_is_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = remote_with_paths(tmp.path(), &["ok.md", "web/fine.md"]);
+        let dest = tmp.path().join("clone");
+        let url = bare.to_str().unwrap();
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Cloned);
+        assert!(dest.join("web").join("fine.md").is_file());
+        assert!(!git::is_dirty(&dest));
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Updated);
+    }
+
+    #[test]
+    fn failed_clone_leaves_no_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("gone");
+        let missing = tmp.path().join("missing.git");
+        assert_eq!(
+            sync_repo(&dest, missing.to_str().unwrap()).0,
+            Outcome::Errored
+        );
+        assert!(!dest.exists());
     }
 
     #[test]
