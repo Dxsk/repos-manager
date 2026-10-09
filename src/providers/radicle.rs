@@ -26,16 +26,30 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
         .collect()
 }
 
+fn command() -> Command {
+    let mut cmd = Command::new("rad");
+    cmd.args(["ls", "--json"]);
+    cmd
+}
+
 pub fn list_repos() -> Result<Vec<Repo>, ListError> {
     require_cli("rad")?;
-    let raw = run_capture(Command::new("rad").args(["ls", "--json"]))?;
+    let raw = run_capture(&mut command())?;
     let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
     Ok(parse(&items))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::args;
     use super::*;
+
+    #[test]
+    fn lists_repos_as_json() {
+        let cmd = command();
+        assert_eq!(cmd.get_program(), "rad");
+        assert_eq!(args(&cmd), ["ls", "--json"]);
+    }
 
     #[test]
     fn parses_rad_ls() {
