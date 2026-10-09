@@ -202,3 +202,21 @@ mod tests {
         assert!(cut.ends_with('…'), "{cut}");
     }
 }
+
+#[cfg(test)]
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn status_line_never_wraps(
+            running in prop::collection::vec("[a-zé/⟳ -]{0,30}", 0..6),
+            done in 0usize..1000,
+            width in 2usize..200,
+        ) {
+            let st = State { done, running };
+            prop_assert!(status_line(&st, 1000, width).chars().count() < width);
+        }
+    }
+}
