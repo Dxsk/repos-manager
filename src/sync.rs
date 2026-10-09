@@ -89,14 +89,12 @@ pub fn host_dir(base: &Path, host: &str) -> PathBuf {
     }
 }
 
-/// Repo names come from a remote API, so only plain path segments are kept:
-/// Windows also splits on `\\` and treats `C:` as a drive, either of which
-/// could otherwise place a clone outside the base directory.
+/// Repo names come from a remote API: on Windows a `\\` separator or a `C:`
+/// drive segment would otherwise place a clone outside the base directory.
 fn repo_path(host_dir: &Path, full_name: &str) -> PathBuf {
     full_name
         .split(['/', '\\'])
         .filter(|c| {
-            // `:` is never part of a forge repo name and would be a drive on Windows.
             if c.contains(':') {
                 return false;
             }
@@ -109,34 +107,12 @@ fn repo_path(host_dir: &Path, full_name: &str) -> PathBuf {
         .fold(host_dir.to_path_buf(), |p, c| p.join(c))
 }
 
-/// Clone or update one repository, returning the outcome and a short detail
-/// for the report line.
 pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
     if local_path.join(".git").is_dir() {
         if git::is_dirty(local_path) {
             return (Outcome::Skipped, "dirty, skipped".into());
         }
-        if let Err(e) = git::run(local_path, &["fetch", "--all", "--quiet"]) {
-            return (Outcome::Errored, format!("update failed: {e}"));
-        }
-        // An empty remote has no HEAD to pull from.
-        if git::run(
-            local_path,
-            &["for-each-ref", "--count=1", "refs/remotes/origin"],
-        )
-        .is_ok_and(|s| s.is_empty())
-        {
-            return (Outcome::Skipped, "empty repository".into());
-        }
-        // Pull origin HEAD explicitly so clones without upstream tracking
-        // (manual clones, renamed default branch) still update.
-        match git::run(
-            local_path,
-            &["pull", "--ff-only", "--quiet", "origin", "HEAD"],
-        ) {
-            Ok(_) => (Outcome::Updated, "updated".into()),
-            Err(e) => (Outcome::Errored, format!("update failed: {e}")),
-        }
+        update(local_path).unwrap_or_else(|e| (Outcome::Errored, format!("update failed: {e}")))
     } else {
         let existed = local_path.exists();
         let res = clone(local_path, clone_url);
@@ -155,8 +131,53 @@ pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
     }
 }
 
-/// Clone `url` into `local_path`. Returns the first tracked path Windows
-/// cannot hold when that makes a checkout impossible.
+/// Only the default branch is fast-forwarded: a sync must never move a work branch.
+fn update(dir: &Path) -> Result<(Outcome, String)> {
+    // --prune drops remote-tracking refs of deleted branches, so a renamed
+    // default branch leaves origin/HEAD dangling and gets re-detected below.
+    git::run(dir, &["fetch", "--all", "--prune", "--quiet"])?;
+    if git::run(dir, &["for-each-ref", "--count=1", "refs/remotes/origin"])?.is_empty() {
+        return Ok((Outcome::Skipped, "empty repository".into()));
+    }
+    let remote_head = || {
+        git::run(
+            dir,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--abbrev-ref",
+                "origin/HEAD",
+            ],
+        )
+        .ok()
+        .filter(|r| !r.is_empty() && r != "origin/HEAD")
+    };
+    let default = match remote_head() {
+        Some(r) => r,
+        None => {
+            git::run(dir, &["remote", "set-head", "origin", "--auto"])?;
+            remote_head().ok_or_else(|| anyhow::anyhow!("cannot find the remote default branch"))?
+        }
+    };
+    let branch = default.strip_prefix("origin/").unwrap_or(&default);
+    match git::run(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+        Ok(current) if current == branch => {}
+        Ok(current) => return Ok((Outcome::Updated, format!("fetched, on branch {current}"))),
+        Err(_) => return Ok((Outcome::Updated, "fetched, detached HEAD".into())),
+    }
+    let before = git::run(dir, &["rev-parse", "HEAD"]).ok();
+    git::run(dir, &["merge", "--ff-only", "--quiet", &default])?;
+    let after = git::run(dir, &["rev-parse", "HEAD"]).ok();
+    let detail = if before == after {
+        "up to date"
+    } else {
+        "updated"
+    };
+    Ok((Outcome::Updated, detail.into()))
+}
+
+/// `Some(path)`: the tree holds a path Windows cannot check out.
 fn clone(local_path: &Path, url: &str) -> Result<Option<String>> {
     if let Some(parent) = local_path.parent() {
         fs::create_dir_all(parent)?;
@@ -187,8 +208,6 @@ struct Job {
     name: String,
 }
 
-/// Run `work` over `items` with at most `parallel` threads pulling from one
-/// shared queue.
 fn pool<T: Send, R: Send>(items: Vec<T>, parallel: usize, work: impl Fn(T) -> R + Sync) -> Vec<R> {
     let queue = Mutex::new(items.into_iter());
     let results = Mutex::new(Vec::new());
@@ -207,8 +226,6 @@ fn pool<T: Send, R: Send>(items: Vec<T>, parallel: usize, work: impl Fn(T) -> R 
     results.into_inner().unwrap()
 }
 
-/// All jobs share one queue whatever their host, so `parallel` bounds the
-/// total number of git processes.
 fn run_parallel(jobs: Vec<Job>, parallel: usize) -> Vec<(usize, Outcome)> {
     let progress = output::Progress::new(jobs.len());
     pool(jobs, parallel, |job| {
@@ -226,7 +243,6 @@ fn run_parallel(jobs: Vec<Job>, parallel: usize) -> Vec<(usize, Outcome)> {
     })
 }
 
-/// A host whose repository list is known and whose lock is held.
 struct Listed {
     dir: PathBuf,
     repos: Vec<Repo>,
@@ -234,8 +250,8 @@ struct Listed {
     label: Option<(String, String)>,
 }
 
-/// Sync several hosts at once: listing runs concurrently per host, then all
-/// clones and updates share one queue. Returns false if any host failed.
+/// Hosts list concurrently, then all their jobs share one queue so `parallel`
+/// bounds the total number of git processes.
 pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
     let multi = targets.len() > 1;
     let listings: Vec<_> = thread::scope(|s| {
@@ -534,8 +550,7 @@ pub mod tests {
         );
     }
 
-    /// Bare remote whose only commit tracks `names`, written straight into
-    /// the index so the seed never needs them on disk.
+    /// Paths go straight into the index: Windows could not create them on disk.
     fn remote_with_paths(tmp: &Path, names: &[&str]) -> PathBuf {
         let bare = tmp.join("odd.git");
         let seed = tmp.join("odd-seed");
@@ -617,6 +632,95 @@ pub mod tests {
             Outcome::Errored
         );
         assert!(!dest.exists());
+    }
+
+    fn push_commit(tmp: &Path, bare: &Path, branch: &str) {
+        let work = tmp.join(format!("pusher-{branch}"));
+        if !work.exists() {
+            git(
+                tmp,
+                &[
+                    "clone",
+                    "--quiet",
+                    bare.to_str().unwrap(),
+                    work.to_str().unwrap(),
+                ],
+            );
+        }
+        git(&work, &["fetch", "--quiet", "origin"]);
+        git(&work, &["checkout", "--quiet", "-B", branch, "origin/main"]);
+        git(&work, &["commit", "--quiet", "--allow-empty", "-m", "more"]);
+        git(
+            &work,
+            &["push", "--quiet", "origin", &format!("HEAD:{branch}")],
+        );
+    }
+
+    fn head(dir: &Path) -> String {
+        git::run(dir, &["rev-parse", "HEAD"]).unwrap()
+    }
+
+    #[test]
+    fn update_fast_forwards_only_the_default_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let url = bare.to_str().unwrap();
+        let dest = tmp.path().join("clone");
+        sync_repo(&dest, url);
+        assert_eq!(
+            sync_repo(&dest, url),
+            (Outcome::Updated, "up to date".into())
+        );
+
+        push_commit(tmp.path(), &bare, "main");
+        assert_eq!(sync_repo(&dest, url), (Outcome::Updated, "updated".into()));
+        assert_eq!(
+            head(&dest),
+            git::run(&dest, &["rev-parse", "origin/main"]).unwrap()
+        );
+
+        // A work branch that main could fast-forward must stay where it is.
+        git(&dest, &["checkout", "--quiet", "-b", "work"]);
+        let work = head(&dest);
+        push_commit(tmp.path(), &bare, "main");
+        assert_eq!(
+            sync_repo(&dest, url),
+            (Outcome::Updated, "fetched, on branch work".into())
+        );
+        assert_eq!(head(&dest), work);
+
+        git(&dest, &["checkout", "--quiet", "--detach"]);
+        assert_eq!(
+            sync_repo(&dest, url),
+            (Outcome::Updated, "fetched, detached HEAD".into())
+        );
+        assert_eq!(head(&dest), work);
+    }
+
+    #[test]
+    fn update_follows_a_renamed_default_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let url = bare.to_str().unwrap();
+        let dest = tmp.path().join("clone");
+        sync_repo(&dest, url);
+        git(&dest, &["remote", "set-head", "origin", "--delete"]);
+        assert_eq!(
+            sync_repo(&dest, url).1,
+            "up to date",
+            "origin/HEAD is re-detected"
+        );
+
+        git(&bare, &["branch", "-m", "main", "trunk"]);
+        git(&bare, &["symbolic-ref", "HEAD", "refs/heads/trunk"]);
+        assert_eq!(
+            sync_repo(&dest, url),
+            (Outcome::Updated, "fetched, on branch main".into())
+        );
+        assert_eq!(
+            git::run(&dest, &["rev-parse", "--abbrev-ref", "origin/HEAD"]).unwrap(),
+            "origin/trunk"
+        );
     }
 
     #[test]

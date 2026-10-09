@@ -92,8 +92,7 @@ pub fn blank() {
     }
 }
 
-/// Live progress for concurrent jobs. Every line goes through one mutex so
-/// result lines and the transient status line never interleave.
+/// All output goes through one mutex so result lines and the status line never interleave.
 pub struct Progress {
     state: Mutex<State>,
     total: usize,
@@ -107,7 +106,6 @@ struct State {
 }
 
 impl Progress {
-    /// The status line only shows on an interactive, non-quiet stdout.
     pub fn new(total: usize) -> Self {
         Self::with_live(total, !is_quiet() && std::io::stdout().is_terminal())
     }
@@ -126,8 +124,6 @@ impl Progress {
         self.redraw(&st);
     }
 
-    /// Mark `name` finished and print its result through `print`, which
-    /// receives a `[done/total]` counter to prefix the message with.
     pub fn finish(&self, name: &str, print: impl FnOnce(&str)) {
         let mut st = self.state.lock().unwrap();
         if let Some(i) = st.running.iter().position(|n| n == name) {

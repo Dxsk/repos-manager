@@ -27,8 +27,6 @@ pub fn available() -> bool {
     which::which("git").is_ok()
 }
 
-/// Whether a tracked path cannot exist on a Windows filesystem: reserved
-/// characters, a trailing dot or space, or a device name such as `CON`.
 pub fn invalid_on_windows(path: &str) -> bool {
     path.split('/').any(|c| {
         let stem = c
