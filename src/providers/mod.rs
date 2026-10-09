@@ -23,12 +23,14 @@ pub enum Provider {
     Radicle,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Repo {
     /// `owner/name`, possibly nested (`group/sub/name`); also the local path under the host dir.
     pub full_name: String,
     pub ssh_url: String,
     pub https_url: String,
+    /// Size reported by the API, 0 when unknown. Only orders the clones.
+    pub size_kb: u64,
 }
 
 impl Repo {
@@ -194,6 +196,10 @@ fn parse_paginated(raw: &str) -> Result<Vec<Value>> {
     Ok(all)
 }
 
+fn u64_field(v: &Value, key: &str) -> u64 {
+    v.get(key).and_then(Value::as_u64).unwrap_or_default()
+}
+
 fn str_field(v: &Value, key: &str) -> String {
     v.get(key)
         .and_then(Value::as_str)
@@ -274,6 +280,7 @@ pub mod tests {
             full_name: "o/r".into(),
             ssh_url: "ssh".into(),
             https_url: "https".into(),
+            ..Default::default()
         };
         assert_eq!(r.clone_url(false), "ssh");
         assert_eq!(r.clone_url(true), "https");
@@ -307,6 +314,7 @@ pub mod tests {
             full_name: n.into(),
             ssh_url: url.into(),
             https_url: url.into(),
+            ..Default::default()
         };
         let out = sorted_unique(vec![repo("b/x", "1"), repo("a/y", "2"), repo("b/x", "3")]);
         let names: Vec<_> = out.iter().map(|r| r.full_name.as_str()).collect();

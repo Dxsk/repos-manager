@@ -11,6 +11,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
             full_name: str_field(r, "path_with_namespace"),
             ssh_url: str_field(r, "ssh_url_to_repo"),
             https_url: str_field(r, "http_url_to_repo"),
+            ..Default::default()
         })
         .filter(|r| !r.full_name.is_empty())
         .collect()

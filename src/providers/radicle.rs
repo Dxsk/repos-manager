@@ -21,6 +21,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
                 full_name: format!("{}/{}", str_field(r, "namespace"), str_field(r, "name")),
                 ssh_url: url.clone(),
                 https_url: url,
+                ..Default::default()
             }
         })
         .collect()

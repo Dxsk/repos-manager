@@ -3,7 +3,8 @@ use std::process::Command;
 use serde_json::Value;
 
 use super::{
-    ListError, Repo, parse_paginated, require_cli, run_capture, str_field, with_git_suffix,
+    ListError, Repo, parse_paginated, require_cli, run_capture, str_field, u64_field,
+    with_git_suffix,
 };
 
 pub fn parse(items: &[Value]) -> Vec<Repo> {
@@ -13,6 +14,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
             full_name: str_field(r, "full_name"),
             ssh_url: str_field(r, "ssh_url"),
             https_url: with_git_suffix(&str_field(r, "html_url")),
+            size_kb: u64_field(r, "size"),
         })
         .filter(|r| !r.full_name.is_empty())
         .collect()
