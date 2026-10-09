@@ -7,6 +7,10 @@
 - All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
 - Each result line shows a `[done/total]` counter, and an interactive terminal shows a live status line with the repositories in progress
 
+### Fixed
+
+- Updating a clone of an empty remote repository no longer fails with `couldn't find remote ref HEAD`, it is reported as skipped (`empty repository`)
+
 ### Security
 
 - Repository names from a provider API can no longer place a clone outside the base directory on Windows: `\` separators, `..` and drive prefixes such as `C:` are now dropped like `/`-separated `..`

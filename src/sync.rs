@@ -116,15 +116,24 @@ pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
         if git::is_dirty(local_path) {
             return (Outcome::Skipped, "dirty, skipped".into());
         }
+        if let Err(e) = git::run(local_path, &["fetch", "--all", "--quiet"]) {
+            return (Outcome::Errored, format!("update failed: {e}"));
+        }
+        // An empty remote has no HEAD to pull from.
+        if git::run(
+            local_path,
+            &["for-each-ref", "--count=1", "refs/remotes/origin"],
+        )
+        .is_ok_and(|s| s.is_empty())
+        {
+            return (Outcome::Skipped, "empty repository".into());
+        }
         // Pull origin HEAD explicitly so clones without upstream tracking
         // (manual clones, renamed default branch) still update.
-        let res = git::run(local_path, &["fetch", "--all", "--quiet"]).and_then(|_| {
-            git::run(
-                local_path,
-                &["pull", "--ff-only", "--quiet", "origin", "HEAD"],
-            )
-        });
-        match res {
+        match git::run(
+            local_path,
+            &["pull", "--ff-only", "--quiet", "origin", "HEAD"],
+        ) {
             Ok(_) => (Outcome::Updated, "updated".into()),
             Err(e) => (Outcome::Errored, format!("update failed: {e}")),
         }
@@ -476,6 +485,23 @@ pub mod tests {
             assert_eq!(out, (0..12).collect::<Vec<_>>());
             assert_eq!(peak.load(Ordering::SeqCst), parallel, "parallel={parallel}");
         }
+    }
+
+    #[test]
+    fn empty_remote_is_skipped_not_errored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = tmp.path().join("empty.git");
+        git(
+            tmp.path(),
+            &["init", "--quiet", "--bare", bare.to_str().unwrap()],
+        );
+        let dest = tmp.path().join("clone");
+        let url = bare.to_str().unwrap();
+        assert_eq!(sync_repo(&dest, url).0, Outcome::Cloned);
+        assert_eq!(
+            sync_repo(&dest, url),
+            (Outcome::Skipped, "empty repository".into())
+        );
     }
 
     #[test]
