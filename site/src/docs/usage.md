@@ -46,12 +46,18 @@ repos-manager sync --all --dry-run           # Preview without changes
 For each repository:
 
 - missing locally: it is cloned;
-- present and clean: `git fetch --all` then `git pull --ff-only origin HEAD` (works even without upstream tracking);
+- present and clean: `git fetch --all --prune`, then a fast-forward of the remote default branch if it is checked out. Another branch or a detached HEAD is only fetched, so a sync never moves the branch you work on;
 - present with uncommitted changes: it is skipped and reported as `dirty`.
 
 `sync --all` skips providers whose CLI is not installed, and an error on one host never stops the others. `--host` targets a single provider and is rejected with `sync --all`: use `repos-manager <provider> sync --host <host>` instead.
 
-`--prune` removes local repos under the host directory that are no longer listed by the remote. It is skipped when `--filter` is set and refuses to touch anything outside the base directory. Combine it with `--dry-run` to see what would go.
+`--prune` removes local repos under the host directory that are no longer listed by the remote. It never deletes:
+
+- a repo with uncommitted or untracked changes, unpushed commits or a stash;
+- a repo in `.repos-ignore`, or outside `.repos-filter` or `--filter`;
+- anything outside the base directory.
+
+When more than half of a host's local repos would go, the listing is treated as incomplete and prune stops: check with `--dry-run`, then add `--force`.
 
 ### status
 
@@ -126,6 +132,7 @@ Sync flags (`<provider> sync` and `sync --all`):
 | `--base-dir <path>` | Base directory | `~/Documents` |
 | `--https` | Use HTTPS instead of SSH | SSH |
 | `--prune` | Remove local repos not on remote | Off |
+| `--force` | With `--prune`, allow removing most local repos | Off |
 | `--dry-run` | Preview without making changes | Off |
 | `--host <host>` | Custom host for self-hosted (provider sync only) | Configured hosts |
 | `--parallel <n>` | Concurrent sync jobs | 4 |

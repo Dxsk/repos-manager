@@ -257,6 +257,7 @@ On Windows, a host with a port (`git.example.org:3000`) is stored as `git.exampl
 | `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
 | `--https` | Use HTTPS clone URLs instead of SSH |
 | `--prune` | Remove local repos that no longer exist on the remote |
+| `--force` | With `--prune`, go ahead even when most local repos would be removed |
 | `--dry-run` | Show what would be done without changing anything |
 | `--host <host>` | Target a self-hosted instance (provider sync only) |
 | `--parallel <n>` | Number of parallel jobs (default: 4) |
@@ -284,7 +285,16 @@ repos-manager forgejo sync --host forge.example.org
 repos-manager sync --all --https --parallel 8 --base-dir /path/to/repos
 ```
 
-Existing clean repos get `git fetch --all` and a fast-forward pull of `origin HEAD`. Repos with uncommitted changes are skipped. `--host` is rejected with `sync --all`, and `--prune` is skipped when `--filter` is set and never deletes anything outside the base directory.
+Existing clean repos get `git fetch --all --prune`, then a fast-forward of the remote default branch when it is checked out. Any other branch, or a detached HEAD, is only fetched. Repos with uncommitted changes are skipped. `--host` is rejected with `sync --all`.
+
+`--prune` only deletes a local repo when all of these hold:
+
+- the remote no longer lists it;
+- it is in scope: not in `.repos-ignore`, and matched by `.repos-filter` and `--filter` when set;
+- it holds no local-only work: no uncommitted or untracked changes, no unpushed commits, no stash;
+- it sits inside the base directory.
+
+If more than half of the local repos of a host would go, the remote listing probably came back incomplete (revoked token, API hiccup) and prune stops. Review with `--dry-run`, then add `--force`.
 
 Each host has its own lock, so two syncs of the same host cannot overlap while different hosts sync side by side. The lock is released by the OS if the process dies.
 
