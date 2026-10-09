@@ -409,3 +409,55 @@ fn unconfigured_hosts_are_skipped() {
         "{out}"
     );
 }
+
+#[test]
+fn several_hosts_sync_in_one_run_without_live_progress_in_pipes() {
+    let (a, b) = (forge(200), forge(200));
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("config.json");
+    fs::write(
+        &config,
+        serde_json::json!({ "hosts": { "forgejo": [a.host, b.host] } }).to_string(),
+    )
+    .unwrap();
+    let tea = tmp.path().join("tea.yml");
+    fs::write(
+        &tea,
+        format!(
+            "logins:\n  - name: a\n    url: {}\n    token: tok\n  - name: b\n    url: {}\n    token: tok\n",
+            a.server.url, b.server.url
+        ),
+    )
+    .unwrap();
+    let base = tmp.path().join("base");
+    let o = cmd(&[
+        "forgejo",
+        "sync",
+        "--parallel",
+        "2",
+        "--base-dir",
+        base.to_str().unwrap(),
+    ])
+    .env("REPOS_MANAGER_CONFIG", &config)
+    .env("TEA_CONFIG", &tea)
+    .output()
+    .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    for f in [&a, &b] {
+        assert!(
+            out.contains(&format!("--- forgejo @ {} ---", f.host)),
+            "{out}"
+        );
+        assert!(
+            out.contains(&format!("{}/me/repo (cloned)", f.host)),
+            "{out}"
+        );
+        assert!(
+            out.contains(&format!("Done {}: 1 cloned, 0 updated", f.host)),
+            "{out}"
+        );
+    }
+    assert!(out.contains("[2/2]"), "{out}");
+    assert!(!out.contains('⟳') && !out.contains('\x1b'), "{out:?}");
+}

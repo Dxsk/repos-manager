@@ -213,8 +213,43 @@ fn with_git_suffix(url: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+
+    pub fn args(cmd: &Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    pub fn envs(cmd: &Command) -> Vec<(String, String)> {
+        cmd.get_envs()
+            .map(|(k, v)| {
+                let v = v
+                    .map(|v| v.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (k.to_string_lossy().into_owned(), v)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn run_capture_returns_stdout_or_stderr() {
+        let out = run_capture(Command::new("git").arg("--version")).unwrap();
+        assert!(out.starts_with("git version"), "{out}");
+
+        let err = run_capture(Command::new("git").arg("no-such-subcommand")).unwrap_err();
+        assert!(err.to_string().contains("no-such-subcommand"), "{err}");
+
+        let err = run_capture(&mut Command::new("repos-manager-no-such-cli")).unwrap_err();
+        assert!(err.to_string().contains("cannot run"), "{err}");
+    }
+
+    #[test]
+    fn missing_cli_fails_the_host() {
+        let err = require_cli("repos-manager-no-such-cli").unwrap_err();
+        assert!(matches!(err, ListError::Fail(e) if e.to_string().contains("not found in PATH")));
+    }
 
     #[test]
     fn paginated_arrays_are_merged() {

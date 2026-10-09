@@ -16,19 +16,39 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
         .collect()
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
-    require_cli("glab")?;
-    let raw = run_capture(Command::new("glab").env("GITLAB_HOST", host).args([
+fn command(host: &str) -> Command {
+    let mut cmd = Command::new("glab");
+    cmd.env("GITLAB_HOST", host).args([
         "api",
         "projects?membership=true&per_page=100&simple=true",
         "--paginate",
-    ]))?;
+    ]);
+    cmd
+}
+
+pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+    require_cli("glab")?;
+    let raw = run_capture(&mut command(host))?;
     Ok(parse(&parse_paginated(&raw)?))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::{args, envs};
     use super::*;
+
+    #[test]
+    fn routes_every_host_through_gitlab_host() {
+        for host in ["gitlab.com", "gl.example.org:8443"] {
+            let cmd = command(host);
+            assert_eq!(envs(&cmd), [("GITLAB_HOST".to_string(), host.to_string())]);
+            assert_eq!(
+                args(&cmd)[..2],
+                ["api", "projects?membership=true&per_page=100&simple=true"]
+            );
+            assert!(args(&cmd).contains(&"--paginate".to_string()));
+        }
+    }
 
     #[test]
     fn parses_api_payload() {

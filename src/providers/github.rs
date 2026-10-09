@@ -18,8 +18,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
         .collect()
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
-    require_cli("gh")?;
+fn command(host: &str) -> Command {
     // `gh repo list` only returns the user's own repos; /user/repos with the full
     // affiliation set also covers collaborations on other personal accounts.
     let mut cmd = Command::new("gh");
@@ -31,13 +30,31 @@ pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
     if host != "github.com" {
         cmd.args(["--hostname", host]);
     }
-    let raw = run_capture(&mut cmd)?;
+    cmd
+}
+
+pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+    require_cli("gh")?;
+    let raw = run_capture(&mut command(host))?;
     Ok(parse(&parse_paginated(&raw)?))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::{args, envs};
     use super::*;
+
+    #[test]
+    fn targets_enterprise_hosts_only_when_needed() {
+        let public = args(&command("github.com"));
+        assert_eq!(public[0], "api");
+        assert!(public.contains(&"--paginate".to_string()));
+        assert!(!public.contains(&"--hostname".to_string()));
+
+        let ghe = args(&command("ghe.corp.example"));
+        assert_eq!(ghe[ghe.len() - 2..], ["--hostname", "ghe.corp.example"]);
+        assert!(envs(&command("ghe.corp.example")).is_empty());
+    }
 
     #[test]
     fn parses_api_payload() {

@@ -71,11 +71,15 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
         .collect()
 }
 
+fn cli_command() -> Command {
+    let mut cmd = Command::new("bitbucket");
+    cmd.args(["repo", "list", "--output", "json", "--limit", "1000"]);
+    cmd
+}
+
 pub fn list_repos() -> Result<Vec<Repo>, ListError> {
     if has_cli("bitbucket") {
-        let raw = run_capture(
-            Command::new("bitbucket").args(["repo", "list", "--output", "json", "--limit", "1000"]),
-        )?;
+        let raw = run_capture(&mut cli_command())?;
         let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
         return Ok(parse(&items));
     }
@@ -117,7 +121,18 @@ fn list_from_api(first_page: &str, creds: &str) -> Result<Vec<Repo>> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::args;
     use super::*;
+
+    #[test]
+    fn cli_lists_repos_as_json() {
+        let cmd = cli_command();
+        assert_eq!(cmd.get_program(), "bitbucket");
+        assert_eq!(
+            args(&cmd),
+            ["repo", "list", "--output", "json", "--limit", "1000"]
+        );
+    }
     use crate::test_server::{Response, Server};
     use std::sync::{Arc, OnceLock};
 
