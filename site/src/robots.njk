@@ -3,9 +3,19 @@ permalink: /robots.txt
 eleventyExcludeFromCollections: true
 ---
 # repos-manager: {{ site.url }}
-# Every page is open to crawlers, and listed in the sitemap below.
+# Every page is open to crawlers and listed in the sitemap below. The Allow
+# lines repeat that list for crawlers that do not read sitemaps; they are
+# generated from the site's pages at build time.
 User-agent: *
 Allow: /
+{%- for page in collections.all | sort(false, false, "url") %}
+{%- if page.url and page.url != "/" and not page.data.eleventyExcludeFromCollections %}
+Allow: {{ page.url }}
+{%- endif %}
+{%- endfor %}
+Allow: /llms.txt
+Allow: /ai.txt
+Allow: /humans.txt
 
 Sitemap: {{ site.url }}/sitemap.xml
 
