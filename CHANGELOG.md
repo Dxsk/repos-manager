@@ -10,6 +10,8 @@
 
 ### Fixed
 
+- `--prune` could destroy work that existed only locally. It now keeps any repo with uncommitted or untracked changes, unpushed commits or a stash, and never touches repos in `.repos-ignore` or outside `.repos-filter`, which it used to delete. It also stops when more than half of a host's local repos would go, since the remote listing is then likely incomplete; `--force` overrides that check
+- `--prune` now works with `--filter` and only prunes within the filter's scope, instead of being skipped
 - A sync no longer moves the branch you are working on: `git pull origin HEAD` used to fast-forward whatever branch was checked out to the remote default branch. Other branches and detached HEADs are now only fetched (`fetched, on branch work`), and a renamed default branch is detected again
 - Updating a clone of an empty remote repository no longer fails with `couldn't find remote ref HEAD`, it is reported as skipped (`empty repository`)
 - On Windows, a repository tracking a file name Windows forbids (`"`, `:`, `CON`...) is now reported as skipped with the offending path, instead of a half-done clone that was then skipped as dirty on every sync

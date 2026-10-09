@@ -116,6 +116,9 @@ pub struct SyncArgs {
     /// Remove local repos that no longer exist on the remote
     #[arg(long)]
     pub prune: bool,
+    /// With --prune, go ahead even when most local repos would be removed
+    #[arg(long, requires = "prune")]
+    pub force: bool,
     /// Show what would be done without making changes
     #[arg(long)]
     pub dry_run: bool,
@@ -213,6 +216,7 @@ mod tests {
     fn rejects_unknown_flag_and_zero_parallel() {
         assert!(parse(&["github", "sync", "--nope"]).is_err());
         assert!(parse(&["github", "sync", "--parallel", "0"]).is_err());
+        assert!(parse(&["github", "sync", "--force"]).is_err());
     }
 
     #[test]

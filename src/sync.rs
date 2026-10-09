@@ -18,6 +18,7 @@ use crate::providers::{ListError, Provider, Repo};
 pub struct SyncOptions {
     pub filter: Option<String>,
     pub prune: bool,
+    pub force: bool,
     pub dry_run: bool,
 }
 
@@ -347,7 +348,7 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
 fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec<Result<Summary>> {
     let filter = RepoFilter::load(&settings.base_dir, opts.filter.clone());
     let mut jobs = Vec::new();
-    // Per host: paths kept by this sync (for prune) and repos skipped by the filter.
+    // Per host: every listed path (never pruned) and repos skipped by the filter.
     let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
 
     for (i, h) in hosts.iter().enumerate() {
@@ -356,10 +357,12 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         }
         output::info(&format!("Found {} repositories", h.repos.len()));
         output::blank();
-        let mut synced = HashSet::new();
+        let mut listed = HashSet::new();
         let mut skipped = 0;
         for repo in &h.repos {
             let full_name = &repo.full_name;
+            let path = repo_path(&h.dir, full_name);
+            listed.insert(path.clone());
             match filter.decide(full_name) {
                 Decision::Drop => continue,
                 Decision::Ignored => {
@@ -369,8 +372,6 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                 }
                 Decision::Keep => {}
             }
-            let path = repo_path(&h.dir, full_name);
-            synced.insert(path.clone());
             if opts.dry_run {
                 let verb = if path.join(".git").is_dir() {
                     "update"
@@ -390,7 +391,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                 },
             });
         }
-        plans.push((synced, skipped));
+        plans.push((listed, skipped));
     }
 
     let multi = hosts.len() > 1;
@@ -406,14 +407,10 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         .iter()
         .zip(plans)
         .enumerate()
-        .map(|(i, (h, (synced, skipped)))| {
+        .map(|(i, (h, (listed, skipped)))| {
             let count = |o: Outcome| outcomes.iter().filter(|x| **x == (i, o)).count();
             if opts.prune {
-                if opts.filter.is_some() {
-                    output::warn("Pruning skipped: not supported with --filter");
-                } else {
-                    prune(&settings.base_dir, &h.dir, &synced, opts.dry_run)?;
-                }
+                prune(&settings.base_dir, &h.dir, &listed, &filter, opts)?;
             }
             let summary = Summary {
                 cloned: count(Outcome::Cloned),
@@ -437,11 +434,20 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         .collect()
 }
 
+fn is_partial_clone(name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    name.starts_with('.') && name.ends_with(".partial")
+}
+
 /// Find git working copies under `root` without descending into `.git` itself.
 pub fn find_repos(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut it = WalkDir::new(root).follow_links(false).into_iter();
     while let Some(Ok(entry)) = it.next() {
+        if is_partial_clone(entry.file_name()) {
+            it.skip_current_dir();
+            continue;
+        }
         if entry.file_type().is_dir() && entry.file_name() == ".git" {
             if let Some(parent) = entry.path().parent() {
                 out.push(parent.to_path_buf());
@@ -452,7 +458,16 @@ pub fn find_repos(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-pub fn prune(base: &Path, host_dir: &Path, synced: &HashSet<PathBuf>, dry_run: bool) -> Result<()> {
+/// Deletion is irreversible while the remote listing can be wrong (renamed
+/// repo, revoked access, truncated API answer), so a candidate must be
+/// unlisted, in the filter's scope and free of local-only work.
+pub fn prune(
+    base: &Path,
+    host_dir: &Path,
+    listed: &HashSet<PathBuf>,
+    filter: &RepoFilter,
+    opts: &SyncOptions,
+) -> Result<()> {
     if !host_dir.is_dir() {
         return Ok(());
     }
@@ -464,21 +479,40 @@ pub fn prune(base: &Path, host_dir: &Path, synced: &HashSet<PathBuf>, dry_run: b
         );
     }
 
-    let mut pruned = 0;
-    for repo in find_repos(host_dir) {
-        if synced.contains(&repo) {
-            continue;
+    let local = find_repos(host_dir);
+    let candidates: Vec<&PathBuf> = local
+        .iter()
+        .filter(|r| !listed.contains(*r))
+        .filter(|r| matches!(filter.decide(&repo_name(host_dir, r)), Decision::Keep))
+        .collect();
+    if candidates.len() >= 2 && candidates.len() * 2 > local.len() && !opts.force {
+        let msg = format!(
+            "{} of {} local repositories are no longer listed, the listing looks incomplete",
+            candidates.len(),
+            local.len()
+        );
+        if !opts.dry_run {
+            bail!("prune aborted: {msg}. Review with --dry-run, then add --force");
         }
+        output::warn(&format!("{msg}: a real run needs --force"));
+    }
+
+    let mut pruned = 0;
+    for repo in candidates {
         let rel = repo
             .strip_prefix(base)
-            .unwrap_or(&repo)
+            .unwrap_or(repo)
             .display()
             .to_string();
-        if dry_run {
+        if let Some(reason) = unsaved_work(repo) {
+            output::warn(&format!("{rel} (not pruned: {reason})"));
+            continue;
+        }
+        if opts.dry_run {
             output::warn(&format!("[dry-run] would prune {rel}"));
         } else {
             output::error(&format!("{rel} (pruned)"));
-            fs::remove_dir_all(&repo)?;
+            fs::remove_dir_all(repo)?;
         }
         pruned += 1;
     }
@@ -486,6 +520,31 @@ pub fn prune(base: &Path, host_dir: &Path, synced: &HashSet<PathBuf>, dry_run: b
         output::warn(&format!("Pruned {pruned} repositories"));
     }
     Ok(())
+}
+
+fn repo_name(host_dir: &Path, repo: &Path) -> String {
+    let rel = repo.strip_prefix(host_dir).unwrap_or(repo);
+    let parts: Vec<_> = rel.iter().map(|c| c.to_string_lossy()).collect();
+    parts.join("/")
+}
+
+/// Work that exists only in this clone. A repo git cannot read counts as
+/// unsafe too.
+fn unsaved_work(repo: &Path) -> Option<&'static str> {
+    let run = |args: &[&str]| git::run(repo, args);
+    match run(&["status", "--porcelain"]) {
+        Err(_) => return Some("cannot read its state"),
+        Ok(s) if !s.is_empty() => return Some("uncommitted changes"),
+        Ok(_) => {}
+    }
+    match run(&["rev-list", "-n", "1", "--branches", "--not", "--remotes"]) {
+        Err(_) => return Some("cannot read its state"),
+        Ok(s) if !s.is_empty() => return Some("unpushed commits"),
+        Ok(_) => {}
+    }
+    run(&["rev-parse", "--quiet", "--verify", "refs/stash"])
+        .is_ok()
+        .then_some("stashed changes")
 }
 
 #[cfg(test)]
@@ -793,30 +852,6 @@ pub mod tests {
     }
 
     #[test]
-    fn prune_removes_unsynced_only() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("base");
-        let host = base.join("host");
-        let keep = host.join("u/keep");
-        let gone = host.join("u/gone");
-        for p in [&keep, &gone] {
-            fs::create_dir_all(p.join(".git")).unwrap();
-        }
-        let synced: HashSet<PathBuf> = [keep.clone()].into();
-        prune(&base, &host, &synced, true).unwrap();
-        assert!(gone.exists());
-        prune(&base, &host, &synced, false).unwrap();
-        assert!(keep.exists());
-        assert!(!gone.exists());
-    }
-
-    #[test]
-    fn prune_refuses_base_itself() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(prune(tmp.path(), tmp.path(), &HashSet::new(), true).is_err());
-    }
-
-    #[test]
     fn repo_path_rejects_traversal() {
         let host = Path::new("/b/h");
         let expected = host.join("etc").join("x");
@@ -905,6 +940,180 @@ pub mod tests {
         assert_eq!(second, summary(0, 1, 2, 1));
     }
 
+    fn init_repo(p: &Path) {
+        fs::create_dir_all(p).unwrap();
+        git(p, &["init", "--quiet"]);
+    }
+
+    fn prune_opts(dry_run: bool, force: bool) -> SyncOptions {
+        SyncOptions {
+            prune: true,
+            dry_run,
+            force,
+            ..Default::default()
+        }
+    }
+
+    fn no_filter(base: &Path) -> RepoFilter {
+        RepoFilter::load(base, None)
+    }
+
+    #[test]
+    fn prune_removes_unlisted_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        let host = base.join("host");
+        let (keep, gone) = (host.join("u/keep"), host.join("u/gone"));
+        init_repo(&keep);
+        init_repo(&gone);
+        let listed: HashSet<PathBuf> = [keep.clone()].into();
+        prune(
+            &base,
+            &host,
+            &listed,
+            &no_filter(&base),
+            &prune_opts(true, false),
+        )
+        .unwrap();
+        assert!(gone.exists());
+        prune(
+            &base,
+            &host,
+            &listed,
+            &no_filter(&base),
+            &prune_opts(false, false),
+        )
+        .unwrap();
+        assert!(keep.exists());
+        assert!(!gone.exists());
+    }
+
+    #[test]
+    fn prune_never_destroys_local_only_work() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        let url = bare.to_str().unwrap();
+        let clone = |name: &str| {
+            let p = host.join("u").join(name);
+            assert_eq!(sync_repo(&p, url).0, Outcome::Cloned);
+            p
+        };
+        let dirty = clone("dirty");
+        fs::write(dirty.join("wip.txt"), "x").unwrap();
+        let unpushed = clone("unpushed");
+        git(
+            &unpushed,
+            &["commit", "--quiet", "--allow-empty", "-m", "local"],
+        );
+        let stashed = clone("stashed");
+        fs::write(stashed.join("wip.txt"), "x").unwrap();
+        git(&stashed, &["stash", "--quiet", "--include-untracked"]);
+        let local_only = host.join("u").join("local-only");
+        init_repo(&local_only);
+        git(
+            &local_only,
+            &["commit", "--quiet", "--allow-empty", "-m", "mine"],
+        );
+        let broken = host.join("u").join("broken");
+        fs::create_dir_all(broken.join(".git")).unwrap();
+        let clean = clone("clean");
+
+        let listed = HashSet::new();
+        let opts = prune_opts(false, true);
+        prune(&base, &host, &listed, &no_filter(&base), &opts).unwrap();
+        for p in [&dirty, &unpushed, &stashed, &local_only, &broken] {
+            assert!(p.exists(), "{} must survive", p.display());
+        }
+        assert!(!clean.exists());
+    }
+
+    #[test]
+    fn prune_leaves_ignored_and_filtered_out_repos_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        let settings = Settings::for_tests(&base);
+        let all = || {
+            vec![
+                repo("u/a", &bare),
+                repo("u/b", &bare),
+                repo("other/c", &bare),
+            ]
+        };
+        sync_one(&host, all(), &settings, &SyncOptions::default());
+        let stale = host.join("u").join("stale");
+        init_repo(&stale);
+        fs::write(base.join(".repos-ignore"), "u/a\n").unwrap();
+        fs::write(base.join(".repos-filter"), "u/*\n").unwrap();
+
+        // u/a is ignored and other/c filtered out, yet both are still on the remote.
+        sync_one(&host, all(), &settings, &prune_opts(false, false));
+        assert!(host.join("u").join("a").exists());
+        assert!(host.join("other").join("c").exists());
+        assert!(!stale.exists());
+
+        // Gone from the remote but outside the filter's scope: not ours to delete.
+        let opts = SyncOptions {
+            filter: Some("u/*".into()),
+            ..prune_opts(false, false)
+        };
+        sync_one(
+            &host,
+            vec![repo("u/a", &bare), repo("u/b", &bare)],
+            &settings,
+            &opts,
+        );
+        assert!(host.join("other").join("c").exists());
+    }
+
+    #[test]
+    fn prune_refuses_a_listing_that_shrank_suspiciously() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        let repos: Vec<_> = ["a", "b", "c"]
+            .iter()
+            .map(|n| host.join("u").join(n))
+            .collect();
+        for r in &repos {
+            init_repo(r);
+        }
+        let listed: HashSet<PathBuf> = [repos[0].clone()].into();
+        let filter = no_filter(&base);
+
+        let err = prune(&base, &host, &listed, &filter, &prune_opts(false, false)).unwrap_err();
+        assert!(err.to_string().contains("2 of 3"), "{err}");
+        prune(&base, &host, &listed, &filter, &prune_opts(true, false)).unwrap();
+        assert!(repos.iter().all(|r| r.exists()));
+
+        prune(&base, &host, &listed, &filter, &prune_opts(false, true)).unwrap();
+        assert!(repos[0].exists() && !repos[1].exists() && !repos[2].exists());
+    }
+
+    #[test]
+    fn prune_guards_the_base_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        fs::create_dir_all(&base).unwrap();
+        let (none, filter) = (HashSet::new(), no_filter(&base));
+        let opts = prune_opts(false, true);
+        prune(&base, &base.join("missing"), &none, &filter, &opts).unwrap();
+        assert!(prune(&base, &base, &none, &filter, &opts).is_err());
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        assert!(prune(&base, &outside, &none, &filter, &opts).is_err());
+    }
+
+    #[test]
+    fn partial_clones_are_not_repos() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("u").join(".r.partial").join(".git")).unwrap();
+        assert!(find_repos(tmp.path()).is_empty());
+    }
+
     #[test]
     fn dry_run_touches_nothing() {
         let tmp = tempfile::tempdir().unwrap();
@@ -914,7 +1123,7 @@ pub mod tests {
         let existing = host.join("u").join("old");
         let stale = host.join("u").join("stale");
         for p in [&existing, &stale] {
-            fs::create_dir_all(p.join(".git")).unwrap();
+            init_repo(p);
         }
         let settings = Settings::for_tests(&base);
         let opts = SyncOptions {
@@ -927,42 +1136,6 @@ pub mod tests {
         assert_eq!(s, Summary::default());
         assert!(!host.join("u").join("new").exists());
         assert!(stale.exists());
-    }
-
-    #[test]
-    fn prune_after_sync_and_refused_with_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let bare = bare_remote(tmp.path());
-        let base = tmp.path().join("base");
-        let host = base.join("h");
-        let stale = host.join("u").join("stale");
-        fs::create_dir_all(stale.join(".git")).unwrap();
-        let mut settings = Settings::for_tests(&base);
-        settings.use_https = true;
-        let repos = || {
-            vec![Repo {
-                ssh_url: "unused".into(),
-                ..repo("u/kept", &bare)
-            }]
-        };
-
-        let filtered = SyncOptions {
-            filter: Some("u/*".into()),
-            prune: true,
-            dry_run: false,
-        };
-        let s = sync_one(&host, repos(), &settings, &filtered);
-        assert_eq!(s, summary(1, 0, 0, 0));
-        assert!(stale.exists(), "prune is skipped with --filter");
-
-        let opts = SyncOptions {
-            prune: true,
-            ..Default::default()
-        };
-        let s = sync_one(&host, repos(), &settings, &opts);
-        assert_eq!(s, summary(0, 1, 0, 0));
-        assert!(!stale.exists());
-        assert!(host.join("u").join("kept").exists());
     }
 
     #[test]
@@ -1015,17 +1188,6 @@ pub mod tests {
             "h.org:3000"
         };
         assert_eq!(d, Path::new("base").join(expected));
-    }
-
-    #[test]
-    fn prune_edge_cases() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("base");
-        fs::create_dir_all(&base).unwrap();
-        prune(&base, &base.join("missing"), &HashSet::new(), false).unwrap();
-        let outside = tmp.path().join("outside");
-        fs::create_dir_all(&outside).unwrap();
-        assert!(prune(&base, &outside, &HashSet::new(), true).is_err());
     }
 
     #[test]

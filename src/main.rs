@@ -51,6 +51,7 @@ fn apply_sync(settings: &mut Settings, args: &SyncArgs) -> SyncOptions {
     SyncOptions {
         filter: args.filter.clone(),
         prune: args.prune,
+        force: args.force,
         dry_run: args.dry_run,
     }
 }
