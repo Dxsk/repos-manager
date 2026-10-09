@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Repositories whose names map to the same directory once the filesystem normalizes them (`Repo` and `repo` on Windows and macOS) or that would nest inside another clone (GitLab project `g/p` next to subgroup `g/p`) are now skipped with the reason. One clone used to silently stand in for another, or the parent failed on every sync. On a collision the repo already cloned keeps its directory. Names Windows cannot hold (`aux`, `con`, a trailing dot, which made `name.` and `name` share one clone) are skipped too
 - Two configured targets sharing a host directory (the same host twice, two providers on one host, or hosts differing only by case) no longer fail with `another sync is already running`. They are listed together under one lock, and prune is skipped for that directory unless every listing succeeded
 - `--prune` could destroy work that existed only locally. It now keeps any repo with uncommitted or untracked changes, unpushed commits or a stash, and never touches repos in `.repos-ignore` or outside `.repos-filter`, which it used to delete. It also stops when more than half of a host's local repos would go, since the remote listing is then likely incomplete; `--force` overrides that check
 - `--prune` now works with `--filter` and only prunes within the filter's scope, instead of being skipped

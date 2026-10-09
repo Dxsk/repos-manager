@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, TryLockError};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -428,6 +428,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         output::blank();
         let mut listed = HashSet::new();
         let mut skipped = 0;
+        let mut kept = Vec::new();
         for repo in &h.repos {
             let full_name = &repo.full_name;
             let path = repo_path(&h.dir, full_name);
@@ -439,7 +440,25 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                     skipped += 1;
                     continue;
                 }
-                Decision::Keep => {}
+                Decision::Keep => kept.push((repo, path)),
+            }
+        }
+        let url = |r: &Repo| r.clone_url(settings.use_https).to_string();
+        let candidates: Vec<_> = kept
+            .iter()
+            .map(|(r, p)| (repo_name(&h.dir, p), p.as_path(), url(r)))
+            .collect();
+        let conflicts = path_conflicts(
+            &candidates,
+            cfg!(windows),
+            cfg!(any(windows, target_os = "macos")),
+        );
+        for (n, (repo, path)) in kept.into_iter().enumerate() {
+            let full_name = &repo.full_name;
+            if let Some(reason) = conflicts.get(&n) {
+                output::warn(&format!("{full_name} (skipped: {reason})"));
+                skipped += 1;
+                continue;
             }
             if opts.dry_run {
                 let verb = if path.join(".git").is_dir() {
@@ -453,7 +472,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             jobs.push(Job {
                 host: i,
                 path,
-                url: repo.clone_url(settings.use_https).to_string(),
+                url: url(repo),
                 name: match &h.label {
                     Some((_, host)) => format!("{host}/{full_name}"),
                     None => full_name.clone(),
@@ -591,6 +610,55 @@ pub fn prune(
         output::warn(&format!("Pruned {pruned} repositories"));
     }
     Ok(())
+}
+
+/// Distinct repos must land in distinct, non-nested directories as the
+/// filesystem sees them, or one clone silently stands in for another. Returns
+/// the losers by index. On a collision the repo already cloned on disk wins,
+/// so a new remote repo never takes over an existing clone.
+fn path_conflicts(
+    repos: &[(String, &Path, String)],
+    windows: bool,
+    case_insensitive: bool,
+) -> HashMap<usize, String> {
+    let mut losers = HashMap::new();
+    let mut owner: HashMap<String, usize> = HashMap::new();
+    for (i, (name, path, url)) in repos.iter().enumerate() {
+        if windows && git::invalid_on_windows(name) {
+            losers.insert(i, "name not allowed on Windows".to_string());
+            continue;
+        }
+        // Windows would also drop trailing dots, but invalid_on_windows rejects those.
+        let key = if case_insensitive {
+            name.to_lowercase()
+        } else {
+            name.clone()
+        };
+        let Some(&j) = owner.get(&key) else {
+            owner.insert(key, i);
+            continue;
+        };
+        let on_disk = git::run(path, &["remote", "get-url", "origin"]).ok();
+        let (winner, loser) = if on_disk.as_deref() == Some(url.as_str()) {
+            (i, j)
+        } else {
+            (j, i)
+        };
+        owner.insert(key, winner);
+        losers.remove(&winner);
+        losers.insert(loser, format!("same directory as {}", repos[winner].0));
+    }
+    for (key, &i) in &owner {
+        let mut prefix = key.as_str();
+        while let Some(cut) = prefix.rfind('/') {
+            prefix = &prefix[..cut];
+            if let Some(&parent) = owner.get(prefix) {
+                losers.insert(i, format!("nested inside {}", repos[parent].0));
+                break;
+            }
+        }
+    }
+    losers
 }
 
 fn repo_name(host_dir: &Path, repo: &Path) -> String {
@@ -1254,6 +1322,82 @@ pub mod tests {
         };
         sync_listed(&[h], &settings, &opts);
         assert!(other.exists());
+    }
+
+    fn conflicts_of(names: &[&str], windows: bool, ci: bool) -> Vec<(usize, String)> {
+        let repos: Vec<_> = names
+            .iter()
+            .map(|n| (n.to_string(), Path::new("/nonexistent"), String::new()))
+            .collect();
+        let mut out: Vec<_> = path_conflicts(&repos, windows, ci).into_iter().collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn path_conflicts_follow_the_filesystem() {
+        let names = [
+            "u/Repo", "u/repo", "u/trail.", "u/trail", "g/p", "g/p/sub", "u/aux",
+        ];
+        assert_eq!(
+            conflicts_of(&names, false, false),
+            [(5, "nested inside g/p".to_string())]
+        );
+        let mac = conflicts_of(&names, false, true);
+        assert_eq!(mac[0], (1, "same directory as u/Repo".into()));
+        assert_eq!(mac.len(), 2);
+        let win = conflicts_of(&names, true, true);
+        assert_eq!(
+            win,
+            [
+                (1, "same directory as u/Repo".into()),
+                (2, "name not allowed on Windows".into()),
+                (5, "nested inside g/p".into()),
+                (6, "name not allowed on Windows".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn existing_clone_keeps_its_directory_on_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let dest = tmp.path().join("u").join("trail");
+        sync_repo(&dest, bare.to_str().unwrap());
+        let repos = vec![
+            (
+                "u/Trail".to_string(),
+                dest.as_path(),
+                "https://other".to_string(),
+            ),
+            (
+                "u/trail".to_string(),
+                dest.as_path(),
+                bare.to_str().unwrap().to_string(),
+            ),
+        ];
+        let losers = path_conflicts(&repos, true, true);
+        assert_eq!(losers.keys().collect::<Vec<_>>(), [&0]);
+    }
+
+    #[test]
+    fn nested_repos_are_skipped_not_failed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        let settings = Settings::for_tests(&base);
+        let repos = || vec![repo("g/p", &bare), repo("g/p/sub", &bare)];
+        let opts = SyncOptions::default();
+        assert_eq!(
+            sync_one(&host, repos(), &settings, &opts),
+            summary(1, 0, 1, 0)
+        );
+        assert_eq!(
+            sync_one(&host, repos(), &settings, &opts),
+            summary(0, 1, 1, 0)
+        );
+        assert!(!git::is_dirty(&host.join("g").join("p")));
     }
 
     #[test]
