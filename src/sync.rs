@@ -282,21 +282,54 @@ struct Listed {
     repos: Vec<Repo>,
     /// Set when several hosts sync together: (heading, host).
     label: Option<(String, String)>,
+    /// False when a provider sharing this directory failed or was skipped:
+    /// its repos are missing from `repos`, so pruning would delete them.
+    complete: bool,
+}
+
+struct Group<'a> {
+    key: String,
+    dir: PathBuf,
+    members: Vec<(Provider, &'a str)>,
 }
 
 /// Hosts list concurrently, then all their jobs share one queue so `parallel`
 /// bounds the total number of git processes.
 pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
-    let multi = targets.len() > 1;
+    // The host directory, not the (provider, host) pair, is what the lock and
+    // prune act on, so targets sharing one are listed together under one lock.
+    // Hostnames are case-insensitive, and so is the Windows filesystem.
+    let mut groups: Vec<Group> = Vec::new();
+    for (provider, host) in targets {
+        let dir = host_dir(&settings.base_dir, host);
+        let key = dir.to_string_lossy().to_lowercase();
+        let member = (*provider, host.as_str());
+        match groups.iter_mut().find(|g| g.key == key) {
+            Some(g) if g.members.contains(&member) => {}
+            Some(g) => g.members.push(member),
+            None => groups.push(Group {
+                key,
+                dir,
+                members: vec![member],
+            }),
+        }
+    }
+    let multi = groups.len() > 1;
+
     let listings: Vec<_> = thread::scope(|s| {
-        let handles: Vec<_> = targets
+        let handles: Vec<_> = groups
             .iter()
-            .map(|(provider, host)| {
+            .map(|Group { dir, members, .. }| {
                 s.spawn(move || -> Result<_> {
-                    let dir = host_dir(&settings.base_dir, host);
-                    let lock = HostLock::acquire(&dir)?;
-                    output::info(&format!("Fetching repository list from {host}..."));
-                    Ok((lock, dir, provider.list_repos(host)))
+                    let lock = HostLock::acquire(dir)?;
+                    let lists: Vec<_> = members
+                        .iter()
+                        .map(|(provider, host)| {
+                            output::info(&format!("Fetching repository list from {host}..."));
+                            (*host, provider.list_repos(host))
+                        })
+                        .collect();
+                    Ok((lock, lists))
                 })
             })
             .collect();
@@ -307,30 +340,54 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
     // Locks stay held until every job of every host is done.
     let mut locks = Vec::new();
     let mut hosts = Vec::new();
-    for ((provider, host), res) in targets.iter().zip(listings) {
-        let heading = format!("--- {provider} @ {host} ---");
-        match res {
-            Ok((lock, dir, Ok(repos))) => {
+    for (Group { dir, members, .. }, res) in groups.iter().zip(listings) {
+        let providers: Vec<_> = members.iter().map(|(p, _)| p.to_string()).collect();
+        let host = members[0].1;
+        let heading = format!("--- {} @ {host} ---", providers.join("+"));
+        if multi {
+            output::heading(&heading);
+        }
+        let lists = match res {
+            Ok((lock, lists)) => {
                 locks.push(lock);
-                hosts.push(Listed {
-                    dir,
-                    repos,
-                    label: multi.then(|| (heading, host.clone())),
-                });
+                lists
             }
-            Ok((_, _, Err(ListError::Skip(reason)))) => {
-                if multi {
-                    output::heading(&heading);
-                }
-                output::warn(&format!("Skipping {host}: {reason}"));
-            }
-            Ok((_, _, Err(ListError::Fail(e)))) | Err(e) => {
-                if multi {
-                    output::heading(&heading);
-                }
+            Err(e) => {
                 output::error(&format!("{host}: {e:#}"));
                 ok = false;
+                continue;
             }
+        };
+        let mut repos: Vec<Repo> = Vec::new();
+        let (mut complete, mut any) = (true, false);
+        for (h, list) in lists {
+            match list {
+                Ok(r) => {
+                    any = true;
+                    for repo in r {
+                        if !repos.iter().any(|x| x.full_name == repo.full_name) {
+                            repos.push(repo);
+                        }
+                    }
+                }
+                Err(ListError::Skip(reason)) => {
+                    output::warn(&format!("Skipping {h}: {reason}"));
+                    complete = false;
+                }
+                Err(ListError::Fail(e)) => {
+                    output::error(&format!("{h}: {e:#}"));
+                    complete = false;
+                    ok = false;
+                }
+            }
+        }
+        if any {
+            hosts.push(Listed {
+                dir: dir.clone(),
+                repos,
+                label: multi.then(|| (heading, host.to_string())),
+                complete,
+            });
         }
     }
 
@@ -409,7 +466,9 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         .enumerate()
         .map(|(i, (h, (listed, skipped)))| {
             let count = |o: Outcome| outcomes.iter().filter(|x| **x == (i, o)).count();
-            if opts.prune {
+            if opts.prune && !h.complete {
+                output::warn("Pruning skipped: the repository list of this host is incomplete");
+            } else if opts.prune {
                 prune(&settings.base_dir, &h.dir, &listed, &filter, opts)?;
             }
             let summary = Summary {
@@ -884,6 +943,7 @@ pub mod tests {
             dir: dir.to_path_buf(),
             repos,
             label: None,
+            complete: true,
         }
     }
 
@@ -1145,6 +1205,42 @@ pub mod tests {
         let _lock = HostLock::acquire(&host_dir(tmp.path(), "github.com")).unwrap();
         let targets = [(Provider::Github, "github.com".to_string())];
         assert!(!sync_hosts(&targets, &settings, &SyncOptions::default()));
+    }
+
+    #[test]
+    fn targets_sharing_a_directory_share_one_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let settings = Settings::for_tests(tmp.path());
+        // No tea login: every target is skipped, none may trip over its own lock.
+        let targets = [
+            (Provider::Forgejo, "x.invalid".to_string()),
+            (Provider::Forgejo, "x.invalid".to_string()),
+            (Provider::Forgejo, "X.Invalid".to_string()),
+        ];
+        assert!(sync_hosts(&targets, &settings, &SyncOptions::default()));
+    }
+
+    #[test]
+    fn incomplete_listing_is_never_pruned() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        let other = host.join("other").join("repo");
+        fs::create_dir_all(&other).unwrap();
+        git(&other, &["init", "--quiet"]);
+        let settings = Settings::for_tests(&base);
+        let h = Listed {
+            complete: false,
+            ..listed(&host, vec![repo("u/a", &bare)])
+        };
+        let opts = SyncOptions {
+            prune: true,
+            force: true,
+            ..Default::default()
+        };
+        sync_listed(&[h], &settings, &opts);
+        assert!(other.exists());
     }
 
     #[test]
