@@ -13,7 +13,7 @@
 - A sync no longer moves the branch you are working on: `git pull origin HEAD` used to fast-forward whatever branch was checked out to the remote default branch. Other branches and detached HEADs are now only fetched (`fetched, on branch work`), and a renamed default branch is detected again
 - Updating a clone of an empty remote repository no longer fails with `couldn't find remote ref HEAD`, it is reported as skipped (`empty repository`)
 - On Windows, a repository tracking a file name Windows forbids (`"`, `:`, `CON`...) is now reported as skipped with the offending path, instead of a half-done clone that was then skipped as dirty on every sync
-- A failed clone no longer leaves a partial directory behind
+- A failed or interrupted clone (Ctrl-C, crash) no longer leaves a half-done repository behind: clones are written to a `.<name>.partial` sibling and moved into place once complete, and leftovers are cleaned up on the next sync
 
 ### Security
 

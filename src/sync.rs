@@ -114,13 +114,7 @@ pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
         }
         update(local_path).unwrap_or_else(|e| (Outcome::Errored, format!("update failed: {e}")))
     } else {
-        let existed = local_path.exists();
-        let res = clone(local_path, clone_url);
-        // A half-done clone would look dirty and be skipped on every later run.
-        if !matches!(res, Ok(None)) && !existed {
-            let _ = fs::remove_dir_all(local_path);
-        }
-        match res {
+        match clone(local_path, clone_url) {
             Ok(None) => (Outcome::Cloned, "cloned".into()),
             Ok(Some(bad)) => (
                 Outcome::Skipped,
@@ -177,13 +171,35 @@ fn update(dir: &Path) -> Result<(Outcome, String)> {
     Ok((Outcome::Updated, detail.into()))
 }
 
+/// The clone lands in a `.<name>.partial` sibling and is renamed once
+/// complete, so an interrupted run never leaves a half-done repo behind.
 /// `Some(path)`: the tree holds a path Windows cannot check out.
 fn clone(local_path: &Path, url: &str) -> Result<Option<String>> {
-    if let Some(parent) = local_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let parent = local_path.parent().unwrap_or(Path::new("."));
-    let target = local_path.to_string_lossy();
+    let name = local_path.file_name().unwrap_or_default().to_string_lossy();
+    let partial = parent.join(format!(".{name}.partial"));
+    if partial.exists() {
+        fs::remove_dir_all(&partial)?;
+    }
+    fs::create_dir_all(parent)?;
+    let res = clone_into(&partial, url).and_then(|bad| {
+        if bad.is_none() {
+            if local_path.is_dir() && fs::read_dir(local_path)?.next().is_none() {
+                fs::remove_dir(local_path)?;
+            }
+            rename_dir(&partial, local_path)?;
+        }
+        Ok(bad)
+    });
+    if partial.exists() {
+        let _ = fs::remove_dir_all(&partial);
+    }
+    res
+}
+
+fn clone_into(dir: &Path, url: &str) -> Result<Option<String>> {
+    let parent = dir.parent().unwrap_or(Path::new("."));
+    let target = dir.to_string_lossy();
     if !cfg!(windows) {
         git::run(parent, &["clone", "--quiet", url, &target])?;
         return Ok(None);
@@ -191,14 +207,31 @@ fn clone(local_path: &Path, url: &str) -> Result<Option<String>> {
     // Git for Windows refuses names such as `a"b` or `CON` (core.protectNTFS),
     // which aborts a plain clone halfway. Check the tree before checking out.
     git::run(parent, &["clone", "--quiet", "--no-checkout", url, &target])?;
-    let Ok(files) = git::run(local_path, &["ls-tree", "-r", "-z", "--name-only", "HEAD"]) else {
+    let Ok(files) = git::run(dir, &["ls-tree", "-r", "-z", "--name-only", "HEAD"]) else {
         return Ok(None); // empty remote, nothing to check out
     };
     if let Some(bad) = files.split('\0').find(|p| git::invalid_on_windows(p)) {
         return Ok(Some(bad.to_string()));
     }
-    git::run(local_path, &["reset", "--quiet", "--hard", "HEAD"])?;
+    git::run(dir, &["reset", "--quiet", "--hard", "HEAD"])?;
     Ok(None)
+}
+
+/// Antivirus scanners briefly hold freshly written files open on Windows,
+/// which makes a rename right after the clone fail with access denied.
+fn rename_dir(from: &Path, to: &Path) -> Result<()> {
+    let mut attempt = 0;
+    loop {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if cfg!(windows) && attempt < 5 && !to.exists() => {
+                attempt += 1;
+                output::debug(&format!("rename {}: {e}, retrying", from.display()));
+                thread::sleep(std::time::Duration::from_millis(100 * attempt));
+            }
+            Err(e) => return Err(anyhow::anyhow!("cannot move clone into place: {e}")),
+        }
+    }
 }
 
 struct Job {
@@ -623,6 +656,21 @@ pub mod tests {
     }
 
     #[test]
+    fn clone_replaces_leftovers_of_an_interrupted_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let dest = tmp.path().join("u").join("repo");
+        let partial = tmp.path().join("u").join(".repo.partial");
+        fs::create_dir_all(partial.join(".git")).unwrap();
+        fs::write(partial.join("junk"), "x").unwrap();
+        fs::create_dir_all(&dest).unwrap();
+
+        assert_eq!(sync_repo(&dest, bare.to_str().unwrap()).0, Outcome::Cloned);
+        assert!(!partial.exists());
+        assert!(!git::is_dirty(&dest));
+    }
+
+    #[test]
     fn failed_clone_leaves_no_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let dest = tmp.path().join("gone");
@@ -632,6 +680,7 @@ pub mod tests {
             Outcome::Errored
         );
         assert!(!dest.exists());
+        assert!(!tmp.path().join(".gone.partial").exists());
     }
 
     fn push_commit(tmp: &Path, bare: &Path, branch: &str) {
