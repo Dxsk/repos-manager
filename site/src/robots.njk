@@ -2,7 +2,14 @@
 permalink: /robots.txt
 eleventyExcludeFromCollections: true
 ---
+# repos-manager: {{ site.url }}
+# Every page is open to crawlers, and listed in the sitemap below.
 User-agent: *
 Allow: /
 
 Sitemap: {{ site.url }}/sitemap.xml
+
+# Plain-text summaries of the project:
+#   {{ site.url }}/llms.txt    for language models (llms.txt convention)
+#   {{ site.url }}/ai.txt      for AI assistants
+#   {{ site.url }}/humans.txt  who made it

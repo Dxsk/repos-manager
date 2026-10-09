@@ -1,6 +1,6 @@
 ---
 title: Advanced
-description: Parallel tuning, sync locking, self-update, status performance and Windows notes.
+description: "Advanced repos-manager topics: parallel jobs, per-host sync locks, self-update and package managers, fast status scans and Windows specifics."
 order: 6
 ---
 

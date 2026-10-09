@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install repos-manager and sync your first repositories in under 2 minutes.
+description: "Install repos-manager on Linux, macOS or Windows (script, AUR, cargo, installer), log in to your forges and sync your first repositories."
 order: 1
 ---
 

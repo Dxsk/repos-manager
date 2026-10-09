@@ -1,4 +1,5 @@
 {
   "layout": "layouts/doc.njk",
-  "tags": "docs"
+  "tags": "docs",
+  "date": "git Last Modified"
 }

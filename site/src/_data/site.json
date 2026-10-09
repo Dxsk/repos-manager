@@ -3,7 +3,7 @@
   "url": "https://repos-manager.dxscloud.fr",
   "repo": "https://github.com/Dxsk/repos-manager",
   "upstream": "https://forge.infrasouveraine.fr/dxsk/repos-manager",
-  "description": "A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.",
+  "description": "One native CLI to clone, update and check every Git repository you can access on GitHub, GitLab, Forgejo, Gitea, Bitbucket and Radicle.",
   "version": "1.0.0",
   "author": "Dxsk"
 }

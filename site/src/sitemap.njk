@@ -6,12 +6,15 @@ eleventyExcludeFromCollections: true
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>{{ site.url }}/</loc>
+    {%- for page in collections.all %}{% if page.url == "/" %}
+    <lastmod>{{ page.date | isoDate }}</lastmod>{% endif %}{% endfor %}
     <priority>1.0</priority>
   </url>
   {%- for page in collections.all %}
   {%- if page.url and page.url != "/" and not page.data.eleventyExcludeFromCollections %}
   <url>
     <loc>{{ site.url }}{{ page.url }}</loc>
+    <lastmod>{{ page.date | isoDate }}</lastmod>
   </url>
   {%- endif %}
   {%- endfor %}

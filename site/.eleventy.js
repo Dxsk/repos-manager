@@ -9,6 +9,11 @@ module.exports = function(eleventyConfig) {
   eleventyConfig.addPlugin(syntaxHighlight);
   eleventyConfig.addPassthroughCopy("src/assets/img");
   eleventyConfig.addPassthroughCopy("src/CNAME");
+  // Google Search Console ownership file, served byte for byte.
+  eleventyConfig.addPassthroughCopy("src/google1e3ba38a02f931fb.html");
+  eleventyConfig.ignores.add("src/google1e3ba38a02f931fb.html");
+
+  eleventyConfig.addFilter("isoDate", (d) => new Date(d).toISOString().slice(0, 10));
 
   eleventyConfig.addCollection("sortedDocs", function(collectionApi) {
     return collectionApi.getFilteredByTag("docs").sort((a, b) => {

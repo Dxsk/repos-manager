@@ -1,6 +1,6 @@
 ---
 title: Filtering
-description: Control which repos are synced with filter and ignore patterns.
+description: "Choose exactly which repositories repos-manager syncs with --filter, .repos-filter allow-lists and .repos-ignore glob patterns."
 order: 5
 ---
 

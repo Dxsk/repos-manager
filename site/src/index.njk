@@ -1,149 +1,183 @@
 ---
 layout: layouts/base.njk
 title: repos-manager
-description: A single CLI tool to clone and sync all your Git repositories from GitHub, GitLab, Forgejo, Bitbucket, and Radicle.
+seoTitle: "repos-manager: clone and sync every Git repo across GitHub, GitLab, Forgejo and more"
+date: git Last Modified
+description: "Clone, update and check every Git repository you can access on GitHub, GitLab, Forgejo, Gitea, Bitbucket and Radicle with one native CLI for Linux, macOS and Windows."
 ---
 
-<section class="hero animate">
-  <h1>repos-manager</h1>
-  <p class="tagline">One CLI to sync them all. Clone, update, and manage your Git repositories across every provider.</p>
+<section class="hero">
+  <div class="hero-grid">
+    <div class="hero-text animate">
+      <h1>repos-manager</h1>
+      <p class="tagline">One CLI to sync them all. Clone, update and keep an eye on every Git repository you can access, across every forge.</p>
+      <p class="platforms">Linux &middot; macOS &middot; Windows &middot; single native binary</p>
 
-  <div class="install-cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh">
-    <span class="prompt">$_</span> <span id="typing-target"></span><span class="cursor"></span>
-  </div>
+      <div class="install" id="install">
+        <div class="install-tabs" role="tablist" aria-label="Install method">
+          <button role="tab" data-tab="unix" aria-selected="true">Linux / macOS</button>
+          <button role="tab" data-tab="windows" aria-selected="false">Windows</button>
+          <button role="tab" data-tab="aur" aria-selected="false">Arch (AUR)</button>
+          <button role="tab" data-tab="cargo" aria-selected="false">Cargo</button>
+        </div>
+        <div class="install-panels">
+          <div class="install-panel" role="tabpanel" data-panel="unix">
+            <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh</code>
+            <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh" aria-label="Copy command">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" data-panel="windows" hidden>
+            <code><span class="prompt">PS&gt;</span>irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex</code>
+            <button class="copy-btn" data-copy="irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex" aria-label="Copy command">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" data-panel="aur" hidden>
+            <code><span class="prompt">$</span>yay -S repos-manager-bin</code>
+            <button class="copy-btn" data-copy="yay -S repos-manager-bin" aria-label="Copy command">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" data-panel="cargo" hidden>
+            <code><span class="prompt">$</span>cargo install repos-manager</code>
+            <button class="copy-btn" data-copy="cargo install repos-manager" aria-label="Copy command">Copy</button>
+          </div>
+        </div>
+        <script>
+          // Runs before first paint so the default tab never visibly switches.
+          (function() {
+            if (!/Windows/i.test(navigator.userAgent)) return;
+            document.querySelectorAll('#install [role=tab]').forEach(function(t) { t.setAttribute('aria-selected', t.dataset.tab === 'windows'); });
+            document.querySelectorAll('#install .install-panel').forEach(function(p) { p.hidden = p.dataset.panel !== 'windows'; });
+            document.documentElement.dataset.os = 'windows';
+          })();
+        </script>
+        <p class="install-note">Prefer an installer or a zip? Grab it from the <a href="{{ site.repo }}/releases/latest">latest release</a>, or see <a href="/docs/getting-started/">every install method</a>.</p>
+      </div>
 
-  <div class="buttons">
-    <a href="#quickstart" class="btn btn-primary">Quick Start</a>
-    <a href="/docs/getting-started/" class="btn btn-secondary">Docs</a>
+      <div class="buttons">
+        <a href="#quickstart" class="btn btn-primary">Quick start</a>
+        <a href="/docs/getting-started/" class="btn btn-secondary">Docs</a>
+        <a href="{{ site.repo }}/releases/latest" class="btn btn-secondary">Releases</a>
+      </div>
+
+      <div class="badges">
+        <a href="{{ site.repo }}/releases/latest"><img src="https://img.shields.io/github/v/release/Dxsk/repos-manager?logo=git&amp;logoColor=white&amp;label=release&amp;color=58a6ff" alt="Latest release" width="111" height="20"></a>
+        <a href="https://crates.io/crates/repos-manager"><img src="https://img.shields.io/crates/v/repos-manager?logo=rust&amp;logoColor=white&amp;color=3fb950" alt="crates.io version" width="119" height="20"></a>
+        <a href="https://aur.archlinux.org/packages/repos-manager-bin"><img src="https://img.shields.io/aur/version/repos-manager-bin?logo=archlinux&amp;logoColor=white&amp;label=AUR&amp;color=bc8cff" alt="AUR version" width="107" height="20"></a>
+        <a href="{{ site.repo }}/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Dxsk/repos-manager?color=8b949e" alt="MIT license" width="78" height="20"></a>
+      </div>
+    </div>
+
+    <div class="terminal-demo" id="terminal-demo" data-theme="unix" aria-label="Example session">
+      <div class="terminal-titlebar">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <span class="terminal-title">bash: ~/Documents</span>
+        <span class="win-controls" aria-hidden="true"><span>&#x2500;</span><span>&#x2610;</span><span>&#x2715;</span></span>
+      </div>
+      <div class="terminal-screens">
+        <div class="terminal-body" data-scenario="unix" data-title="bash: ~/Documents">
+          <div class="terminal-line"><span class="terminal-prompt">$ </span><span class="terminal-cmd">curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh</span></div>
+          <div class="terminal-line terminal-output">Downloading repos-manager-x86_64-unknown-linux-musl.tar.gz (latest) from github...</div>
+          <div class="terminal-line terminal-success">Installed repos-manager 1.0.0 to /home/you/.local/bin/repos-manager</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">$ </span><span class="terminal-cmd">repos-manager github login</span></div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> Where do you use GitHub? GitHub.com</div>
+          <div class="terminal-line terminal-warn">! First copy your one-time code: <span class="otp">XXXX-XXXX</span></div>
+          <div class="terminal-line terminal-success">✓ Authentication complete.</div>
+          <div class="terminal-line terminal-success">✓ Logged in as Dxsk</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">$ </span><span class="terminal-cmd">repos-manager sync --all</span></div>
+          <div class="terminal-line terminal-info">Fetching repository list from github.com...</div>
+          <div class="terminal-line terminal-info">Found 23 repositories</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/git-identity-manager (updated)</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/mtd (cloned)</div>
+          <div class="terminal-line terminal-warn">  ⚠ Dxsk/infra (dirty, skipped)</div>
+          <div class="terminal-line terminal-info">Done: 1 cloned, 21 updated, 1 skipped, 0 errors</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">$ </span><span class="terminal-cmd">repos-manager status</span></div>
+          <div class="terminal-line terminal-info">Scanning repos in ~/Documents...</div>
+          <div class="terminal-line terminal-warn">  github.com/Dxsk/infra dirty</div>
+          <div class="terminal-line terminal-info">Total: 23 repos - 22 clean, 1 dirty</div>
+        </div>
+        <div class="terminal-body" data-scenario="windows" data-title="Windows PowerShell" hidden>
+          <div class="terminal-line"><span class="terminal-prompt">PS C:\Users\you&gt; </span><span class="terminal-cmd">irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex</span></div>
+          <div class="terminal-line terminal-output">Downloading repos-manager-x86_64-pc-windows-msvc.zip (latest) from github...</div>
+          <div class="terminal-line terminal-success">Installed to C:\Users\you\AppData\Local\Programs\repos-manager\repos-manager.exe</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">PS C:\Users\you&gt; </span><span class="terminal-cmd">repos-manager github login</span></div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> Where do you use GitHub? GitHub.com</div>
+          <div class="terminal-line terminal-warn">! First copy your one-time code: <span class="otp">XXXX-XXXX</span></div>
+          <div class="terminal-line terminal-success">✓ Authentication complete.</div>
+          <div class="terminal-line terminal-success">✓ Logged in as Dxsk</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">PS C:\Users\you&gt; </span><span class="terminal-cmd">repos-manager sync --all</span></div>
+          <div class="terminal-line terminal-info">Fetching repository list from github.com...</div>
+          <div class="terminal-line terminal-info">Found 23 repositories</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/git-identity-manager (updated)</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/mtd (cloned)</div>
+          <div class="terminal-line terminal-warn">  ⚠ Dxsk/infra (dirty, skipped)</div>
+          <div class="terminal-line terminal-info">Done: 1 cloned, 21 updated, 1 skipped, 0 errors</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">PS C:\Users\you&gt; </span><span class="terminal-cmd">repos-manager status</span></div>
+          <div class="terminal-line terminal-info">Scanning repos in C:\Users\you\Documents...</div>
+          <div class="terminal-line terminal-warn">  github.com\Dxsk\infra dirty</div>
+          <div class="terminal-line terminal-info">Total: 23 repos - 22 clean, 1 dirty</div>
+        </div>
+        <div class="terminal-body" data-scenario="aur" data-title="you@archlinux: ~" hidden>
+          <div class="terminal-line"><span class="terminal-prompt">[you@archlinux ~]$ </span><span class="terminal-cmd">yay -S repos-manager-bin</span></div>
+          <div class="terminal-line terminal-info">:: Resolving dependencies...</div>
+          <div class="terminal-line terminal-output">==&gt; Making package: repos-manager-bin 1.0.0-1</div>
+          <div class="terminal-line terminal-output">==&gt; Validating source files with sha256sums... Passed</div>
+          <div class="terminal-line terminal-success">(1/1) installing repos-manager-bin</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">[you@archlinux ~]$ </span><span class="terminal-cmd">repos-manager gitlab login</span></div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> What GitLab instance do you want to sign in to? gitlab.com</div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> How would you like to sign in? Web</div>
+          <div class="terminal-line terminal-success">✓ Logged in to gitlab.com as Dxsk</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">[you@archlinux ~]$ </span><span class="terminal-cmd">repos-manager update</span></div>
+          <div class="terminal-line terminal-error">error: this install is managed by a package manager, update it with your system package manager</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">[you@archlinux ~]$ </span><span class="terminal-cmd">repos-manager sync --all</span></div>
+          <div class="terminal-line terminal-info">Fetching repository list from github.com...</div>
+          <div class="terminal-line terminal-info">Found 23 repositories</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/repos-manager (updated)</div>
+          <div class="terminal-line terminal-success">  ✓ Dxsk/mtd (cloned)</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line terminal-info">Done: 1 cloned, 22 updated, 0 skipped, 0 errors</div>
+        </div>
+        <div class="terminal-body" data-scenario="cargo" data-title="zsh: ~" hidden>
+          <div class="terminal-line"><span class="terminal-prompt">❯ </span><span class="terminal-cmd">cargo install repos-manager</span></div>
+          <div class="terminal-line terminal-output">    <span class="terminal-verb">Updating</span> crates.io index</div>
+          <div class="terminal-line terminal-output">  <span class="terminal-verb">Downloaded</span> repos-manager v1.0.0</div>
+          <div class="terminal-line terminal-output">   <span class="terminal-verb">Compiling</span> repos-manager v1.0.0</div>
+          <div class="terminal-line terminal-output">    <span class="terminal-verb">Finished</span> `release` profile [optimized] target(s) in 48.2s</div>
+          <div class="terminal-line terminal-output">   <span class="terminal-verb">Installed</span> package `repos-manager v1.0.0` (executable `repos-manager`)</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">❯ </span><span class="terminal-cmd">repos-manager completions zsh &gt; ~/.zfunc/_repos-manager</span></div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">❯ </span><span class="terminal-cmd">repos-manager forgejo login</span></div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> URL of Gitea instance: https://codeberg.org</div>
+          <div class="terminal-line terminal-output"><span class="terminal-verb">?</span> Do you have an access token? Yes</div>
+          <div class="terminal-line terminal-success">Login as Dxsk on https://codeberg.org successful</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line"><span class="terminal-prompt">❯ </span><span class="terminal-cmd">repos-manager status</span></div>
+          <div class="terminal-line terminal-info">Scanning repos in ~/Documents...</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line terminal-warn">  github.com/Dxsk/infra dirty</div>
+          <div class="terminal-line terminal-accent">  codeberg.org/Dxsk/notes behind (-3)</div>
+          <div class="terminal-line terminal-output">&nbsp;</div>
+          <div class="terminal-line terminal-info">Total: 23 repos - 21 clean, 1 dirty, 1 behind</div>
+        </div>
+      </div>
+    </div>
   </div>
+  <a href="#providers" class="scroll-hint" aria-label="Scroll to the providers"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></a>
 </section>
 
-<section class="container">
-  <div class="terminal-demo animate" id="terminal-demo">
-    <div class="terminal-titlebar">
-      <div class="terminal-dot red"></div>
-      <div class="terminal-dot yellow"></div>
-      <div class="terminal-dot green"></div>
-      <span class="terminal-title">repos-manager</span>
-    </div>
-    <div class="terminal-body" id="terminal">
-    </div>
-  </div>
-</section>
-
-<script>
-(function() {
-  // Collect all elements to animate
-  var targets = [];
-
-  document.querySelectorAll('.animate').forEach(function(el) {
-    el.classList.add('will-animate');
-    targets.push(el);
-  });
-
-  document.querySelectorAll('.animate-stagger').forEach(function(parent) {
-    Array.from(parent.children).forEach(function(child, i) {
-      child.classList.add('will-animate');
-      child.style.transitionDelay = (i * 0.08) + 's';
-      targets.push(child);
-    });
-  });
-
-  var observer = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        if (entry.target.id === 'terminal-demo') {
-          startTerminalDemo();
-        }
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0 });
-
-  targets.forEach(function(el) { observer.observe(el); });
-
-  // Typing animation for install command
-  var typingTarget = document.getElementById('typing-target');
-  if (typingTarget) {
-    var cmd = 'curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh';
-    var i = 0;
-    function typeChar() {
-      if (i < cmd.length) {
-        typingTarget.textContent += cmd.charAt(i);
-        i++;
-        var delay = 50 + Math.random() * 120;
-        var ch = cmd.charAt(i - 1);
-        // Pauses comme si on reflechit
-        if (ch === ' ') delay += 80 + Math.random() * 180;
-        if (ch === '&') delay += 50 + Math.random() * 80;
-        if (ch === '.' || ch === ':' || ch === '/') delay += 40 + Math.random() * 70;
-        if (ch === '@') delay += 100 + Math.random() * 150;
-        // Parfois une longue hesitation
-        if (Math.random() < 0.05) delay += 300 + Math.random() * 400;
-        // Burst rapide (mots familiers)
-        if (Math.random() < 0.2) delay = 20 + Math.random() * 30;
-        setTimeout(typeChar, delay);
-      }
-    }
-    setTimeout(typeChar, 1200);
-
-  }
-
-
-  // Terminal demo
-  var terminalStarted = false;
-  function startTerminalDemo() {
-    if (terminalStarted) return;
-    terminalStarted = true;
-
-    var lines = [
-      { type: 'cmd', text: '$ repos-manager sync --all', delay: 300 },
-      { type: 'info', text: 'Fetching repository list from github.com...', delay: 900 },
-      { type: 'info', text: 'Found 23 repositories', delay: 1300 },
-      { type: 'output', text: '', delay: 1500 },
-      { type: 'success', text: '  &#10003; Dxsk/git-identity-manager (updated)', delay: 1700 },
-      { type: 'success', text: '  &#10003; Dxsk/repos-manager (updated)', delay: 1900 },
-      { type: 'success', text: '  &#10003; Dxsk/mtd (cloned)', delay: 2100 },
-      { type: 'warn', text: '  &#9888; Dxsk/infra (dirty, skipped)', delay: 2300 },
-      { type: 'success', text: '  &#10003; work-org/api (updated)', delay: 2500 },
-      { type: 'output', text: '', delay: 2700 },
-      { type: 'info', text: 'Done: 1 cloned, 3 updated, 1 skipped, 0 errors', delay: 2900 },
-      { type: 'output', text: '', delay: 3300 },
-      { type: 'cmd', text: '$ repos-manager status', delay: 3500 },
-      { type: 'info', text: 'Scanning repos in ~/Documents...', delay: 4100 },
-      { type: 'output', text: '', delay: 4300 },
-      { type: 'warn', text: '  Dxsk/infra dirty', delay: 4500 },
-      { type: 'success', text: '  Dxsk/mtd ahead (+1)', delay: 4700 },
-      { type: 'output', text: '', delay: 4900 },
-      { type: 'info', text: 'Total: 23 repos - 21 clean, 1 dirty, 1 ahead', delay: 5100 },
-    ];
-
-    var terminal = document.getElementById('terminal');
-    if (!terminal) return;
-
-    lines.forEach(function(line) {
-      setTimeout(function() {
-        var div = document.createElement('div');
-        div.className = 'terminal-line';
-        if (line.type === 'cmd') {
-          div.innerHTML = '<span class="terminal-prompt">' + line.text.substring(0, 2) + '</span><span class="terminal-cmd">' + line.text.substring(2) + '</span>';
-        } else {
-          div.className += ' terminal-' + line.type;
-          div.innerHTML = line.text;
-        }
-        terminal.appendChild(div);
-        terminal.scrollTop = terminal.scrollHeight;
-      }, line.delay);
-    });
-  }
-})();
-</script>
-
-<section class="providers">
+<section class="providers textured" id="providers">
   <div class="container">
     <h2 class="section-title">Every provider, one tool</h2>
-    <p class="subtitle">Sync repositories from 5 Git forges with a single command</p>
+    <p class="subtitle">Sync repositories from 5 Git forges, including several self-hosted instances per forge</p>
 
     <div class="provider-grid animate-stagger">
       <div class="provider-card">
@@ -175,7 +209,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         <div class="provider-body">
           <h3>Bitbucket</h3>
           <p class="cli">bitbucket auth login</p>
-          <span class="badge">BETA</span>
+          <span class="badge badge-beta">BETA</span>
         </div>
       </div>
       <div class="provider-card">
@@ -183,7 +217,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         <div class="provider-body">
           <h3>Radicle</h3>
           <p class="cli">rad auth</p>
-          <span class="badge">BETA</span>
+          <span class="badge badge-beta">BETA</span>
         </div>
       </div>
     </div>
@@ -201,7 +235,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Parallel sync</h3>
-          <p>Sync repos in parallel with configurable job count. Default: 4 concurrent operations.</p>
+          <p>Clones and updates run in parallel, 4 jobs by default, more with <code>--parallel</code>.</p>
         </div>
       </div>
       <div class="feature">
@@ -211,7 +245,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Status overview</h3>
-          <p>See dirty, ahead, behind, and diverged repos across all providers at a glance.</p>
+          <p>Dirty, ahead, behind and diverged repos across every provider, in one fast scan that skips vendored trees and network mounts.</p>
         </div>
       </div>
       <div class="feature">
@@ -221,7 +255,7 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Namespace mirroring</h3>
-          <p>Repos are organized as <code>provider/owner/repo</code> matching the remote structure.</p>
+          <p>Repos land in <code>host/owner/repo</code>, matching the remote structure, subgroups included.</p>
         </div>
       </div>
       <div class="feature">
@@ -231,37 +265,47 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Filter and ignore</h3>
-          <p>Fine-grained control with <code>.repos-filter</code> and <code>.repos-ignore</code> pattern files.</p>
+          <p>Pick what to sync with <code>--filter</code>, <code>.repos-filter</code> and <code>.repos-ignore</code> glob patterns.</p>
         </div>
       </div>
       <div class="feature">
         <div class="feature-titlebar">
           <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-          protocol.rs
+          safety.rs
         </div>
         <div class="feature-body">
-          <h3>SSH and HTTPS</h3>
-          <p>Choose your protocol. SSH by default, HTTPS with a flag.</p>
+          <h3>Safe by default</h3>
+          <p>Dirty working copies are never touched, pulls are fast-forward only, and <code>--prune</code> never leaves your base directory.</p>
         </div>
       </div>
       <div class="feature">
         <div class="feature-titlebar">
-          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
+          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
+          hosts.rs
+        </div>
+        <div class="feature-body">
+          <h3>Self-hosted friendly</h3>
+          <p>Several GitLab or Forgejo instances side by side, each synced into its own host directory.</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-titlebar">
+          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
           update.rs
         </div>
         <div class="feature-body">
           <h3>Self-update</h3>
-          <p>Built-in update command that downloads the new release and verifies its checksum, plus a passive background banner that tells you when a new version ships, with zero overhead on the command in progress.</p>
+          <p><code>repos-manager update</code> fetches and verifies the new release, and steps aside when a package manager owns the install.</p>
         </div>
       </div>
       <div class="feature">
         <div class="feature-titlebar">
-          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
-          fast-scan.rs
+          <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent-orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
+          completions.rs
         </div>
         <div class="feature-body">
-          <h3>Fast, safe status scan</h3>
-          <p>Status walks hundreds of repos in under a second. Vendored trees (<code>node_modules</code>, <code>.venv</code>, <code>target</code>) and network mounts (cloud drives, NFS, sshfs) are pruned by default, with a live progress indicator and an opt-in to scan mounts anyway.</p>
+          <h3>Shell completions</h3>
+          <p>Completions for bash, zsh, fish, PowerShell and elvish, generated by the binary itself.</p>
         </div>
       </div>
       <div class="feature">
@@ -271,9 +315,67 @@ description: A single CLI tool to clone and sync all your Git repositories from 
         </div>
         <div class="feature-body">
           <h3>Single native binary</h3>
-          <p>One static binary for Linux, macOS and Windows. Only <code>git</code> and your providers' CLIs are needed at runtime, with shell completions built in.</p>
+          <p>Native builds for Linux (static), macOS and Windows, on x86_64 and ARM64. Only <code>git</code> and your forges' CLIs are needed.</p>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="why textured">
+  <div class="container">
+    <h2 class="section-title">Why repos-manager?</h2>
+    <p class="subtitle">Your code lives on more forges and accounts than you can keep track of. repos-manager keeps a local, up-to-date copy of all of it, so you can work instead of hunting for repos.</p>
+
+    <div class="pillars animate-stagger">
+      <div class="pillar" style="--pillar:var(--accent)">
+        <span class="pillar-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+        <h3>Everything, in one command</h3>
+        <p>Your own repos, your organizations and the projects you collaborate on, across every forge and account. One <code>sync --all</code>, no list of URLs to maintain.</p>
+      </div>
+      <div class="pillar" style="--pillar:var(--accent-green)">
+        <span class="pillar-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></span>
+        <h3>Your work stays safe</h3>
+        <p>These are the clones you work in. Updates are fast-forward only, local changes are never touched, and <code>status</code> tells you what is still unpushed.</p>
+      </div>
+      <div class="pillar" style="--pillar:var(--accent-purple)">
+        <span class="pillar-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
+        <h3>Small forges welcome</h3>
+        <p>GitHub and GitLab, but also Forgejo, Gitea, Bitbucket and Radicle, and as many self-hosted instances as you run, each in its own folder.</p>
+      </div>
+    </div>
+
+    <div class="compare animate">
+      <h3 class="compare-title">How it compares</h3>
+      <p class="compare-intro">Great tools already exist around Git repositories. Each one is built for a different job:</p>
+      <table class="compare-table">
+        <thead>
+          <tr><th scope="col">Tool</th><th scope="col">What it does</th><th scope="col">Reach for it when</th></tr>
+        </thead>
+        <tbody>
+          <tr class="is-us">
+            <th scope="row" data-label="Tool">repos-manager <span class="tag">this tool</span></th>
+            <td data-label="What it does">Discovers every repository you can access on each forge, clones what is missing, fast-forwards the rest and reports what needs attention.</td>
+            <td data-label="Reach for it when">You work across several forges or accounts and want all of it on disk, current, every day.</td>
+          </tr>
+          <tr>
+            <th scope="row" data-label="Tool"><a href="https://github.com/x-motemen/ghq" rel="noopener">ghq</a></th>
+            <td data-label="What it does">Clones repositories from their URL into a tidy, predictable directory tree.</td>
+            <td data-label="Reach for it when">You clone projects one at a time and want them organized the same way.</td>
+          </tr>
+          <tr>
+            <th scope="row" data-label="Tool"><a href="https://github.com/gabrie30/ghorg" rel="noopener">ghorg</a></th>
+            <td data-label="What it does">Clones all the repositories of one organization or user in a single run.</td>
+            <td data-label="Reach for it when">You need a whole organization locally, for onboarding, audits or searching through code.</td>
+          </tr>
+          <tr>
+            <th scope="row" data-label="Tool"><a href="https://github.com/cooperspencer/gickup" rel="noopener">gickup</a></th>
+            <td data-label="What it does">Backs repositories up and mirrors them to other hosts or storage.</td>
+            <td data-label="Reach for it when">You want backups or mirrors of your repositories, typically on a schedule.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="compare-note">They are not mutually exclusive: back up with gickup, and keep working copies with repos-manager.</p>
     </div>
   </div>
 </section>
@@ -281,97 +383,179 @@ description: A single CLI tool to clone and sync all your Git repositories from 
 <section class="quickstart" id="quickstart">
   <div class="container">
     <h2 class="section-title">Quick start</h2>
+    <p class="subtitle">Installed with one of the commands <a href="#install">above</a>? Three commands and you are done.</p>
 
-    <div class="quickstart-grid animate-stagger">
-      <div class="qs-terminal" data-copy="curl -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh | sh">
-        <div class="qs-titlebar">
-          <span class="dot" style="background:var(--accent-red)"></span>
-          <span class="dot" style="background:var(--accent-orange)"></span>
-          <span class="dot" style="background:var(--accent-green)"></span>
-          <span class="qs-title">step-1 ~ install</span>
+    <ol class="steps animate-stagger">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div class="step-body">
+          <h3>Log in to your forges</h3>
+          <p>Runs each installed provider CLI's login, or a single one with <code>repos-manager github login</code>.</p>
+          <div class="step-cmd"><code><span class="prompt">$</span> repos-manager login</code><button class="copy-btn" data-copy="repos-manager login" aria-label="Copy command">Copy</button></div>
         </div>
-        <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">curl</span> -fsSL https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.sh <span class="qs-op">|</span> <span class="qs-cmd">sh</span></div>
-          <div class="qs-output">Installed to ~/.local/bin/repos-manager</div>
-          <div class="qs-output" style="color:var(--text-secondary)">Windows: irm https://raw.githubusercontent.com/Dxsk/repos-manager/main/installers/install.ps1 | iex</div>
-          <div class="qs-output" style="color:var(--text-secondary)">Arch: yay -S repos-manager-bin &middot; Rust: cargo install repos-manager</div>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div class="step-body">
+          <h3>Sync everything</h3>
+          <p>Clones what is missing and updates the rest into <code>~/Documents/&lt;host&gt;/&lt;owner&gt;/&lt;repo&gt;</code>. Preview first with <code>--dry-run</code>.</p>
+          <div class="step-cmd"><code><span class="prompt">$</span> repos-manager sync --all</code><button class="copy-btn" data-copy="repos-manager sync --all" aria-label="Copy command">Copy</button></div>
         </div>
-      </div>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div class="step-body">
+          <h3>Check what needs attention</h3>
+          <p>Lists dirty, ahead, behind and diverged repos, so nothing stays unpushed.</p>
+          <div class="step-cmd"><code><span class="prompt">$</span> repos-manager status</code><button class="copy-btn" data-copy="repos-manager status" aria-label="Copy command">Copy</button></div>
+        </div>
+      </li>
+    </ol>
 
-      <div class="qs-terminal" data-copy="repos-manager login">
-        <div class="qs-titlebar">
-          <span class="dot" style="background:var(--accent-red)"></span>
-          <span class="dot" style="background:var(--accent-orange)"></span>
-          <span class="dot" style="background:var(--accent-green)"></span>
-          <span class="qs-title">step-2 ~ authenticate</span>
-        </div>
-        <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> login</div>
-          <div class="qs-output"></div>
-          <div class="qs-output"><span style="color:var(--accent)">===</span> Login github <span style="color:var(--accent)">===</span></div>
-          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> Logged in to github.com</div>
-          <div class="qs-output"><span style="color:var(--accent)">===</span> Login gitlab <span style="color:var(--accent)">===</span></div>
-          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> Logged in to gitlab.com</div>
-        </div>
-      </div>
-
-      <div class="qs-terminal" data-copy="repos-manager sync --all">
-        <div class="qs-titlebar">
-          <span class="dot" style="background:var(--accent-red)"></span>
-          <span class="dot" style="background:var(--accent-orange)"></span>
-          <span class="dot" style="background:var(--accent-green)"></span>
-          <span class="qs-title">step-3 ~ sync</span>
-        </div>
-        <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> sync --all</div>
-          <div class="qs-output"></div>
-          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> user/project (updated)</div>
-          <div class="qs-output"><span style="color:var(--accent-green)">&#10003;</span> user/project (cloned)</div>
-          <div class="qs-output"><span style="color:var(--accent-orange)">&#9888;</span> user/infra (dirty, skipped)</div>
-          <div class="qs-output"></div>
-          <div class="qs-output" style="color:var(--accent)">Done: 1 cloned, 1 updated, 1 skipped</div>
-        </div>
-      </div>
-
-      <div class="qs-terminal" data-copy="repos-manager status">
-        <div class="qs-titlebar">
-          <span class="dot" style="background:var(--accent-red)"></span>
-          <span class="dot" style="background:var(--accent-orange)"></span>
-          <span class="dot" style="background:var(--accent-green)"></span>
-          <span class="qs-title">step-4 ~ status</span>
-        </div>
-        <div class="qs-body">
-          <div><span class="qs-prompt">$_</span> <span class="qs-cmd">repos-manager</span> status</div>
-          <div class="qs-output"></div>
-          <div class="qs-output">  github.com/user/infra <span style="color:var(--accent-orange)">dirty</span></div>
-          <div class="qs-output">  github.com/user/project <span style="color:var(--accent-green)">ahead</span> <span style="color:var(--text-secondary)">(+1)</span></div>
-          <div class="qs-output">  gitlab.com/work/api <span style="color:var(--accent)">behind</span> <span style="color:var(--text-secondary)">(-3)</span></div>
-          <div class="qs-output"></div>
-          <div class="qs-output" style="color:var(--accent)">Total: 23 repos - 20 clean, 1 dirty, 1 ahead, 1 behind</div>
-        </div>
-      </div>
-    </div>
+    <p class="quickstart-more">Next: <a href="/docs/configuration/">configure base directory and hosts</a>, <a href="/docs/filtering/">filter what gets synced</a>, or set up <a href="/docs/getting-started/">shell completions</a>.</p>
   </div>
 </section>
 
 <script>
-document.querySelectorAll('[data-copy]').forEach(function(el) {
-  el.style.cursor = 'pointer';
-  el.title = 'Click to copy';
-  el.onclick = function() {
+(function() {
+  // Reveal animations
+  var targets = [];
+  document.querySelectorAll('.animate').forEach(function(el) {
+    el.classList.add('will-animate');
+    targets.push(el);
+  });
+  document.querySelectorAll('.animate-stagger').forEach(function(parent) {
+    Array.from(parent.children).forEach(function(child, i) {
+      child.classList.add('will-animate');
+      child.style.transitionDelay = (i * 0.08) + 's';
+      targets.push(child);
+    });
+  });
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0 });
+  targets.forEach(function(el) { observer.observe(el); });
+
+  // Terminal demo. Each install tab has its own scenario; every line is
+  // already in the page and all screens share one grid cell, so switching
+  // or animating never changes the layout. Commands are typed into a span
+  // while the rest stays invisible, which keeps line widths fixed.
+  var demo = document.getElementById('terminal-demo');
+  var titleEl = demo.querySelector('.terminal-title');
+  var runId = 0;
+  var pause = function(text) {
+    if (!text) return 220;
+    if (/^(Fetching|Scanning|Downloading|::|==>|Updating|Compiling|!)/.test(text)) return 900;
+    if (/^(Done|Total|Finished)/.test(text)) return 700;
+    return 380;
+  };
+  function play(name) {
+    var run = ++runId;
+    demo.dataset.theme = name;
+    var screen = null;
+    demo.querySelectorAll('.terminal-body').forEach(function(b) {
+      var on = b.dataset.scenario === name;
+      b.hidden = !on;
+      if (on) screen = b;
+    });
+    titleEl.textContent = screen.dataset.title;
+    // Fresh fake device code on every run, never a fixed one.
+    screen.querySelectorAll('.otp').forEach(function(el) {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', code = '';
+      for (var k = 0; k < 8; k++) code += (k === 4 ? '-' : '') + chars.charAt(Math.floor(Math.random() * chars.length));
+      el.textContent = code;
+    });
+    var lines = Array.prototype.slice.call(screen.querySelectorAll('.terminal-line'));
+    lines.forEach(function(el) {
+      el.classList.remove('shown', 'typing');
+      var cmd = el.querySelector('.terminal-cmd');
+      if (cmd) cmd.textContent = cmd.textContent;
+    });
+    var typeCommand = function(el, done) {
+      var cmd = el.querySelector('.terminal-cmd');
+      var text = cmd.textContent;
+      cmd.innerHTML = '<span class="typed"></span><span class="caret"></span><span class="untyped"></span>';
+      var typed = cmd.firstChild, rest = cmd.lastChild;
+      rest.textContent = text;
+      el.classList.add('shown', 'typing');
+      var i = 0;
+      (function next() {
+        if (run !== runId) return;
+        if (i >= text.length) { el.classList.remove('typing'); setTimeout(done, 600); return; }
+        i++;
+        typed.textContent = text.slice(0, i);
+        rest.textContent = text.slice(i);
+        // Long commands (pasted install one-liners) are typed faster.
+        var fast = text.length > 40;
+        var space = text.charAt(i - 1) === ' ';
+        setTimeout(next, fast ? (space ? 60 : 12 + Math.random() * 22) : (space ? 90 + Math.random() * 120 : 35 + Math.random() * 70));
+      })();
+    };
+    var index = 0;
+    var step = function() {
+      if (run !== runId || index >= lines.length) return;
+      var el = lines[index++];
+      if (el.querySelector('.terminal-cmd')) {
+        typeCommand(el, step);
+      } else {
+        el.classList.add('shown');
+        setTimeout(step, pause(el.textContent.trim()));
+      }
+    };
+    setTimeout(step, 500);
+  }
+
+  // Install tabs drive both the command panel and the terminal scenario.
+  var tabs = document.querySelectorAll('.install-tabs [role=tab]');
+  tabs.forEach(function(t) {
+    t.addEventListener('click', function() {
+      if (t.getAttribute('aria-selected') === 'true') return;
+      tabs.forEach(function(o) { o.setAttribute('aria-selected', o === t ? 'true' : 'false'); });
+      document.querySelectorAll('.install-panel').forEach(function(p) { p.hidden = p.dataset.panel !== t.dataset.tab; });
+      play(t.dataset.tab);
+    });
+  });
+  play(document.documentElement.dataset.os === 'windows' ? 'windows' : 'unix');
+
+  // Copy buttons
+  function toast(text) {
+    var t = document.createElement('div');
+    t.className = 'copy-toast visible';
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(function() { t.classList.remove('visible'); }, 1800);
+    setTimeout(function() { t.remove(); }, 2100);
+  }
+  function fallbackCopy(text) {
     var ta = document.createElement('textarea');
-    ta.value = el.getAttribute('data-copy');
+    ta.value = text;
     ta.style.cssText = 'position:fixed;opacity:0';
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
     ta.remove();
-    var t = document.createElement('div');
-    t.className = 'copy-toast visible';
-    t.textContent = 'Copied to clipboard';
-    document.body.appendChild(t);
-    setTimeout(function() { t.classList.remove('visible'); }, 2000);
-    setTimeout(function() { t.remove(); }, 2300);
-  };
-});
+  }
+  document.querySelectorAll('.copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var text = btn.dataset.copy;
+      var done = function() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+        toast('Copied to clipboard');
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, function() { fallbackCopy(text); done(); });
+      } else {
+        fallbackCopy(text);
+        done();
+      }
+    });
+  });
+})();
 </script>

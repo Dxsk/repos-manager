@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Configure repos-manager with a config file, environment variables, and custom hosts.
+description: "Configure repos-manager with config.json and environment variables: base directory, protocol, parallel jobs and several hosts per provider."
 order: 2
 ---
 

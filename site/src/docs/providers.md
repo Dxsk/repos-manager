@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: Detailed setup for each supported Git provider.
+description: "Set up GitHub, GitLab, Forgejo/Gitea, Bitbucket and Radicle with repos-manager, including self-hosted instances and collaborator repos."
 order: 3
 ---
 

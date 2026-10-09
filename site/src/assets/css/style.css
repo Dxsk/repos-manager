@@ -21,6 +21,8 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { scroll-behavior: smooth; }
+/* Anchored sections land below the sticky header. */
+section[id] { scroll-margin-top: 57px; }
 
 body {
   font-family: var(--font-sans);
@@ -108,15 +110,59 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 
 /* ── Hero ─────────────────────────────────────────────── */
 
+/* Full screen below the sticky header (about 57px tall). svh avoids the
+   jump mobile browsers make when their address bar collapses. */
 .hero {
-  text-align: center;
-  padding: 6em 2em 4em;
+  position: relative;
+  min-height: calc(100vh - 57px);
+  min-height: calc(100svh - 57px);
+  display: flex;
+  align-items: center;
+  padding: 3em 2em 4.5em;
+}
+.hero-grid { width: 100%; }
+
+.scroll-hint {
+  position: absolute;
+  bottom: 1.2em;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  opacity: 0.7;
+  animation: nudge 2s ease-in-out infinite;
+}
+.scroll-hint:hover { color: var(--accent-green); opacity: 1; }
+@keyframes nudge {
+  0%, 100% { transform: translate(-50%, 0); }
+  50% { transform: translate(-50%, 6px); }
+}
+
+/* Every other section gets a faint dot grid so consecutive sections never
+   blend into each other. */
+.textured {
+  background-color: var(--bg-primary);
+  background-image: radial-gradient(rgba(139, 148, 158, 0.13) 1px, transparent 1px);
+  background-size: 22px 22px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.hero-grid {
+  /* Same content width as the header container (max width minus its padding). */
+  max-width: calc(var(--max-width) - 4em);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 3.5em;
+  align-items: center;
 }
 
 .hero h1 {
-  font-size: 3em;
+  font-size: 3.2em;
+  line-height: 1.2;
+  /* The gradient is clipped to the box: leave room for descenders (the g). */
+  padding-bottom: 0.12em;
   font-weight: 800;
-  margin-bottom: 0.3em;
+  margin-bottom: 0.2em;
   background: linear-gradient(135deg, var(--accent), var(--accent-purple));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -124,27 +170,99 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 }
 
 .hero .tagline {
-  font-size: 1.3em;
+  font-size: 1.2em;
   color: var(--text-secondary);
-  margin-bottom: 2em;
-  max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: 560px;
 }
 
-.hero .install-cmd {
+.hero .tagline { margin-bottom: 0.6em; }
+.hero .platforms {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--accent-green);
+  margin-bottom: 2em;
+}
+
+/* Install tabs */
+.install {
+  margin-bottom: 1.6em;
+}
+/* All panels share one grid cell, so the block keeps the height of the
+   tallest command whichever tab is shown. */
+.install-panels { display: grid; }
+.install-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+.install-tabs [role=tab] {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.5em 1em;
+  cursor: pointer;
+}
+.install-tabs [role=tab]:hover { color: var(--text-primary); }
+.install-tabs [role=tab][aria-selected=true] {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  color: var(--accent-green);
+}
+.install-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1em 1.5em;
-  font-family: var(--font-mono);
-  font-size: 1em;
-  display: inline-block;
-  color: var(--accent-green);
-  margin-bottom: 1.5em;
+  border-radius: 0 8px 8px 8px;
+  padding: 0.9em 1em 0.9em 1.2em;
 }
-.hero .install-cmd .prompt { color: var(--text-secondary); }
-.hero .install-cmd:hover { border-color: var(--accent-green); background: rgba(63, 185, 80, 0.05); }
+.install-panel { grid-area: 1 / 1; }
+.install-panel[hidden] { display: flex; visibility: hidden; }
+.install-panel code,
+.step-cmd code {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  padding: 0;
+  font-size: 0.9em;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.install-panel .prompt,
+.step-cmd .prompt { color: var(--accent-green); margin-right: 0.4em; user-select: none; }
+.install-note {
+  margin-top: 0.7em;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  padding: 0.35em 0.8em;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.copy-btn:hover, .copy-btn:focus-visible { border-color: var(--accent-green); color: var(--accent-green); }
+.copy-btn.copied { color: var(--accent-green); border-color: var(--accent-green); }
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 1.6em;
+}
+.badges img { display: block; }
 
 .copy-toast {
   position: fixed;
@@ -167,7 +285,7 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
   opacity: 0;
 }
 
-.hero .buttons { display: flex; gap: 1em; justify-content: center; flex-wrap: wrap; }
+.hero .buttons { display: flex; gap: 0.8em; flex-wrap: wrap; }
 
 .btn {
   display: inline-flex;
@@ -207,10 +325,11 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
   margin-bottom: 0.3em;
 }
 
-.providers .subtitle {
+.subtitle {
   text-align: center;
   color: var(--text-secondary);
-  margin-bottom: 2em;
+  margin: 0 auto 2em;
+  max-width: 640px;
 }
 
 .provider-grid {
@@ -272,6 +391,7 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
   content: '$ ';
   color: var(--accent-green);
 }
+.provider-card .badge.badge-beta { background: rgba(210, 153, 34, 0.15); color: var(--accent-orange); }
 .provider-card .badge {
   display: inline-block;
   background: rgba(63, 185, 80, 0.15);
@@ -293,11 +413,16 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 
 .feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5em;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 0 2em;
+}
+@media (max-width: 900px) {
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .feature-grid { grid-template-columns: 1fr; }
 }
 
 .feature {
@@ -328,73 +453,195 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 .feature .icon { display: none; }
 .feature h3 { font-size: 0.85em; margin-bottom: 0.5em; display: flex; align-items: center; gap: 0.5em; font-family: var(--font-mono); }
 .feature h3::before { content: '$ '; color: var(--accent-green); }
-.feature p { font-size: 0.82em; color: var(--text-secondary); line-height: 1.5; font-family: var(--font-sans); }
+.feature p { font-size: 0.88em; color: var(--text-secondary); line-height: 1.55; font-family: var(--font-sans); }
+
+/* ── Why ─────────────────────────────────────────────── */
+
+.why { padding: 4em 0; }
+
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5em;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.pillar {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--pillar);
+  border-radius: 8px;
+  padding: 1.6em 1.5em 1.5em;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.pillar:hover { transform: translateY(-3px); border-color: var(--pillar); }
+.pillar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 10px;
+  color: var(--pillar);
+  background: color-mix(in srgb, var(--pillar) 14%, transparent);
+  margin-bottom: 1em;
+}
+.pillar-icon svg { width: 1.3em; height: 1.3em; }
+.pillar h3 { font-size: 1.1em; margin-bottom: 0.5em; }
+.pillar p { color: var(--text-secondary); font-size: 0.92em; }
+.pillar code, .feature p code { white-space: nowrap; }
+
+.compare {
+  max-width: 1000px;
+  margin: 3em auto 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.8em 2em 1.5em;
+}
+.compare-title { font-size: 1.25em; margin-bottom: 0.3em; }
+.compare-title::before { content: '$ '; color: var(--accent-green); font-family: var(--font-mono); }
+.compare-intro { color: var(--text-secondary); font-size: 0.92em; margin-bottom: 1.2em; }
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.compare-table th, .compare-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.85em 1em;
+  border-bottom: 1px solid var(--border);
+}
+.compare-table thead th {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.compare-table tbody th {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.compare-table td { color: var(--text-secondary); }
+.compare-table tbody tr:last-child th,
+.compare-table tbody tr:last-child td { border-bottom: none; }
+.compare-table tr.is-us th, .compare-table tr.is-us td {
+  background: rgba(63, 185, 80, 0.07);
+  color: var(--text-primary);
+}
+.compare-table tr.is-us th { color: var(--accent-green); box-shadow: inset 3px 0 0 var(--accent-green); }
+.compare-table .tag {
+  display: inline-block;
+  margin-left: 0.5em;
+  font-family: var(--font-sans);
+  font-size: 0.68em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green);
+  vertical-align: 0.15em;
+}
+.compare-note {
+  margin-top: 1.2em;
+  font-size: 0.88em;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+@media (max-width: 900px) {
+  .pillars { grid-template-columns: 1fr; }
+}
+/* On phones each tool becomes a card with labelled fields. */
+@media (max-width: 700px) {
+  .compare { padding: 1.4em 1.1em 1.1em; }
+  .compare-table thead { display: none; }
+  .compare-table, .compare-table tbody, .compare-table tr, .compare-table th, .compare-table td { display: block; width: 100%; }
+  .compare-table tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 0.9em;
+    overflow: hidden;
+  }
+  .compare-table th, .compare-table td { border-bottom: none; padding: 0.55em 0.9em; }
+  .compare-table tbody th { white-space: normal; padding-top: 0.8em; }
+  .compare-table td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    margin-bottom: 0.15em;
+  }
+  .compare-table tr.is-us th { box-shadow: none; }
+}
 
 /* ── Quick Start ─────────────────────────────────────── */
 
 .quickstart {
   padding: 4em 0;
-  max-width: 800px;
-  margin: 0 auto;
 }
-.quickstart h2 { text-align: center; font-size: 2em; margin-bottom: 1.5em; }
+.quickstart h2 { text-align: center; font-size: 2em; margin-bottom: 0.3em; }
 
-.quickstart-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+.steps {
+  list-style: none;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
   gap: 1.2em;
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 0 2em;
 }
-
-.qs-terminal {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  transition: border-color 0.3s;
-  cursor: pointer;
+.step {
+  display: flex;
+  gap: 1.2em;
+  align-items: flex-start;
 }
-.qs-terminal:hover { border-color: var(--accent-green); }
-
-.qs-titlebar {
-  background: var(--bg-tertiary);
-  padding: 0.4em 0.8em;
+.step-num {
+  flex-shrink: 0;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 0.4em;
-  font-size: 0.7em;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--bg-primary);
+  background: var(--accent-green);
+}
+.step-body { flex: 1; min-width: 0; }
+.step-body h3 { font-size: 1.05em; margin-bottom: 0.3em; }
+.step-body p { color: var(--text-secondary); font-size: 0.92em; margin-bottom: 0.6em; }
+.step-cmd {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7em 0.8em 0.7em 1em;
+  font-family: var(--font-mono);
+}
+.quickstart-more {
+  text-align: center;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
-}
-.qs-titlebar .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.qs-title { margin-left: 0.5em; }
-
-.qs-body {
-  padding: 1em 1.2em;
-  font-size: 0.82em;
-  line-height: 1.7;
-}
-.qs-prompt { color: var(--accent-green); }
-.qs-cmd { color: var(--accent); }
-.qs-op { color: var(--accent-purple); }
-.qs-output { color: var(--text-secondary); }
-
-@media (max-width: 768px) {
-  .quickstart-grid { grid-template-columns: 1fr; }
+  font-size: 0.92em;
+  margin-top: 2em;
 }
 
 /* ── Doc Layout ──────────────────────────────────────── */
 
 .doc-layout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   gap: 2em;
   max-width: var(--max-width);
   margin: 0 auto;
@@ -451,14 +698,20 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
   padding: 0 0.3em;
 }
 
-.doc-content { max-width: 800px; }
+.doc-content { max-width: 800px; min-width: 0; }
 .doc-content h1 { font-size: 2em; margin-bottom: 0.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.5em; color: var(--accent); }
 .doc-content h2 { font-size: 1.5em; margin-top: 2em; margin-bottom: 0.5em; color: var(--accent-green); }
 .doc-content h3 { font-size: 1.2em; margin-top: 1.5em; margin-bottom: 0.5em; color: var(--accent-orange); }
 .doc-content p { margin-bottom: 1em; }
+/* Long inline paths would otherwise widen the page on phones. */
+.doc-content p code, .doc-content li code { overflow-wrap: anywhere; }
 .doc-content ul, .doc-content ol { margin-bottom: 1em; padding-left: 1.5em; }
 .doc-content li { margin-bottom: 0.3em; }
 .doc-content table { width: 100%; border-collapse: collapse; margin: 1.5em 0; font-size: 0.9em; }
+/* Wide tables scroll on their own instead of widening the page. */
+@media (max-width: 768px) {
+  .doc-content table { display: block; overflow-x: auto; }
+}
 .doc-content th, .doc-content td { padding: 0.6em 1em; border: 1px solid var(--border); text-align: left; }
 .doc-content th { background: var(--bg-tertiary); font-weight: 600; color: var(--accent); }
 .doc-content td code { color: var(--accent-green); }
@@ -477,6 +730,13 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 .site-footer a { color: var(--text-secondary); }
 .site-footer a:hover { color: var(--accent); }
 .site-footer .heart { vertical-align: -2px; display: inline-block; }
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4em 1.4em;
+  margin-bottom: 1em;
+}
 
 .social-links {
   display: flex;
@@ -527,13 +787,27 @@ pre code { background: none; padding: 0; font-size: 0.85em; }
 
 /* ── Responsive ──────────────────────────────────────── */
 
+@media (max-width: 1000px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 2.5em; }
+  .scroll-hint { display: none; }
+}
+
 @media (max-width: 768px) {
-  .hero h1 { font-size: 2em; }
-  .hero .tagline { font-size: 1.1em; }
-  .doc-layout { grid-template-columns: 1fr; }
+  .container { padding: 0 1em; }
+  .hero { padding: 2.5em 1em 2.5em; }
+  .hero h1 { font-size: 2.2em; }
+  .hero .tagline { font-size: 1.05em; }
+  .section-title { font-size: 1.6em; }
+  .doc-layout { grid-template-columns: minmax(0, 1fr); padding: 1.5em 1em; }
   .doc-sidebar { position: static; }
-  .provider-grid { grid-template-columns: repeat(2, 1fr); }
-  .quickstart-grid { grid-template-columns: 1fr; }
+  .terminal-body { font-size: 0.75em; overflow-x: auto; }
+  .install-tabs [role=tab] { padding: 0.45em 0.7em; font-size: 0.8em; }
+  .install-panel code, .step-cmd code { font-size: 0.82em; }
+  .back-to-top { right: 1em; bottom: 1em; }
+}
+@media (max-width: 480px) {
+  .provider-card { width: 100%; }
+  .step { gap: 0.8em; }
 }
 
 /* ── Prism syntax highlighting (dark) ────────────────── */
@@ -621,17 +895,31 @@ pre[class*="language-"] {
 /* ── Terminal demo ───────────────────────────────────── */
 
 .terminal-demo {
-  background: var(--bg-secondary);
+  --term-bg: var(--bg-secondary);
+  --term-bar: var(--bg-tertiary);
+  --term-border: var(--border);
+  --term-text: var(--text-primary);
+  --term-dim: var(--text-secondary);
+  --term-prompt: var(--accent-green);
+  --term-info: var(--accent);
+  --term-success: var(--accent-green);
+  --term-warn: var(--accent-orange);
+  --term-error: var(--accent-red);
+  --term-accent: var(--accent-purple);
+  background: var(--term-bg);
+  border-color: var(--term-border);
+  transition: background-color 0.4s, border-color 0.4s;
   border: 1px solid var(--border);
   border-radius: 12px;
-  max-width: 700px;
-  margin: 2em auto;
   overflow: hidden;
-  animation: fadeInUp 1s ease-out 0.5s both;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  animation: fadeInUp 0.8s ease-out 0.2s both;
 }
 
 .terminal-titlebar {
-  background: var(--bg-tertiary);
+  position: relative;
+  background: var(--term-bar);
+  transition: background-color 0.4s;
   padding: 0.6em 1em;
   display: flex;
   align-items: center;
@@ -647,9 +935,14 @@ pre[class*="language-"] {
 .terminal-dot.yellow { background: #d29922; }
 .terminal-dot.green { background: #3fb950; }
 
+/* Centered on the whole bar, not on the space left by the window buttons. */
 .terminal-title {
-  flex: 1;
+  color: var(--term-dim);
+  position: absolute;
+  left: 0;
+  right: 0;
   text-align: center;
+  pointer-events: none;
   font-size: 0.8em;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -658,18 +951,108 @@ pre[class*="language-"] {
 .terminal-body {
   padding: 1.2em;
   font-family: var(--font-mono);
-  font-size: 0.85em;
+  font-size: 0.82em;
   line-height: 1.8;
 }
+.terminal-line { white-space: pre-wrap; }
 
-.terminal-line {
-  opacity: 0;
-  animation: fadeInUp 0.3s ease-out forwards;
+/* Lines are in the HTML from the start and only revealed by JS, so the
+   terminal never grows and nothing below it moves. */
+.js .terminal-line:not(.shown) { visibility: hidden; }
+.js .terminal-line.shown { animation: fadeInUp 0.3s ease-out; }
+.js .terminal-line.shown:has(.terminal-cmd) { animation: none; }
+.terminal-cmd .untyped { visibility: hidden; }
+/* The caret is an empty inline span between typed and untyped text: it adds
+   no width and no break opportunity, follows the text across line wraps, and
+   draws itself out of flow. */
+.terminal-cmd .caret { position: relative; }
+.terminal-line.typing .caret::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 0.1em;
+  width: 0.55em;
+  height: 1.1em;
+  background: var(--accent-green);
+  animation: blink 1s step-end infinite;
 }
 
-.terminal-prompt { color: var(--accent-green); }
-.terminal-cmd { color: var(--text-primary); }
-.terminal-output { color: var(--text-secondary); }
-.terminal-success { color: var(--accent-green); }
-.terminal-warn { color: var(--accent-orange); }
-.terminal-info { color: var(--accent); }
+.terminal-prompt { color: var(--term-prompt); }
+.terminal-cmd { color: var(--term-text); }
+.terminal-output { color: var(--term-dim); }
+.terminal-success { color: var(--term-success); }
+.terminal-warn { color: var(--term-warn); }
+.terminal-info { color: var(--term-info); }
+.terminal-error { color: var(--term-error); }
+.terminal-accent { color: var(--term-accent); }
+.terminal-verb { color: var(--term-success); font-weight: 700; }
+
+/* All scenarios share one grid cell: the terminal keeps the height of the
+   longest one whichever tab is selected. */
+.terminal-screens { display: grid; }
+.terminal-screens .terminal-body { grid-area: 1 / 1; }
+.terminal-screens .terminal-body[hidden] { display: block; visibility: hidden; }
+
+.win-controls {
+  display: none;
+  position: absolute;
+  right: 0.9em;
+  gap: 1.1em;
+  font-size: 0.8em;
+  color: var(--term-dim);
+}
+
+/* PowerShell: the classic blue console with Windows window buttons. */
+.terminal-demo[data-theme=windows] {
+  --term-bg: #012456;
+  --term-bar: #0b2e63;
+  --term-border: #1d4a8f;
+  --term-text: #f9f1a5;
+  --term-dim: #cccccc;
+  --term-prompt: #eeedf0;
+  --term-info: #61d6d6;
+  --term-success: #16c60c;
+  --term-warn: #f9f1a5;
+  --term-error: #e74856;
+  border-radius: 6px;
+}
+.terminal-demo[data-theme=windows] .terminal-dot { visibility: hidden; }
+.terminal-demo[data-theme=windows] .win-controls { display: flex; }
+.terminal-demo[data-theme=windows] .terminal-title { text-align: left; left: 1em; }
+
+/* Arch: dark with the Arch Linux blue. */
+.terminal-demo[data-theme=aur] {
+  --term-bg: #0f141a;
+  --term-bar: #18202a;
+  --term-border: #23405a;
+  --term-prompt: #1793d1;
+  --term-info: #1793d1;
+  --term-success: #7ec27b;
+}
+
+/* Cargo: warm tones and the Rust orange. */
+.terminal-demo[data-theme=cargo] {
+  --term-bg: #1a1411;
+  --term-bar: #261c17;
+  --term-border: #4a2f20;
+  --term-prompt: #f74c00;
+  --term-info: #f0a868;
+  --term-success: #5fd068;
+  --term-accent: #f0a868;
+}
+
+/* Typing stays on (text, not motion); slides and fades are what reduced
+   motion turns off. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-demo { animation: none; }
+  .js .terminal-line.shown { animation: fadeIn 0.35s ease-out; }
+  .will-animate { transform: none; transition: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-hint { animation: none; }
+}

@@ -1,6 +1,6 @@
 ---
 title: Contributing
-description: How to contribute to repos-manager.
+description: "Contribute to repos-manager: build and test the Rust code, add a provider, follow the release process and open pull requests on GitHub."
 order: 7
 ---
 

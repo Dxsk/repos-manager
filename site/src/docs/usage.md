@@ -1,6 +1,6 @@
 ---
 title: Usage
-description: Complete command reference for repos-manager.
+description: "Complete repos-manager command reference: sync, status, login, update, completions, every flag and real examples."
 order: 4
 ---
 
