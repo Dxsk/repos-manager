@@ -5,10 +5,12 @@
 ### Changed
 
 - All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
+- Updates fetch once and fast-forward the already fetched default branch instead of running a second `git pull`, about twice as fast on many repositories. Result lines now say `updated` or `up to date`
 - Each result line shows a `[done/total]` counter, and an interactive terminal shows a live status line with the repositories in progress
 
 ### Fixed
 
+- A sync no longer moves the branch you are working on: `git pull origin HEAD` used to fast-forward whatever branch was checked out to the remote default branch. Other branches and detached HEADs are now only fetched (`fetched, on branch work`), and a renamed default branch is detected again
 - Updating a clone of an empty remote repository no longer fails with `couldn't find remote ref HEAD`, it is reported as skipped (`empty repository`)
 - On Windows, a repository tracking a file name Windows forbids (`"`, `:`, `CON`...) is now reported as skipped with the offending path, instead of a half-done clone that was then skipped as dirty on every sync
 - A failed clone no longer leaves a partial directory behind
