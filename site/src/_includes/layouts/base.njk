@@ -37,8 +37,10 @@
   {%- if page.url == "/" %}
   <link rel="preconnect" href="https://img.shields.io">
   {%- endif %}
-  <link rel="stylesheet" href="{{ '/assets/css/prism.css' | assetHash }}">
-  <link rel="stylesheet" href="{{ '/assets/css/style.css' | assetHash }}">
+  {%- if tags and "docs" in tags %}
+  <style>{{ '/assets/css/prism.css' | inlineCss | safe }}</style>
+  {%- endif %}
+  <style>{{ '/assets/css/style.css' | inlineCss | safe }}</style>
 
   <script type="application/ld+json">
   {
