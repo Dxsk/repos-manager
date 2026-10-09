@@ -24,6 +24,20 @@ The limit applies to the whole run: with `sync --all` or several hosts, every ho
 
 For large organizations (100+ repos), higher parallelism helps. For slow connections, lower it to avoid timeouts.
 
+## Stalled jobs and prompts
+
+A sync runs in the background, so nothing may wait for an answer or for a dead connection. For network commands (clone, fetch), repos-manager adds these guards unless you configured the same setting yourself:
+
+| Guard | Effect | Skipped when you set |
+|---|---|---|
+| `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4` | A dead SSH link is dropped after 60s; an unknown host key or a passphrase without agent fails at once instead of waiting | `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand` |
+| `http.lowSpeedLimit=1000`, `http.lowSpeedTime=60` | An HTTPS transfer under 1 KB/s for a minute is aborted | either setting |
+| `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` | No credential prompt or Git Credential Manager window | |
+
+As a last resort every git command is killed after `REPOS_MANAGER_GIT_TIMEOUT` seconds (1 hour), and every provider listing after `REPOS_MANAGER_LIST_TIMEOUT` (5 minutes).
+
+If a host key is unknown, connect once by hand (`ssh -T git@host`) to accept it, then sync again.
+
 ## Concurrent sync protection
 
 Each host has its own lock file, `<base_dir>/<host>/.repos-manager.lock`. Two syncs of the same host cannot run at the same time (the second one fails with `another sync is already running`), while syncs of different hosts can run in parallel since they write to separate directories.

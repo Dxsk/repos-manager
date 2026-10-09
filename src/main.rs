@@ -4,6 +4,7 @@ mod git;
 mod http;
 mod matcher;
 mod output;
+mod process;
 mod providers;
 mod status;
 mod sync;

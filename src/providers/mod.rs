@@ -9,7 +9,7 @@ mod gitlab;
 mod radicle;
 
 use std::fmt;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
@@ -170,10 +170,7 @@ fn run_interactive(program: &str, args: &[&str]) -> Result<()> {
 
 /// Run a command and return its stdout. stderr is captured and included in the error.
 fn run_capture(cmd: &mut Command) -> Result<String> {
-    let out = cmd
-        .stdin(Stdio::null())
-        .output()
-        .with_context(|| format!("cannot run {:?}", cmd.get_program()))?;
+    let out = crate::process::output(cmd, crate::process::timeout("LIST", 300))?;
     if !out.status.success() {
         bail!(
             "{:?} failed: {}",
