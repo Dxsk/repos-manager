@@ -285,6 +285,7 @@ struct Listed {
     /// False when a provider sharing this directory failed or was skipped:
     /// its repos are missing from `repos`, so pruning would delete them.
     complete: bool,
+    announced: bool,
 }
 
 struct Group<'a> {
@@ -344,15 +345,21 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
         let providers: Vec<_> = members.iter().map(|(p, _)| p.to_string()).collect();
         let host = members[0].1;
         let heading = format!("--- {} @ {host} ---", providers.join("+"));
-        if multi {
-            output::heading(&heading);
-        }
+        // Printed before the first warning, else by sync_listed with the repos.
+        let mut announced = false;
+        let mut announce = || {
+            if multi && !announced {
+                output::heading(&heading);
+                announced = true;
+            }
+        };
         let lists = match res {
             Ok((lock, lists)) => {
                 locks.push(lock);
                 lists
             }
             Err(e) => {
+                announce();
                 output::error(&format!("{host}: {e:#}"));
                 ok = false;
                 continue;
@@ -371,10 +378,12 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
                     }
                 }
                 Err(ListError::Skip(reason)) => {
+                    announce();
                     output::warn(&format!("Skipping {h}: {reason}"));
                     complete = false;
                 }
                 Err(ListError::Fail(e)) => {
+                    announce();
                     output::error(&format!("{h}: {e:#}"));
                     complete = false;
                     ok = false;
@@ -385,8 +394,9 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
             hosts.push(Listed {
                 dir: dir.clone(),
                 repos,
-                label: multi.then(|| (heading, host.to_string())),
+                label: multi.then(|| (heading.clone(), host.to_string())),
                 complete,
+                announced,
             });
         }
     }
@@ -409,7 +419,9 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
     let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
 
     for (i, h) in hosts.iter().enumerate() {
-        if let Some((heading, _)) = &h.label {
+        if let Some((heading, _)) = &h.label
+            && !h.announced
+        {
             output::heading(heading);
         }
         output::info(&format!("Found {} repositories", h.repos.len()));
@@ -944,6 +956,7 @@ pub mod tests {
             repos,
             label: None,
             complete: true,
+            announced: false,
         }
     }
 
