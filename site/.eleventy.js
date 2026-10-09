@@ -3,6 +3,7 @@ const CleanCSS = require("clean-css");
 const syntaxHighlight = require("@11ty/eleventy-plugin-syntaxhighlight");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const isProd = process.env.NODE_ENV === "production";
 
 module.exports = function(eleventyConfig) {
@@ -14,6 +15,13 @@ module.exports = function(eleventyConfig) {
   eleventyConfig.ignores.add("src/google1e3ba38a02f931fb.html");
 
   eleventyConfig.addFilter("isoDate", (d) => new Date(d).toISOString().slice(0, 10));
+  // Cache busting: GitHub Pages lets browsers keep assets for 10 minutes, so
+  // a deploy could serve new HTML with old CSS. The query changes with the content.
+  eleventyConfig.addFilter("assetHash", (url) => {
+    const file = path.join(__dirname, "src", url);
+    const hash = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 10);
+    return `${url}?v=${hash}`;
+  });
 
   eleventyConfig.addCollection("sortedDocs", function(collectionApi) {
     return collectionApi.getFilteredByTag("docs").sort((a, b) => {
