@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Two configured targets sharing a host directory (the same host twice, two providers on one host, or hosts differing only by case) no longer fail with `another sync is already running`. They are listed together under one lock, and prune is skipped for that directory unless every listing succeeded
 - `--prune` could destroy work that existed only locally. It now keeps any repo with uncommitted or untracked changes, unpushed commits or a stash, and never touches repos in `.repos-ignore` or outside `.repos-filter`, which it used to delete. It also stops when more than half of a host's local repos would go, since the remote listing is then likely incomplete; `--force` overrides that check
 - `--prune` now works with `--filter` and only prunes within the filter's scope, instead of being skipped
 - A sync no longer moves the branch you are working on: `git pull origin HEAD` used to fast-forward whatever branch was checked out to the remote default branch. Other branches and detached HEADs are now only fetched (`fetched, on branch work`), and a renamed default branch is detected again
