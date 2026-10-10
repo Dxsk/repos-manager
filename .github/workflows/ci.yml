@@ -21,6 +21,48 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: shellcheck installers/install.sh
 
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      # cargo-mutants diffs against the base branch, which needs real history.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Mozilla's analyser. scripts/code-metrics.py turns its per-function
+      # metrics into budgets and fails on a regression.
+      - name: Install rust-code-analysis
+        run: |
+          curl -fsSL https://github.com/mozilla/rust-code-analysis/releases/download/v0.0.25/rust-code-analysis-linux-cli-x86_64.tar.gz \
+            | sudo tar -xzf - -C /usr/local/bin
+      - run: make metrics
+
+      - name: Install cargo-mutants
+        run: |
+          curl -fsSL https://github.com/sourcefrog/cargo-mutants/releases/latest/download/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xzf - -C "$HOME/.cargo/bin"
+
+      # Tests need a git identity for the commits they create.
+      - run: |
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+
+      # Only the lines the pull request touches: a full run takes hours. A
+      # mutant that survives is behaviour the new tests do not pin down.
+      - name: Mutation testing on the diff
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          cargo mutants --in-diff pr.diff --timeout-multiplier 5 --minimum-test-timeout 120
+
+      - uses: actions/upload-artifact@v5
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: mutants
+          path: mutants.out/
+
   test:
     strategy:
       fail-fast: false

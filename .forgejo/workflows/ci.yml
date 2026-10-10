@@ -22,7 +22,7 @@ jobs:
       - name: Install Rust and tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends shellcheck
+          apt-get install -y --no-install-recommends shellcheck python3
           curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
             --component rustfmt,clippy,llvm-tools-preview
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -31,6 +31,12 @@ jobs:
         run: |
           curl -fsSL https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz \
             | tar -xzf - -C "$HOME/.cargo/bin"
+
+      # Mozilla's analyser, for the per-function complexity budgets.
+      - name: Install rust-code-analysis
+        run: |
+          curl -fsSL https://github.com/mozilla/rust-code-analysis/releases/download/v0.0.25/rust-code-analysis-linux-cli-x86_64.tar.gz \
+            | tar -xzf - -C /usr/local/bin
 
       - uses: actions/cache@v6
         with:
@@ -43,6 +49,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: shellcheck installers/install.sh
+      - run: python3 scripts/code-metrics.py
 
       # Tests need a git identity for the commits they create.
       - name: Tests and coverage

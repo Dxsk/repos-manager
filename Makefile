@@ -1,5 +1,8 @@
 PREFIX ?= $(HOME)/.local
 BIN    := target/release/repos-manager
+# python3 everywhere but Windows, where it is a Microsoft Store stub that
+# exits non-zero instead of running anything.
+PYTHON ?= $(shell python3 -c "" >/dev/null 2>&1 && echo python3 || echo python)
 
 BASH_COMP := $(HOME)/.local/share/bash-completion/completions/repos-manager
 ZSH_COMP  := $(HOME)/.local/share/zsh/site-functions/_repos-manager
@@ -19,6 +22,18 @@ coverage:
 lint:
 	cargo fmt --check
 	cargo clippy --all-targets --locked -- -D warnings
+
+# Per-function complexity budgets, measured with Mozilla's rust-code-analysis.
+# Needs the analyser: cargo install rust-code-analysis-cli --locked
+metrics:
+	$(PYTHON) scripts/code-metrics.py
+
+# Rewrites one expression at a time and checks that a test notices. A mutant
+# that survives is behaviour nothing pins down. The whole suite runs per
+# mutant, so this is slow; CI only mutates what a pull request changes.
+# Needs cargo-mutants: cargo install cargo-mutants --locked
+mutants:
+	cargo mutants --file src/sync.rs --file src/git.rs -j 2 --timeout-multiplier 5
 
 install: build
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/repos-manager
@@ -55,4 +70,4 @@ release:
 	git tag -s "v$(V)" -m "v$(V)"
 	@echo "Now run: git push --follow-tags"
 
-.PHONY: build test coverage lint install uninstall completions uninstall-completions clean release
+.PHONY: build test coverage lint metrics mutants install uninstall completions uninstall-completions clean release
