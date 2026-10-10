@@ -368,13 +368,14 @@ struct Group<'a> {
 
 /// Hosts list concurrently, then all their jobs share one queue so `parallel`
 /// bounds the total number of git processes.
-pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
-    // The host directory, not the (provider, host) pair, is what the lock and
-    // prune act on, so targets sharing one are listed together under one lock.
-    // Hostnames are case-insensitive, and so is the Windows filesystem.
+/// The host directory, not the (provider, host) pair, is what the lock and
+/// prune act on, so targets sharing one are listed together under one lock.
+/// Hostnames are case-insensitive, and so is the Windows filesystem. The same
+/// pair twice is one target; the same host under two providers is two.
+fn group_targets<'a>(targets: &'a [(Provider, String)], base: &Path) -> Vec<Group<'a>> {
     let mut groups: Vec<Group> = Vec::new();
     for (provider, host) in targets {
-        let dir = host_dir(&settings.base_dir, host);
+        let dir = host_dir(base, host);
         let key = dir.to_string_lossy().to_lowercase();
         let member = (*provider, host.as_str());
         match groups.iter_mut().find(|g| g.key == key) {
@@ -387,6 +388,11 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
             }),
         }
     }
+    groups
+}
+
+pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
+    let groups = group_targets(targets, &settings.base_dir);
     let multi = groups.len() > 1;
 
     let listings: Vec<_> = thread::scope(|s| {
@@ -1428,6 +1434,35 @@ pub mod tests {
     }
 
     #[test]
+    fn prune_stops_once_more_than_half_a_host_would_go() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        let filter = no_filter(&base);
+        let setup = |host: &Path, n: usize, keep: usize| {
+            let repos: Vec<_> = (0..n).map(|i| host.join("u").join(i.to_string())).collect();
+            for r in &repos {
+                init_repo(r);
+            }
+            let listed: HashSet<PathBuf> = repos[..keep].iter().cloned().collect();
+            (repos, listed)
+        };
+
+        // Exactly half is still within reason.
+        let host = base.join("half");
+        let (repos, listed) = setup(&host, 4, 2);
+        prune(&base, &host, &listed, &filter, &prune_opts(false, false)).unwrap();
+        assert!(repos[..2].iter().all(|r| r.exists()));
+        assert!(repos[2..].iter().all(|r| !r.exists()));
+
+        // Past half, it refuses until --force.
+        let host = base.join("most");
+        let (repos, listed) = setup(&host, 5, 2);
+        let err = prune(&base, &host, &listed, &filter, &prune_opts(false, false)).unwrap_err();
+        assert!(err.to_string().contains("3 of 5"), "{err}");
+        assert!(repos.iter().all(|r| r.exists()));
+    }
+
+    #[test]
     fn prune_guards_the_base_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("base");
@@ -1479,6 +1514,31 @@ pub mod tests {
         let _lock = HostLock::acquire(&host_dir(tmp.path(), "github.com")).unwrap();
         let targets = [(Provider::Github, "github.com".to_string())];
         assert!(!sync_hosts(&targets, &settings, &SyncOptions::default()));
+    }
+
+    #[test]
+    fn targets_are_grouped_by_directory_without_duplicates() {
+        let base = Path::new("base");
+        let targets = [
+            (Provider::Forgejo, "x.invalid".to_string()),
+            (Provider::Forgejo, "x.invalid".to_string()),
+            (Provider::Github, "x.invalid".to_string()),
+            (Provider::Forgejo, "other.invalid".to_string()),
+        ];
+        let groups = group_targets(&targets, base);
+        let members: Vec<_> = groups.iter().map(|g| g.members.as_slice()).collect();
+        assert_eq!(
+            members,
+            [
+                // The repeated pair is dropped, the second provider is not.
+                &[
+                    (Provider::Forgejo, "x.invalid"),
+                    (Provider::Github, "x.invalid"),
+                ][..],
+                &[(Provider::Forgejo, "other.invalid")][..],
+            ]
+        );
+        assert_eq!(groups[0].dir, host_dir(base, "x.invalid"));
     }
 
     #[test]
