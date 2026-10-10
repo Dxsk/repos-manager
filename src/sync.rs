@@ -244,15 +244,20 @@ struct Job {
     name: String,
 }
 
-/// Jobs per host never exceed sshd's default `MaxStartups` (10): connections
-/// still authenticating are a subset of the open ones, so sshd can never
-/// start dropping ours at random.
+/// Jobs per host, taken from sshd's default `MaxStartups` (`10:30:100`): once
+/// 10 connections are still authenticating, sshd refuses new ones at random.
+/// A job starts only as another ends, so fewer than 10 of ours are ever open
+/// when a new one arrives. That count is server-wide though, and every other
+/// client adds to it: this bounds our share, it does not rule out a refusal.
 const PER_HOST: usize = 10;
 
 /// Run `work` on at most `parallel` threads, never more than `cap` per group.
 /// A free worker serves the group with the fewest running, then the one whose
 /// next item is heaviest: spreading spares any single server, and heaviest
-/// first keeps the makespan within 4/3 of optimal (LPT).
+/// first shortens the tail, since a big job started last sets the makespan.
+/// LPT's 4/3 bound does not carry over: it assumes known durations, identical
+/// machines and no per-group cap, while the repo size only stands in for the
+/// duration here. A heuristic motivated by LPT, not a guarantee.
 fn schedule<T: Send, R: Send>(
     items: Vec<T>,
     parallel: usize,
