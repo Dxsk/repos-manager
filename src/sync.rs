@@ -1132,9 +1132,13 @@ pub mod tests {
     fn lock_is_exclusive_and_released() {
         let tmp = tempfile::tempdir().unwrap();
         let lock = HostLock::acquire(tmp.path()).unwrap();
+        let path = lock.path.clone();
+        assert!(path.is_file());
         assert!(HostLock::acquire(tmp.path()).is_err());
         drop(lock);
         assert!(HostLock::acquire(tmp.path()).is_ok());
+        // Nothing left behind once the last holder is gone.
+        assert!(!path.exists(), "{} survived the lock", path.display());
     }
 
     #[test]
