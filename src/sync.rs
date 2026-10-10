@@ -233,20 +233,19 @@ fn rename_backoff(attempt: u32, to: &Path, windows: bool) -> Option<Duration> {
 }
 
 fn rename_dir(from: &Path, to: &Path) -> Result<()> {
-    let mut attempt = 0;
-    loop {
-        match fs::rename(from, to) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                let Some(wait) = rename_backoff(attempt, to, cfg!(windows)) else {
-                    return Err(anyhow::anyhow!("cannot move clone into place: {e}"));
-                };
-                output::debug(&format!("rename {}: {e}, retrying", from.display()));
-                thread::sleep(wait);
-                attempt += 1;
-            }
-        }
+    // The range bounds the retries, so no counter can leave this spinning.
+    for attempt in 0..=RENAME_ATTEMPTS {
+        let Err(e) = fs::rename(from, to) else {
+            return Ok(());
+        };
+        let Some(wait) = rename_backoff(attempt, to, cfg!(windows)) else {
+            bail!("cannot move clone into place: {e}");
+        };
+        output::debug(&format!("rename {}: {e}, retrying", from.display()));
+        thread::sleep(wait);
     }
+    // Unreachable: the last attempt gets no backoff and bails above.
+    bail!("cannot move {} into place", from.display())
 }
 
 struct Job {

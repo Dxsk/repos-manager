@@ -1,0 +1,25 @@
+# cargo-mutants rewrites one expression at a time and checks that a test
+# notices. Run it with `make mutants`; CI mutates only the lines a pull
+# request touches, so a mutant that survives there is a real gap.
+#
+# The ones listed below survive on purpose. Each depends on the machine the
+# tests run on, or guards a state no test can build. Nothing else is expected
+# to survive. Single quotes: these are regexes, TOML literal strings.
+
+exclude_re = [
+    # Reads the user's own system and global git config, through a subprocess,
+    # once per process. No test can change either without changing the
+    # machine. The parsing half is covered by repo_settings_match_what_git_reads.
+    'replace global_settings',
+
+    # git is installed wherever the tests run, so "always available" reads the
+    # same as the truth. Only a machine without git would tell them apart.
+    'replace available -> bool with true',
+
+    # Guards against rev-parse answering with an empty string, or with the
+    # literal "origin/HEAD". Neither happens on git 2.x: `--verify --quiet`
+    # exits non-zero in both cases, so git::run fails and the value never
+    # reaches the filter. Kept because it costs nothing and shields the
+    # default-branch detection if that ever changes.
+    'replace && with \|\| in update',
+]
