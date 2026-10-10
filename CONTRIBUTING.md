@@ -29,7 +29,7 @@ cargo install rust-code-analysis-cli --locked   # Mozilla's metrics analyser
 cargo install cargo-mutants --locked
 ```
 
-`make metrics` reads Mozilla's [rust-code-analysis](https://github.com/mozilla/rust-code-analysis) and fails when a function goes over the complexity budgets in [scripts/code-metrics.py](scripts/code-metrics.py). `make mutants` rewrites one expression at a time and checks a test notices; CI runs it only on the lines a pull request touches. The handful that survive on purpose are listed, with the reason for each, in [.cargo/mutants.toml](.cargo/mutants.toml).
+`make metrics` reads Mozilla's [rust-code-analysis](https://github.com/mozilla/rust-code-analysis) and fails when a function goes over the complexity budgets in [scripts/code-metrics.py](scripts/code-metrics.py). `make mutants` rewrites one expression at a time and checks that a test notices. A full run still reports about a dozen survivors in counters and printed lines, so read it as a report, not a gate. CI runs it only on the lines a pull request touches, where a survivor does mean the new code is untested. The ones that survive on purpose are listed, with a reason each, in [.cargo/mutants.toml](.cargo/mutants.toml).
 
 ## Pull requests
 

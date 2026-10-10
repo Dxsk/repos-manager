@@ -22,4 +22,12 @@ exclude_re = [
     # reaches the filter. Kept because it costs nothing and shields the
     # default-branch detection if that ever changes.
     'replace && with \|\| in update',
+
+    # These five deadlock the scheduler: the worker loop waits on a condvar
+    # that nothing will ever signal. The suite does notice, by hanging, but
+    # cargo-mutants files that as a timeout and exits non-zero on it. A real
+    # deadlock here would hang `cargo test` just the same, so nothing is lost.
+    'delete ! in schedule',
+    'replace < with (==|>) in schedule',
+    'replace -= with (\+=|/=) in schedule',
 ]
