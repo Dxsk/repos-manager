@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::thread;
 
 use anyhow::{Result, bail};
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use crate::config::Settings;
@@ -507,12 +508,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             .iter()
             .map(|(r, p)| (repo_name(&h.dir, p), p.as_path(), url(r)))
             .collect();
-        let conflicts = path_conflicts(
-            &candidates,
-            cfg!(windows),
-            cfg!(any(windows, target_os = "macos")),
-            origin_url,
-        );
+        let conflicts = path_conflicts(&candidates, Fs::current(), origin_url);
         for (n, (repo, path)) in kept.into_iter().enumerate() {
             let full_name = &repo.full_name;
             if let Some(reason) = conflicts.get(&n) {
@@ -677,31 +673,67 @@ pub fn prune(
     Ok(())
 }
 
+/// When the target filesystem calls two different repo names one directory.
+#[derive(Debug, Clone, Copy)]
+struct Fs {
+    /// Windows refuses some names outright (`aux`, a trailing dot).
+    windows: bool,
+    /// NTFS and APFS fold case, ext4 does not.
+    case_insensitive: bool,
+    /// APFS and HFS+ compare Unicode-normalized, so a precomposed `é` (NFC)
+    /// and a decomposed one (NFD) are the same directory there, while NTFS
+    /// and ext4 compare code points and see two.
+    normalizing: bool,
+}
+
+impl Fs {
+    const fn current() -> Self {
+        Self {
+            windows: cfg!(windows),
+            case_insensitive: cfg!(any(windows, target_os = "macos")),
+            normalizing: cfg!(any(target_os = "macos", target_os = "ios")),
+        }
+    }
+
+    /// The directory a name claims. Two names collide when their keys match.
+    /// Lowercasing can decompose (`İ` becomes `i` plus a combining dot), so
+    /// normalizing again afterwards keeps the key canonical.
+    fn key(&self, name: &str) -> String {
+        let normalize = |s: String| {
+            if self.normalizing {
+                s.nfc().collect()
+            } else {
+                s
+            }
+        };
+        let folded = normalize(name.to_string());
+        if self.case_insensitive {
+            normalize(folded.to_lowercase())
+        } else {
+            folded
+        }
+    }
+}
+
 /// Distinct repos must land in distinct, non-nested directories as the
 /// filesystem sees them, or one clone silently stands in for another. Returns
 /// the losers by index. On a collision the repo already cloned on disk wins,
 /// so a new remote repo never takes over an existing clone.
 fn path_conflicts(
     repos: &[(String, &Path, String)],
-    windows: bool,
-    case_insensitive: bool,
+    target: Fs,
     origin: impl Fn(&Path) -> Option<String>,
 ) -> HashMap<usize, String> {
     let mut losers = HashMap::new();
     // Repos grouped by the directory they would share.
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, (name, _, _)) in repos.iter().enumerate() {
-        if windows && git::invalid_on_windows(name) {
+        if target.windows && git::invalid_on_windows(name) {
             losers.insert(i, "name not allowed on Windows".to_string());
             continue;
         }
         // Windows would also drop trailing dots, but invalid_on_windows rejects those.
-        let key = if case_insensitive {
-            name.to_lowercase()
-        } else {
-            name.clone()
-        };
-        groups.entry(key).or_default().push(i);
+        groups.entry(target.key(name)).or_default().push(i);
     }
     let winner = |members: &[usize]| {
         let (_, path, _) = &repos[members[0]];
@@ -1440,12 +1472,28 @@ pub mod tests {
         assert!(other.exists());
     }
 
-    fn conflicts_of(names: &[&str], windows: bool, ci: bool) -> Vec<(usize, String)> {
+    const LINUX: Fs = Fs {
+        windows: false,
+        case_insensitive: false,
+        normalizing: false,
+    };
+    const MACOS: Fs = Fs {
+        windows: false,
+        case_insensitive: true,
+        normalizing: true,
+    };
+    const WINDOWS: Fs = Fs {
+        windows: true,
+        case_insensitive: true,
+        normalizing: false,
+    };
+
+    fn conflicts_of(names: &[&str], target: Fs) -> Vec<(usize, String)> {
         let repos: Vec<_> = names
             .iter()
             .map(|n| (n.to_string(), Path::new("/nonexistent"), String::new()))
             .collect();
-        let mut out: Vec<_> = path_conflicts(&repos, windows, ci, |_| None)
+        let mut out: Vec<_> = path_conflicts(&repos, target, |_| None)
             .into_iter()
             .collect();
         out.sort();
@@ -1458,13 +1506,13 @@ pub mod tests {
             "u/Repo", "u/repo", "u/trail.", "u/trail", "g/p", "g/p/sub", "u/aux",
         ];
         assert_eq!(
-            conflicts_of(&names, false, false),
+            conflicts_of(&names, LINUX),
             [(5, "nested inside g/p".to_string())]
         );
-        let mac = conflicts_of(&names, false, true);
+        let mac = conflicts_of(&names, MACOS);
         assert_eq!(mac[0], (1, "same directory as u/Repo".into()));
         assert_eq!(mac.len(), 2);
-        let win = conflicts_of(&names, true, true);
+        let win = conflicts_of(&names, WINDOWS);
         assert_eq!(
             win,
             [
@@ -1472,6 +1520,54 @@ pub mod tests {
                 (2, "name not allowed on Windows".into()),
                 (5, "nested inside g/p".into()),
                 (6, "name not allowed on Windows".into()),
+            ]
+        );
+    }
+
+    /// `Fs::current()` is a claim about the running filesystem, so probe it.
+    /// Only one direction has to hold: missing a collision lets one clone
+    /// stand in for another, while an extra one merely skips a repository.
+    #[test]
+    fn the_collision_key_folds_at_least_as_much_as_the_filesystem() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cur = Fs::current();
+        let conflated = |a: &str, b: &str| {
+            let dir = tmp.path().join(a);
+            fs::create_dir_all(&dir).unwrap();
+            let shared = tmp.path().join(b).is_dir();
+            fs::remove_dir_all(&dir).unwrap();
+            !shared || cur.key(a) == cur.key(b)
+        };
+        assert!(conflated("Case", "case"), "case folding missed");
+        assert!(conflated("caf\u{e9}", "cafe\u{301}"), "NFC/NFD missed");
+    }
+
+    #[test]
+    fn unicode_spellings_collide_only_where_the_filesystem_normalizes() {
+        // The same word, precomposed (NFC) then decomposed (NFD).
+        let names = ["u/caf\u{e9}", "u/cafe\u{301}"];
+        assert!(conflicts_of(&names, LINUX).is_empty());
+        assert!(conflicts_of(&names, WINDOWS).is_empty());
+        assert_eq!(
+            conflicts_of(&names, MACOS),
+            [(1, "same directory as u/caf\u{e9}".to_string())]
+        );
+        let nested = ["u/caf\u{e9}", "u/cafe\u{301}/sub"];
+        assert_eq!(
+            conflicts_of(&nested, MACOS),
+            [(1, "nested inside u/caf\u{e9}".to_string())]
+        );
+    }
+
+    /// Shrunk from a proptest failure: every name in a nested chain must lose
+    /// to the outermost one, never to another loser.
+    #[test]
+    fn a_nested_chain_loses_to_the_outermost_name() {
+        assert_eq!(
+            conflicts_of(&["a", "a/a", "a/a/a"], LINUX),
+            [
+                (1, "nested inside a".to_string()),
+                (2, "nested inside a".to_string()),
             ]
         );
     }
@@ -1494,7 +1590,7 @@ pub mod tests {
                 bare.to_str().unwrap().to_string(),
             ),
         ];
-        let losers = path_conflicts(&repos, true, true, origin_url);
+        let losers = path_conflicts(&repos, WINDOWS, origin_url);
         assert_eq!(losers.keys().collect::<Vec<_>>(), [&0]);
     }
 
@@ -1581,10 +1677,29 @@ mod properties {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn names() -> impl Strategy<Value = Vec<String>> {
-        // A tiny alphabet so collisions, nesting and reserved names show up often.
-        let segment = prop::sample::select(vec!["a", "A", "b", "aux", "x.", "p"]);
+        // A tiny alphabet so collisions, nesting and reserved names show up
+        // often. The last two spell one word NFC then NFD: distinct code
+        // points that a normalizing filesystem resolves to one directory.
+        let segment = prop::sample::select(vec![
+            "a",
+            "A",
+            "b",
+            "aux",
+            "x.",
+            "p",
+            "caf\u{e9}",
+            "cafe\u{301}",
+        ]);
         let name = prop::collection::vec(segment, 1..4).prop_map(|s| s.join("/"));
         prop::collection::btree_set(name, 0..12).prop_map(|s| s.into_iter().collect())
+    }
+
+    fn filesystems() -> impl Strategy<Value = Fs> {
+        (any::<bool>(), any::<bool>(), any::<bool>()).prop_map(|(w, ci, n)| Fs {
+            windows: w,
+            case_insensitive: ci,
+            normalizing: n,
+        })
     }
 
     fn is_proper_prefix(parent: &str, child: &str) -> bool {
@@ -1608,19 +1723,20 @@ mod properties {
         #[test]
         fn path_conflicts_leave_an_injective_prefix_free_set(
             names in names(),
-            windows in any::<bool>(),
-            ci in any::<bool>(),
+            target in filesystems(),
         ) {
             let repos: Vec<_> = names
                 .iter()
                 .map(|n| (n.clone(), Path::new("/nonexistent"), String::new()))
                 .collect();
-            let losers = path_conflicts(&repos, windows, ci, |_| None);
-            let key = |i: usize| if ci { names[i].to_lowercase() } else { names[i].clone() };
+            let losers = path_conflicts(&repos, target, |_| None);
+            // The key comes from the code under test: the property is about
+            // the conflict algorithm, not about what the filesystem folds.
+            let key = |i: usize| target.key(&names[i]);
             let winners: Vec<usize> = (0..names.len()).filter(|i| !losers.contains_key(i)).collect();
 
             for (x, &i) in winners.iter().enumerate() {
-                prop_assert!(!(windows && git::invalid_on_windows(&names[i])));
+                prop_assert!(!(target.windows && git::invalid_on_windows(&names[i])));
                 for &j in &winners[x + 1..] {
                     prop_assert_ne!(key(i), key(j), "{} and {} share a directory", names[i], names[j]);
                     prop_assert!(!is_proper_prefix(&key(i), &key(j)) && !is_proper_prefix(&key(j), &key(i)),
@@ -1630,7 +1746,7 @@ mod properties {
             // Every loser is justified by a winner, so nothing is dropped for no reason.
             for (&i, reason) in &losers {
                 if reason == "name not allowed on Windows" {
-                    prop_assert!(windows && git::invalid_on_windows(&names[i]));
+                    prop_assert!(target.windows && git::invalid_on_windows(&names[i]));
                     continue;
                 }
                 let (kind, other) = reason.split_once(' ').map(|(_, r)| r.rsplit_once(' ').unwrap()).unwrap();
