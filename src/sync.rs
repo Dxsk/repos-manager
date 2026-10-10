@@ -1806,6 +1806,134 @@ mod properties {
         }
     }
 
+    /// What a local clone holds beyond what the remote has.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Local {
+        /// A clean clone: pruning it loses nothing.
+        Nothing,
+        Untracked,
+        Staged,
+        UnpushedCommit,
+        Stash,
+        /// A `.git` git cannot read, so its state is unknown.
+        Unreadable,
+        /// Committed here and pushed nowhere.
+        NoRemote,
+    }
+
+    impl Local {
+        /// Work that exists in this clone and nowhere else.
+        fn is_work(self) -> bool {
+            self != Local::Nothing
+        }
+    }
+
+    /// Build a clone in the requested state under `path`.
+    fn plant(path: &Path, state: Local, bare: &Path) {
+        if state == Local::Unreadable {
+            fs::create_dir_all(path.join(".git")).unwrap();
+            return;
+        }
+        if state == Local::NoRemote {
+            fs::create_dir_all(path).unwrap();
+            git(path, &["init", "--quiet"]);
+            git(path, &["commit", "--quiet", "--allow-empty", "-m", "mine"]);
+            return;
+        }
+        assert_eq!(sync_repo(path, bare.to_str().unwrap()).0, Outcome::Cloned);
+        match state {
+            Local::Nothing => {}
+            Local::Untracked => fs::write(path.join("wip.txt"), "x").unwrap(),
+            Local::Staged => {
+                fs::write(path.join("wip.txt"), "x").unwrap();
+                git(path, &["add", "wip.txt"]);
+            }
+            Local::UnpushedCommit => {
+                git(path, &["commit", "--quiet", "--allow-empty", "-m", "local"]);
+            }
+            Local::Stash => {
+                fs::write(path.join("wip.txt"), "x").unwrap();
+                git(path, &["stash", "--quiet", "--include-untracked"]);
+            }
+            Local::Unreadable | Local::NoRemote => unreachable!("handled above"),
+        }
+    }
+
+    proptest! {
+        // Each case builds real repositories, so keep the count low.
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        /// The invariant that matters most: a prune deletes a directory only
+        /// when it is gone from the remote, inside the filter's scope and
+        /// holds nothing that exists nowhere else. The assertion runs both
+        /// ways, so nothing is kept without a reason either.
+        #[test]
+        fn prune_deletes_exactly_the_stale_clones(
+            plan in prop::collection::vec(
+                (
+                    prop::sample::select(vec![
+                        Local::Nothing,
+                        Local::Untracked,
+                        Local::Staged,
+                        Local::UnpushedCommit,
+                        Local::Stash,
+                        Local::Unreadable,
+                        Local::NoRemote,
+                    ]),
+                    any::<bool>(),
+                    prop::sample::select(vec!["u", "team"]),
+                ),
+                1..5,
+            ),
+            ignore in prop::sample::select(vec!["", "*/r0", "team/*"]),
+            filter in prop::sample::select(vec![None, Some("u/*")]),
+        ) {
+            let tmp = tempfile::tempdir().unwrap();
+            let bare = bare_remote(tmp.path());
+            let base = tmp.path().join("base");
+            let host = base.join("h");
+            fs::create_dir_all(&base).unwrap();
+            fs::write(base.join(".repos-ignore"), ignore).unwrap();
+
+            let repos: Vec<(String, PathBuf, Local, bool)> = plan
+                .iter()
+                .enumerate()
+                .map(|(i, (state, listed, group))| {
+                    let path = host.join(group).join(format!("r{i}"));
+                    plant(&path, *state, &bare);
+                    (format!("{group}/r{i}"), path, *state, *listed)
+                })
+                .collect();
+
+            let on_remote: HashSet<PathBuf> = repos
+                .iter()
+                .filter(|(_, _, _, listed)| *listed)
+                .map(|(_, path, _, _)| path.clone())
+                .collect();
+            let filter = RepoFilter::load(&base, filter.map(str::to_string));
+            // --force: the brake on a listing that shrank by more than half is
+            // a separate concern with its own test.
+            let opts = SyncOptions { prune: true, force: true, ..Default::default() };
+            prune(&base, &host, &on_remote, &filter, &opts).unwrap();
+
+            for (name, path, state, listed) in &repos {
+                let in_scope = matches!(filter.decide(name), Decision::Keep);
+                let stale = !listed && in_scope && !state.is_work();
+                // prop_assert_eq! runs the message through concat!, which
+                // rules out implicit captures.
+                prop_assert_eq!(
+                    path.exists(),
+                    !stale,
+                    "{} {:?} listed={} in_scope={}",
+                    name,
+                    state,
+                    listed,
+                    in_scope
+                );
+            }
+        }
+    }
+
     proptest! {
         // Each case clones real repos, so keep the count low.
         #![proptest_config(ProptestConfig::with_cases(6))]
