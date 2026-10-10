@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::{Result, bail};
 use unicode_normalization::UnicodeNormalization;
@@ -219,19 +220,31 @@ fn clone_into(dir: &Path, url: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
-/// Antivirus scanners briefly hold freshly written files open on Windows,
-/// which makes a rename right after the clone fail with access denied.
+const RENAME_ATTEMPTS: u32 = 5;
+
+/// How long to wait before renaming again, or `None` to give up. Antivirus
+/// scanners briefly hold freshly written files open on Windows, which makes a
+/// rename right after a clone fail with access denied. Nowhere else needs it,
+/// and once something occupies the destination retrying can only fail again.
+/// `windows` is a parameter so both policies are testable on either platform.
+fn rename_backoff(attempt: u32, to: &Path, windows: bool) -> Option<Duration> {
+    (windows && attempt < RENAME_ATTEMPTS && !to.exists())
+        .then(|| Duration::from_millis(100 * u64::from(attempt + 1)))
+}
+
 fn rename_dir(from: &Path, to: &Path) -> Result<()> {
     let mut attempt = 0;
     loop {
         match fs::rename(from, to) {
             Ok(()) => return Ok(()),
-            Err(e) if cfg!(windows) && attempt < 5 && !to.exists() => {
-                attempt += 1;
+            Err(e) => {
+                let Some(wait) = rename_backoff(attempt, to, cfg!(windows)) else {
+                    return Err(anyhow::anyhow!("cannot move clone into place: {e}"));
+                };
                 output::debug(&format!("rename {}: {e}, retrying", from.display()));
-                thread::sleep(std::time::Duration::from_millis(100 * attempt));
+                thread::sleep(wait);
+                attempt += 1;
             }
-            Err(e) => return Err(anyhow::anyhow!("cannot move clone into place: {e}")),
         }
     }
 }
@@ -1125,6 +1138,35 @@ pub mod tests {
         assert_eq!(
             sync_repo(&dest, missing.to_str().unwrap()).0,
             Outcome::Errored
+        );
+    }
+
+    #[test]
+    fn rename_retries_only_while_the_destination_is_free() {
+        let tmp = tempfile::tempdir().unwrap();
+        let free = tmp.path().join("free");
+        let taken = tmp.path().join("taken");
+        fs::create_dir(&taken).unwrap();
+
+        assert!(rename_backoff(0, &free, true).is_some());
+        // Nothing but Windows needs this.
+        assert!(rename_backoff(0, &free, false).is_none());
+        // A destination already in use will not free itself.
+        assert!(rename_backoff(0, &taken, true).is_none());
+        assert!(rename_backoff(RENAME_ATTEMPTS - 1, &free, true).is_some());
+        assert!(rename_backoff(RENAME_ATTEMPTS, &free, true).is_none());
+        // Each wait is longer than the last.
+        let waits: Vec<_> = (0..RENAME_ATTEMPTS)
+            .map(|a| rename_backoff(a, &free, true).unwrap())
+            .collect();
+        assert!(waits.windows(2).all(|w| w[0] < w[1]), "{waits:?}");
+        assert_eq!(waits[0], Duration::from_millis(100));
+
+        // A rename that can never work is still reported.
+        let err = rename_dir(&tmp.path().join("missing"), &free).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot move clone into place"),
+            "{err}"
         );
     }
 
