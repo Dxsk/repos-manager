@@ -45,8 +45,6 @@ BUDGETS = {
 # you split one of these up; never raise one.
 BASELINE = {
     "src/sync.rs::sync_listed": {"cognitive": 37},
-    # Was 29 cognitive and 31 cyclomatic before group_targets came out of it.
-    "src/sync.rs::sync_hosts": {"cognitive": 26},
     "src/status.rs::scan": {"cognitive": 27},
 }
 

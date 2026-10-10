@@ -391,6 +391,17 @@ fn group_targets<'a>(targets: &'a [(Provider, String)], base: &Path) -> Vec<Grou
     groups
 }
 
+/// Providers sharing a host directory list into it together, so a project
+/// both of them report is one repository. The first listing wins, which keeps
+/// the order providers were configured in.
+fn merge_unique(into: &mut Vec<Repo>, listed: Vec<Repo>) {
+    for repo in listed {
+        if !into.iter().any(|x| x.full_name == repo.full_name) {
+            into.push(repo);
+        }
+    }
+}
+
 pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &SyncOptions) -> bool {
     let groups = group_targets(targets, &settings.base_dir);
     let multi = groups.len() > 1;
@@ -449,11 +460,7 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
             match list {
                 Ok(r) => {
                     any = true;
-                    for repo in r {
-                        if !repos.iter().any(|x| x.full_name == repo.full_name) {
-                            repos.push(repo);
-                        }
-                    }
+                    merge_unique(&mut repos, r);
                 }
                 Err(ListError::Skip(reason)) => {
                     announce();
@@ -1514,6 +1521,30 @@ pub mod tests {
         let _lock = HostLock::acquire(&host_dir(tmp.path(), "github.com")).unwrap();
         let targets = [(Provider::Github, "github.com".to_string())];
         assert!(!sync_hosts(&targets, &settings, &SyncOptions::default()));
+    }
+
+    #[test]
+    fn providers_on_one_host_merge_into_one_repo_list() {
+        let named = |n: &str, url: &str| Repo {
+            full_name: n.into(),
+            ssh_url: url.into(),
+            https_url: url.into(),
+            ..Default::default()
+        };
+        let mut repos = vec![named("u/a", "first"), named("u/b", "first")];
+        merge_unique(
+            &mut repos,
+            vec![named("u/a", "second"), named("u/c", "second")],
+        );
+        let seen: Vec<_> = repos
+            .iter()
+            .map(|r| (r.full_name.as_str(), r.ssh_url.as_str()))
+            .collect();
+        // u/a keeps the first provider's url, u/c is new.
+        assert_eq!(
+            seen,
+            [("u/a", "first"), ("u/b", "first"), ("u/c", "second")]
+        );
     }
 
     #[test]
