@@ -160,14 +160,16 @@ impl Progress {
 /// A wrapped status line cannot be erased with \r, so it is cut to fit one row.
 fn status_line(st: &State, total: usize, width: usize) -> String {
     let line = format!("  ⟳ [{}/{}] {}", st.done, total, st.running.join(", "));
+    // The last column stays free, or the cursor wraps onto the next row.
     let max = width.saturating_sub(1);
-    if line.chars().count() > max {
-        line.chars()
-            .take(max.saturating_sub(1))
-            .chain(['…'])
-            .collect()
-    } else {
-        line
+    if line.chars().count() <= max {
+        return line;
+    }
+    match max.checked_sub(1) {
+        Some(cut) => line.chars().take(cut).chain(['…']).collect(),
+        // Under two columns there is no room for even the ellipsis, and
+        // COLUMNS is whatever the environment says it is.
+        None => String::new(),
     }
 }
 
@@ -213,10 +215,12 @@ mod properties {
         fn status_line_never_wraps(
             running in prop::collection::vec("[a-zé/⟳ -]{0,30}", 0..6),
             done in 0usize..1000,
-            width in 2usize..200,
+            // From 0, since COLUMNS is whatever the environment says.
+            width in 0usize..200,
         ) {
             let st = State { done, running };
-            prop_assert!(status_line(&st, 1000, width).chars().count() < width);
+            let out = status_line(&st, 1000, width);
+            prop_assert!(out.chars().count() < width.max(1), "{out:?} in {width}");
         }
     }
 }

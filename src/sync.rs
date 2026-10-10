@@ -4,8 +4,10 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::{Result, bail};
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use crate::config::Settings;
@@ -218,19 +220,31 @@ fn clone_into(dir: &Path, url: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
-/// Antivirus scanners briefly hold freshly written files open on Windows,
-/// which makes a rename right after the clone fail with access denied.
+const RENAME_ATTEMPTS: u32 = 5;
+
+/// How long to wait before renaming again, or `None` to give up. Antivirus
+/// scanners briefly hold freshly written files open on Windows, which makes a
+/// rename right after a clone fail with access denied. Nowhere else needs it,
+/// and once something occupies the destination retrying can only fail again.
+/// `windows` is a parameter so both policies are testable on either platform.
+fn rename_backoff(attempt: u32, to: &Path, windows: bool) -> Option<Duration> {
+    (windows && attempt < RENAME_ATTEMPTS && !to.exists())
+        .then(|| Duration::from_millis(100 * u64::from(attempt + 1)))
+}
+
 fn rename_dir(from: &Path, to: &Path) -> Result<()> {
     let mut attempt = 0;
     loop {
         match fs::rename(from, to) {
             Ok(()) => return Ok(()),
-            Err(e) if cfg!(windows) && attempt < 5 && !to.exists() => {
-                attempt += 1;
+            Err(e) => {
+                let Some(wait) = rename_backoff(attempt, to, cfg!(windows)) else {
+                    return Err(anyhow::anyhow!("cannot move clone into place: {e}"));
+                };
                 output::debug(&format!("rename {}: {e}, retrying", from.display()));
-                thread::sleep(std::time::Duration::from_millis(100 * attempt));
+                thread::sleep(wait);
+                attempt += 1;
             }
-            Err(e) => return Err(anyhow::anyhow!("cannot move clone into place: {e}")),
         }
     }
 }
@@ -244,15 +258,20 @@ struct Job {
     name: String,
 }
 
-/// Jobs per host never exceed sshd's default `MaxStartups` (10): connections
-/// still authenticating are a subset of the open ones, so sshd can never
-/// start dropping ours at random.
+/// Jobs per host, taken from sshd's default `MaxStartups` (`10:30:100`): once
+/// 10 connections are still authenticating, sshd refuses new ones at random.
+/// A job starts only as another ends, so fewer than 10 of ours are ever open
+/// when a new one arrives. That count is server-wide though, and every other
+/// client adds to it: this bounds our share, it does not rule out a refusal.
 const PER_HOST: usize = 10;
 
 /// Run `work` on at most `parallel` threads, never more than `cap` per group.
 /// A free worker serves the group with the fewest running, then the one whose
 /// next item is heaviest: spreading spares any single server, and heaviest
-/// first keeps the makespan within 4/3 of optimal (LPT).
+/// first shortens the tail, since a big job started last sets the makespan.
+/// LPT's 4/3 bound does not carry over: it assumes known durations, identical
+/// machines and no per-group cap, while the repo size only stands in for the
+/// duration here. A heuristic motivated by LPT, not a guarantee.
 fn schedule<T: Send, R: Send>(
     items: Vec<T>,
     parallel: usize,
@@ -502,12 +521,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             .iter()
             .map(|(r, p)| (repo_name(&h.dir, p), p.as_path(), url(r)))
             .collect();
-        let conflicts = path_conflicts(
-            &candidates,
-            cfg!(windows),
-            cfg!(any(windows, target_os = "macos")),
-            origin_url,
-        );
+        let conflicts = path_conflicts(&candidates, Fs::current(), origin_url);
         for (n, (repo, path)) in kept.into_iter().enumerate() {
             let full_name = &repo.full_name;
             if let Some(reason) = conflicts.get(&n) {
@@ -672,31 +686,67 @@ pub fn prune(
     Ok(())
 }
 
+/// When the target filesystem calls two different repo names one directory.
+#[derive(Debug, Clone, Copy)]
+struct Fs {
+    /// Windows refuses some names outright (`aux`, a trailing dot).
+    windows: bool,
+    /// NTFS and APFS fold case, ext4 does not.
+    case_insensitive: bool,
+    /// APFS and HFS+ compare Unicode-normalized, so a precomposed `é` (NFC)
+    /// and a decomposed one (NFD) are the same directory there, while NTFS
+    /// and ext4 compare code points and see two.
+    normalizing: bool,
+}
+
+impl Fs {
+    const fn current() -> Self {
+        Self {
+            windows: cfg!(windows),
+            case_insensitive: cfg!(any(windows, target_os = "macos")),
+            normalizing: cfg!(any(target_os = "macos", target_os = "ios")),
+        }
+    }
+
+    /// The directory a name claims. Two names collide when their keys match.
+    /// Lowercasing can decompose (`İ` becomes `i` plus a combining dot), so
+    /// normalizing again afterwards keeps the key canonical.
+    fn key(&self, name: &str) -> String {
+        let normalize = |s: String| {
+            if self.normalizing {
+                s.nfc().collect()
+            } else {
+                s
+            }
+        };
+        let folded = normalize(name.to_string());
+        if self.case_insensitive {
+            normalize(folded.to_lowercase())
+        } else {
+            folded
+        }
+    }
+}
+
 /// Distinct repos must land in distinct, non-nested directories as the
 /// filesystem sees them, or one clone silently stands in for another. Returns
 /// the losers by index. On a collision the repo already cloned on disk wins,
 /// so a new remote repo never takes over an existing clone.
 fn path_conflicts(
     repos: &[(String, &Path, String)],
-    windows: bool,
-    case_insensitive: bool,
+    target: Fs,
     origin: impl Fn(&Path) -> Option<String>,
 ) -> HashMap<usize, String> {
     let mut losers = HashMap::new();
     // Repos grouped by the directory they would share.
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, (name, _, _)) in repos.iter().enumerate() {
-        if windows && git::invalid_on_windows(name) {
+        if target.windows && git::invalid_on_windows(name) {
             losers.insert(i, "name not allowed on Windows".to_string());
             continue;
         }
         // Windows would also drop trailing dots, but invalid_on_windows rejects those.
-        let key = if case_insensitive {
-            name.to_lowercase()
-        } else {
-            name.clone()
-        };
-        groups.entry(key).or_default().push(i);
+        groups.entry(target.key(name)).or_default().push(i);
     }
     let winner = |members: &[usize]| {
         let (_, path, _) = &repos[members[0]];
@@ -1092,12 +1142,45 @@ pub mod tests {
     }
 
     #[test]
+    fn rename_retries_only_while_the_destination_is_free() {
+        let tmp = tempfile::tempdir().unwrap();
+        let free = tmp.path().join("free");
+        let taken = tmp.path().join("taken");
+        fs::create_dir(&taken).unwrap();
+
+        assert!(rename_backoff(0, &free, true).is_some());
+        // Nothing but Windows needs this.
+        assert!(rename_backoff(0, &free, false).is_none());
+        // A destination already in use will not free itself.
+        assert!(rename_backoff(0, &taken, true).is_none());
+        assert!(rename_backoff(RENAME_ATTEMPTS - 1, &free, true).is_some());
+        assert!(rename_backoff(RENAME_ATTEMPTS, &free, true).is_none());
+        // Each wait is longer than the last.
+        let waits: Vec<_> = (0..RENAME_ATTEMPTS)
+            .map(|a| rename_backoff(a, &free, true).unwrap())
+            .collect();
+        assert!(waits.windows(2).all(|w| w[0] < w[1]), "{waits:?}");
+        assert_eq!(waits[0], Duration::from_millis(100));
+
+        // A rename that can never work is still reported.
+        let err = rename_dir(&tmp.path().join("missing"), &free).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot move clone into place"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn lock_is_exclusive_and_released() {
         let tmp = tempfile::tempdir().unwrap();
         let lock = HostLock::acquire(tmp.path()).unwrap();
+        let path = lock.path.clone();
+        assert!(path.is_file());
         assert!(HostLock::acquire(tmp.path()).is_err());
         drop(lock);
         assert!(HostLock::acquire(tmp.path()).is_ok());
+        // Nothing left behind once the last holder is gone.
+        assert!(!path.exists(), "{} survived the lock", path.display());
     }
 
     #[test]
@@ -1435,12 +1518,28 @@ pub mod tests {
         assert!(other.exists());
     }
 
-    fn conflicts_of(names: &[&str], windows: bool, ci: bool) -> Vec<(usize, String)> {
+    const LINUX: Fs = Fs {
+        windows: false,
+        case_insensitive: false,
+        normalizing: false,
+    };
+    const MACOS: Fs = Fs {
+        windows: false,
+        case_insensitive: true,
+        normalizing: true,
+    };
+    const WINDOWS: Fs = Fs {
+        windows: true,
+        case_insensitive: true,
+        normalizing: false,
+    };
+
+    fn conflicts_of(names: &[&str], target: Fs) -> Vec<(usize, String)> {
         let repos: Vec<_> = names
             .iter()
             .map(|n| (n.to_string(), Path::new("/nonexistent"), String::new()))
             .collect();
-        let mut out: Vec<_> = path_conflicts(&repos, windows, ci, |_| None)
+        let mut out: Vec<_> = path_conflicts(&repos, target, |_| None)
             .into_iter()
             .collect();
         out.sort();
@@ -1453,13 +1552,13 @@ pub mod tests {
             "u/Repo", "u/repo", "u/trail.", "u/trail", "g/p", "g/p/sub", "u/aux",
         ];
         assert_eq!(
-            conflicts_of(&names, false, false),
+            conflicts_of(&names, LINUX),
             [(5, "nested inside g/p".to_string())]
         );
-        let mac = conflicts_of(&names, false, true);
+        let mac = conflicts_of(&names, MACOS);
         assert_eq!(mac[0], (1, "same directory as u/Repo".into()));
         assert_eq!(mac.len(), 2);
-        let win = conflicts_of(&names, true, true);
+        let win = conflicts_of(&names, WINDOWS);
         assert_eq!(
             win,
             [
@@ -1467,6 +1566,54 @@ pub mod tests {
                 (2, "name not allowed on Windows".into()),
                 (5, "nested inside g/p".into()),
                 (6, "name not allowed on Windows".into()),
+            ]
+        );
+    }
+
+    /// `Fs::current()` is a claim about the running filesystem, so probe it.
+    /// Only one direction has to hold: missing a collision lets one clone
+    /// stand in for another, while an extra one merely skips a repository.
+    #[test]
+    fn the_collision_key_folds_at_least_as_much_as_the_filesystem() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cur = Fs::current();
+        let conflated = |a: &str, b: &str| {
+            let dir = tmp.path().join(a);
+            fs::create_dir_all(&dir).unwrap();
+            let shared = tmp.path().join(b).is_dir();
+            fs::remove_dir_all(&dir).unwrap();
+            !shared || cur.key(a) == cur.key(b)
+        };
+        assert!(conflated("Case", "case"), "case folding missed");
+        assert!(conflated("caf\u{e9}", "cafe\u{301}"), "NFC/NFD missed");
+    }
+
+    #[test]
+    fn unicode_spellings_collide_only_where_the_filesystem_normalizes() {
+        // The same word, precomposed (NFC) then decomposed (NFD).
+        let names = ["u/caf\u{e9}", "u/cafe\u{301}"];
+        assert!(conflicts_of(&names, LINUX).is_empty());
+        assert!(conflicts_of(&names, WINDOWS).is_empty());
+        assert_eq!(
+            conflicts_of(&names, MACOS),
+            [(1, "same directory as u/caf\u{e9}".to_string())]
+        );
+        let nested = ["u/caf\u{e9}", "u/cafe\u{301}/sub"];
+        assert_eq!(
+            conflicts_of(&nested, MACOS),
+            [(1, "nested inside u/caf\u{e9}".to_string())]
+        );
+    }
+
+    /// Shrunk from a proptest failure: every name in a nested chain must lose
+    /// to the outermost one, never to another loser.
+    #[test]
+    fn a_nested_chain_loses_to_the_outermost_name() {
+        assert_eq!(
+            conflicts_of(&["a", "a/a", "a/a/a"], LINUX),
+            [
+                (1, "nested inside a".to_string()),
+                (2, "nested inside a".to_string()),
             ]
         );
     }
@@ -1489,7 +1636,7 @@ pub mod tests {
                 bare.to_str().unwrap().to_string(),
             ),
         ];
-        let losers = path_conflicts(&repos, true, true, origin_url);
+        let losers = path_conflicts(&repos, WINDOWS, origin_url);
         assert_eq!(losers.keys().collect::<Vec<_>>(), [&0]);
     }
 
@@ -1576,10 +1723,29 @@ mod properties {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn names() -> impl Strategy<Value = Vec<String>> {
-        // A tiny alphabet so collisions, nesting and reserved names show up often.
-        let segment = prop::sample::select(vec!["a", "A", "b", "aux", "x.", "p"]);
+        // A tiny alphabet so collisions, nesting and reserved names show up
+        // often. The last two spell one word NFC then NFD: distinct code
+        // points that a normalizing filesystem resolves to one directory.
+        let segment = prop::sample::select(vec![
+            "a",
+            "A",
+            "b",
+            "aux",
+            "x.",
+            "p",
+            "caf\u{e9}",
+            "cafe\u{301}",
+        ]);
         let name = prop::collection::vec(segment, 1..4).prop_map(|s| s.join("/"));
         prop::collection::btree_set(name, 0..12).prop_map(|s| s.into_iter().collect())
+    }
+
+    fn filesystems() -> impl Strategy<Value = Fs> {
+        (any::<bool>(), any::<bool>(), any::<bool>()).prop_map(|(w, ci, n)| Fs {
+            windows: w,
+            case_insensitive: ci,
+            normalizing: n,
+        })
     }
 
     fn is_proper_prefix(parent: &str, child: &str) -> bool {
@@ -1603,19 +1769,20 @@ mod properties {
         #[test]
         fn path_conflicts_leave_an_injective_prefix_free_set(
             names in names(),
-            windows in any::<bool>(),
-            ci in any::<bool>(),
+            target in filesystems(),
         ) {
             let repos: Vec<_> = names
                 .iter()
                 .map(|n| (n.clone(), Path::new("/nonexistent"), String::new()))
                 .collect();
-            let losers = path_conflicts(&repos, windows, ci, |_| None);
-            let key = |i: usize| if ci { names[i].to_lowercase() } else { names[i].clone() };
+            let losers = path_conflicts(&repos, target, |_| None);
+            // The key comes from the code under test: the property is about
+            // the conflict algorithm, not about what the filesystem folds.
+            let key = |i: usize| target.key(&names[i]);
             let winners: Vec<usize> = (0..names.len()).filter(|i| !losers.contains_key(i)).collect();
 
             for (x, &i) in winners.iter().enumerate() {
-                prop_assert!(!(windows && git::invalid_on_windows(&names[i])));
+                prop_assert!(!(target.windows && git::invalid_on_windows(&names[i])));
                 for &j in &winners[x + 1..] {
                     prop_assert_ne!(key(i), key(j), "{} and {} share a directory", names[i], names[j]);
                     prop_assert!(!is_proper_prefix(&key(i), &key(j)) && !is_proper_prefix(&key(j), &key(i)),
@@ -1625,7 +1792,7 @@ mod properties {
             // Every loser is justified by a winner, so nothing is dropped for no reason.
             for (&i, reason) in &losers {
                 if reason == "name not allowed on Windows" {
-                    prop_assert!(windows && git::invalid_on_windows(&names[i]));
+                    prop_assert!(target.windows && git::invalid_on_windows(&names[i]));
                     continue;
                 }
                 let (kind, other) = reason.split_once(' ').map(|(_, r)| r.rsplit_once(' ').unwrap()).unwrap();
@@ -1682,6 +1849,134 @@ mod properties {
             out.sort();
             prop_assert_eq!(out, (0..n).collect::<Vec<_>>());
             prop_assert!(peak.load(Ordering::SeqCst) <= parallel);
+        }
+    }
+
+    /// What a local clone holds beyond what the remote has.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Local {
+        /// A clean clone: pruning it loses nothing.
+        Nothing,
+        Untracked,
+        Staged,
+        UnpushedCommit,
+        Stash,
+        /// A `.git` git cannot read, so its state is unknown.
+        Unreadable,
+        /// Committed here and pushed nowhere.
+        NoRemote,
+    }
+
+    impl Local {
+        /// Work that exists in this clone and nowhere else.
+        fn is_work(self) -> bool {
+            self != Local::Nothing
+        }
+    }
+
+    /// Build a clone in the requested state under `path`.
+    fn plant(path: &Path, state: Local, bare: &Path) {
+        if state == Local::Unreadable {
+            fs::create_dir_all(path.join(".git")).unwrap();
+            return;
+        }
+        if state == Local::NoRemote {
+            fs::create_dir_all(path).unwrap();
+            git(path, &["init", "--quiet"]);
+            git(path, &["commit", "--quiet", "--allow-empty", "-m", "mine"]);
+            return;
+        }
+        assert_eq!(sync_repo(path, bare.to_str().unwrap()).0, Outcome::Cloned);
+        match state {
+            Local::Nothing => {}
+            Local::Untracked => fs::write(path.join("wip.txt"), "x").unwrap(),
+            Local::Staged => {
+                fs::write(path.join("wip.txt"), "x").unwrap();
+                git(path, &["add", "wip.txt"]);
+            }
+            Local::UnpushedCommit => {
+                git(path, &["commit", "--quiet", "--allow-empty", "-m", "local"]);
+            }
+            Local::Stash => {
+                fs::write(path.join("wip.txt"), "x").unwrap();
+                git(path, &["stash", "--quiet", "--include-untracked"]);
+            }
+            Local::Unreadable | Local::NoRemote => unreachable!("handled above"),
+        }
+    }
+
+    proptest! {
+        // Each case builds real repositories, so keep the count low.
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        /// The invariant that matters most: a prune deletes a directory only
+        /// when it is gone from the remote, inside the filter's scope and
+        /// holds nothing that exists nowhere else. The assertion runs both
+        /// ways, so nothing is kept without a reason either.
+        #[test]
+        fn prune_deletes_exactly_the_stale_clones(
+            plan in prop::collection::vec(
+                (
+                    prop::sample::select(vec![
+                        Local::Nothing,
+                        Local::Untracked,
+                        Local::Staged,
+                        Local::UnpushedCommit,
+                        Local::Stash,
+                        Local::Unreadable,
+                        Local::NoRemote,
+                    ]),
+                    any::<bool>(),
+                    prop::sample::select(vec!["u", "team"]),
+                ),
+                1..5,
+            ),
+            ignore in prop::sample::select(vec!["", "*/r0", "team/*"]),
+            filter in prop::sample::select(vec![None, Some("u/*")]),
+        ) {
+            let tmp = tempfile::tempdir().unwrap();
+            let bare = bare_remote(tmp.path());
+            let base = tmp.path().join("base");
+            let host = base.join("h");
+            fs::create_dir_all(&base).unwrap();
+            fs::write(base.join(".repos-ignore"), ignore).unwrap();
+
+            let repos: Vec<(String, PathBuf, Local, bool)> = plan
+                .iter()
+                .enumerate()
+                .map(|(i, (state, listed, group))| {
+                    let path = host.join(group).join(format!("r{i}"));
+                    plant(&path, *state, &bare);
+                    (format!("{group}/r{i}"), path, *state, *listed)
+                })
+                .collect();
+
+            let on_remote: HashSet<PathBuf> = repos
+                .iter()
+                .filter(|(_, _, _, listed)| *listed)
+                .map(|(_, path, _, _)| path.clone())
+                .collect();
+            let filter = RepoFilter::load(&base, filter.map(str::to_string));
+            // --force: the brake on a listing that shrank by more than half is
+            // a separate concern with its own test.
+            let opts = SyncOptions { prune: true, force: true, ..Default::default() };
+            prune(&base, &host, &on_remote, &filter, &opts).unwrap();
+
+            for (name, path, state, listed) in &repos {
+                let in_scope = matches!(filter.decide(name), Decision::Keep);
+                let stale = !listed && in_scope && !state.is_work();
+                // prop_assert_eq! runs the message through concat!, which
+                // rules out implicit captures.
+                prop_assert_eq!(
+                    path.exists(),
+                    !stale,
+                    "{} {:?} listed={} in_scope={}",
+                    name,
+                    state,
+                    listed,
+                    in_scope
+                );
+            }
         }
     }
 

@@ -18,12 +18,23 @@ make build      # optimized binary in target/release/
 make test       # unit and integration tests
 make coverage   # tests plus line coverage (needs cargo-llvm-cov)
 make lint       # rustfmt and clippy, as enforced by CI
+make metrics    # per-function complexity budgets (needs rust-code-analysis-cli)
+make mutants    # mutation testing on sync and git (needs cargo-mutants, slow)
 ```
+
+The extra tools:
+
+```bash
+cargo install rust-code-analysis-cli --locked   # Mozilla's metrics analyser
+cargo install cargo-mutants --locked
+```
+
+`make metrics` reads Mozilla's [rust-code-analysis](https://github.com/mozilla/rust-code-analysis) and fails when a function goes over the complexity budgets in [scripts/code-metrics.py](scripts/code-metrics.py). `make mutants` rewrites one expression at a time and checks a test notices; CI runs it only on the lines a pull request touches.
 
 ## Pull requests
 
 - Fork the repository and branch from `main`, one feature per PR.
-- `make test` and `make lint` must pass.
+- `make test`, `make lint` and `make metrics` must pass.
 - Add your change under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md) (`### Added`, `### Changed`, `### Removed` or `### Fixed`).
 - Use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`) and do not bump the version: it only changes through `make release`.
 

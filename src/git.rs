@@ -142,6 +142,14 @@ mod tests {
         ];
         assert_eq!(network_guards(&user, false), (vec![], None));
         assert_eq!(network_guards(&[], true).1, None);
+
+        // One guard configured leaves the others in place.
+        let (config, ssh) = network_guards(&["core.sshcommand".to_string()], false);
+        assert_eq!(config, ["http.lowSpeedLimit=1000", "http.lowSpeedTime=60"]);
+        assert_eq!(ssh, None);
+        let (config, ssh) = network_guards(&["http.lowspeedlimit".to_string()], false);
+        assert!(config.is_empty());
+        assert_eq!(ssh.as_deref(), Some(SSH_COMMAND));
     }
 
     #[test]
