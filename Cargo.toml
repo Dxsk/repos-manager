@@ -1,6 +1,6 @@
 [package]
 name = "repos-manager"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.89"
 description = "One CLI to sync them all: clone and update Git repos from GitHub, GitLab, Forgejo, Bitbucket, Sourcehut, OneDev, Radicle and plain git servers"
