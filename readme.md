@@ -45,6 +45,8 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 | Radicle | [`rad`](https://radicle.xyz/guides/user) | |
 | Plain git server | none | Any server with no API: URLs from the config, or listed over SSH (gitolite, Soft Serve) |
 
+GitHub, GitLab and Forgejo are the providers the project is used through day to day, and their listing is covered by offline tests. Sourcehut, OneDev, Bitbucket Data Center and the SSH discovery modes of the plain git server (`gitolite`, `soft-serve`, `find:<root>`) are best effort: implemented against the published API documentation, covered by offline tests only, and never run against a live instance. If one misbehaves, an issue with the raw payload the server returned and the server version is what makes a fix possible. Details in the [provider reference](site/src/docs/providers.md#provider-status).
+
 ## Installation
 
 Prebuilt binaries for every release are on the [GitHub releases page](https://github.com/Dxsk/repos-manager/releases), which has every platform. The [Forgejo releases](https://forge.infrasouveraine.fr/dxsk/repos-manager/releases) carry the Linux and Windows x86_64 builds.

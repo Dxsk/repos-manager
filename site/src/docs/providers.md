@@ -6,18 +6,31 @@ order: 3
 
 ## Provider status
 
-| Provider | Status | Notes |
-|----------|--------|-------|
-| GitHub | Tested | Stable, daily use, GitHub Enterprise via `--host` |
-| GitLab | Tested | Stable, including self-hosted |
-| Forgejo / Gitea / Gogs | Tested | Stable, Gogs through the token login |
-| Bitbucket | Beta | Cloud and Data Center over the API, needs more testing |
-| Radicle | Beta | Experimental, peer-to-peer |
-| Sourcehut | Beta | Experimental, written against `hut` and the GraphQL API |
-| OneDev | Beta | Experimental, written against the REST API |
-| Plain git servers (`any`) | Beta | Experimental, no forge API: config URLs or SSH discovery |
+| Provider | Built from | Exercised against |
+|----------|------------|-------------------|
+| GitHub | `gh` and its API output | Used day to day; listing covered by offline tests |
+| GitLab | `glab` and its API output | Used day to day; listing covered by offline tests |
+| Forgejo / Gitea / Gogs | `tea` and the Gitea API | Used day to day; listing covered by offline tests |
+| Bitbucket Cloud | The Bitbucket Cloud REST API | Offline tests, plus a local HTTP server for paging |
+| Bitbucket Data Center | The published Data Center REST API | Offline tests and a local HTTP server only. Never run against a live instance |
+| Radicle | `rad` | Offline tests |
+| Sourcehut | `hut` and the published GraphQL API | Offline tests of payload parsing and command construction only. Never run against a live instance |
+| OneDev | The published REST API | Offline tests and a local HTTP server only. Never run against a live instance |
+| Plain git servers (`any`), config URLs | The `repos` config | Offline tests |
+| Plain git servers (`any`), SSH discovery: `gitolite`, `soft-serve`, `find:<root>` | The documented output of each tool | Offline tests of the output parsing and command construction only. Never run against a live server |
 
-Everything marked Beta is functional but has not been extensively tested in production, and Sourcehut and OneDev were written against the upstream sources and a public API rather than against a live instance of yours. If you encounter a bug, please [open an issue](https://github.com/Dxsk/repos-manager/issues). Contributions and bug reports are welcome.
+### Best effort surfaces
+
+Sourcehut, OneDev, Bitbucket Data Center and the three SSH discovery modes of the `any` provider (`gitolite`, `soft-serve`, `find:<root>`) are best effort. They are implemented against the published API documentation and covered by offline tests only. No live instance of any of them has ever answered a request from `repos-manager`.
+
+GitHub, GitLab and Forgejo are the paths the project is used through day to day. Their listing is covered by offline tests in the same way, which is not a guarantee against every server version or configuration.
+
+If one of these surfaces fails or lists nothing, please [open an issue](https://github.com/Dxsk/repos-manager/issues) with:
+
+- the raw payload (or command output) the server returned, with tokens and private names removed
+- the server version
+
+Without access to such a server, that payload is what makes a fix possible, and it becomes a test fixture.
 
 Most providers are driven through their official CLI, which must be in your `PATH`. OneDev has no CLI and authenticates with a token saved by `repos-manager onedev login`, and the `any` provider needs nothing but `git` and `ssh`. `repos-manager login` without argument runs the login flow of every provider it can use.
 
