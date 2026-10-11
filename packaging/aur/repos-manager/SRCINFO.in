@@ -1,5 +1,5 @@
 pkgbase = repos-manager
-	pkgdesc = Clone and update every Git repo you can access on GitHub, GitLab, Forgejo, Bitbucket and Radicle
+	pkgdesc = Clone and update every Git repo you can access on GitHub, GitLab, Forgejo, Bitbucket, Sourcehut, OneDev, Radicle and plain git servers
 	pkgver = @VERSION@
 	pkgrel = 1
 	url = https://github.com/Dxsk/repos-manager
@@ -12,7 +12,9 @@ pkgbase = repos-manager
 	depends = glibc
 	optdepends = github-cli: GitHub provider
 	optdepends = glab: GitLab provider
-	optdepends = tea: Forgejo and Gitea login
+	optdepends = tea: Forgejo, Gitea and Gogs login
+	optdepends = hut: Sourcehut provider
+	optdepends = openssh: plain git server discovery
 	conflicts = repos-manager-bin
 	options = !lto
 	source = repos-manager-@VERSION@.tar.gz::https://github.com/Dxsk/repos-manager/archive/refs/tags/v@VERSION@.tar.gz

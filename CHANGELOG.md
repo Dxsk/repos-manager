@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Sourcehut provider (`sourcehut`, alias `srht`), listing through `hut graphql git`. Repository names keep their tilde (`~user/repo`), so a `--filter` pattern needs quoting in a shell. Private and unlisted repos are included, and a repo shared through an ACL appears under its real owner
+- OneDev provider (`onedev`), self-hosted only, with no default host. `repos-manager onedev login` stores an access token per host and the listing pages through `/~api/projects`. Projects with code management disabled are skipped: they are tree nodes with no repository to clone. Git over SSH uses OneDev's port 6611
+- `any` provider (alias `git`) for servers with no forge API, configured under the new `repos` config key: clone URLs listed by hand, or discovered over SSH with `ssh <host> info` (gitolite), `repo list` (Soft Serve) or `find <root> -name '*.git'` on a shell account. Discovery runs in batch mode, so an unknown host key fails with a message instead of stalling the sync
+- Bitbucket Data Center and Server support: any host other than `bitbucket.org` is listed through the 1.0 API with an HTTP access token, sent as a Bearer when no user is stored
+- `gogs` is accepted everywhere `gitea` is, as an alias of the `forgejo` provider, and `repos-manager forgejo login` can store a token without `tea`, which is what makes a Gogs server usable: `tea login add` may refuse one
+
 ### Changed
+
+- **Bitbucket credentials changed shape.** Atlassian removed app passwords on 2026-07-28, so the old credential no longer authenticates anything. Cloud now needs an Atlassian API token sent as Basic auth with the account email, and `~/.config/repos-manager/bitbucket-creds` became a JSON map keyed by host so Cloud and self-hosted instances coexist. An old single-line `user:password` file is still read as the `bitbucket.org` entry, with a warning rather than a silent rewrite
+- The Bitbucket Cloud listing now covers every workspace the user is a member of, instead of the single workspace named after their username
 
 - All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
 - Updates fetch once and fast-forward the already fetched default branch instead of running a second `git pull`, about twice as fast on many repositories. Result lines now say `updated` or `up to date`
@@ -11,6 +22,7 @@
 
 ### Fixed
 
+- A listing could never end on a server that ignores pagination: Gogs answers the repository endpoints with the whole list on every request, whatever `page` says, so the loop kept asking for a full page forever. A listing now stops when a page repeats the previous one, warns, and keeps what it collected
 - A sync could hang forever on a dead connection or a prompt nobody could answer (unknown SSH host key, passphrase without agent, Git Credential Manager window). SSH now runs in batch mode with keepalives, stalled HTTPS transfers are aborted, and every git command and provider listing has a hard timeout (`REPOS_MANAGER_GIT_TIMEOUT`, `REPOS_MANAGER_LIST_TIMEOUT`). Settings you configured yourself are never overridden
 - Repositories whose names map to the same directory once the filesystem normalizes them (`Repo` and `repo` on Windows and macOS, or the two Unicode spellings of `café` on macOS, where APFS compares names normalized) or that would nest inside another clone (GitLab project `g/p` next to subgroup `g/p`) are now skipped with the reason. One clone used to silently stand in for another, or the parent failed on every sync. On a collision the repo already cloned keeps its directory. Names Windows cannot hold (`aux`, `con`, a trailing dot, which made `name.` and `name` share one clone) are skipped too
 - Two configured targets sharing a host directory (the same host twice, two providers on one host, or hosts differing only by case) no longer fail with `another sync is already running`. They are listed together under one lock, and prune is skipped for that directory unless every listing succeeded

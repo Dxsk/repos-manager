@@ -38,9 +38,12 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 |---|---|---|
 | GitHub | [`gh`](https://cli.github.com/) | github.com and GitHub Enterprise |
 | GitLab | [`glab`](https://gitlab.com/gitlab-org/cli) | Groups and nested subgroups |
-| Forgejo / Gitea | [`tea`](https://gitea.com/gitea/tea) | `tea` is used for login only, listing goes through the REST API |
-| Bitbucket | [`bitbucket`](https://crates.io/crates/bitbucket-cli) | Optional, an API fallback is built in |
+| Forgejo / Gitea / Gogs | [`tea`](https://gitea.com/gitea/tea) | Optional: `tea` is used for login only, and `repos-manager forgejo login` can store a token instead |
+| Bitbucket | [`bitbucket`](https://crates.io/crates/bitbucket-cli) | Optional. Cloud with an Atlassian API token, Data Center with an HTTP access token |
+| Sourcehut | [`hut`](https://sr.ht/~xenrox/hut) | Names keep their tilde: `~user/repo` |
+| OneDev | none | Self-hosted, an access token saved by `repos-manager onedev login` |
 | Radicle | [`rad`](https://radicle.xyz/guides/user) | |
+| Plain git server | none | Any server with no API: URLs from the config, or listed over SSH (gitolite, Soft Serve) |
 
 ## Installation
 
@@ -199,7 +202,10 @@ Then compare the result with the matching line in the checksum file. The install
 ### Requirements
 
 - `git`
-- The CLI of each provider you sync: `gh`, `glab`, `tea`, `bitbucket` (optional) or `rad`
+- The CLI of each provider you sync: `gh`, `glab`, `tea`, `hut`, `bitbucket` (optional) or `rad`
+- `ssh`, to sync a plain git server that lists itself
+
+OneDev and plain git servers need no extra CLI at all.
 
 Nothing else: no `bash`, `jq`, `yq` or `curl` needed at runtime.
 
@@ -239,7 +245,7 @@ On Windows, a host with a port (`git.example.org:3000`) is stored as `git.exampl
 |---|---|
 | `repos-manager login [<provider>]` | Logs in to one provider, or to every detected one |
 | `repos-manager <provider> login` | Same, per provider |
-| `repos-manager <provider> sync` | Syncs one provider (`github`, `gitlab`, `forgejo`, `gitea`, `bitbucket`, `radicle`) |
+| `repos-manager <provider> sync` | Syncs one provider (`github`, `gitlab`, `forgejo`, `bitbucket`, `sourcehut`, `onedev`, `radicle`, `any`) |
 | `repos-manager sync --all` | Syncs every configured provider |
 | `repos-manager status` | Lists repos that are dirty, ahead, behind or diverged |
 | `repos-manager init` | Creates the config file |
@@ -247,7 +253,9 @@ On Windows, a host with a port (`git.example.org:3000`) is stored as `git.exampl
 | `repos-manager completions <shell>` | Prints a completion script |
 | `repos-manager version` | Prints the version |
 
-`sync --all` only runs providers whose CLI (or Bitbucket credentials) is available, and one failing host never stops the others. Every provider has its own help: `repos-manager github --help`.
+Aliases: `gitea` and `gogs` for `forgejo`, `srht` for `sourcehut`, `git` for `any`.
+
+`sync --all` only runs providers whose CLI, or saved credentials, is available, and one failing host never stops the others. Every provider has its own help: `repos-manager github --help`.
 
 ### Sync flags
 
@@ -277,9 +285,13 @@ repos-manager github sync --filter Dxsk/repos-manager
 repos-manager sync --all --prune --dry-run
 repos-manager sync --all --prune
 
-# Self-hosted instances (gitea is an alias of forgejo)
+# Self-hosted instances (gitea and gogs are aliases of forgejo)
 repos-manager gitlab sync --host gitlab.example.org
 repos-manager forgejo sync --host forge.example.org
+repos-manager onedev sync --host onedev.example.org
+
+# A plain git server, with no forge API (see "Plain git servers" below)
+repos-manager any sync --host git.example.org
 
 # HTTPS, more jobs, another base directory
 repos-manager sync --all --https --parallel 8 --base-dir /path/to/repos
@@ -318,7 +330,12 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com", "gitlab.example.org"],
     "forgejo":   ["codeberg.org", "forge.example.org"],
-    "bitbucket": ["bitbucket.org"]
+    "bitbucket": ["bitbucket.org", "bitbucket.example.org"],
+    "sourcehut": ["git.sr.ht"],
+    "onedev":    ["onedev.example.org"]
+  },
+  "repos": {
+    "git.example.org": ["git@git.example.org:infra/ansible.git"]
   }
 }
 ```
@@ -331,10 +348,96 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
 | `check_updates` | `true` | Background update check, see [Updating](#updating) |
 | `scan_network_mounts` | `false` | Let `status` walk network and FUSE mounts (Linux) |
 | `hosts.<provider>` | provider's SaaS host | One hostname or a list. Each one is synced into its own `<base_dir>/<host>/` |
+| `repos.<host>` | none | Plain git servers, see the **Plain git servers** block below |
 
-Self-hosted instances need a matching CLI login: `gh auth login --hostname <host>`, `glab auth login --hostname <host>` or `tea login add`.
+OneDev and plain git servers are self-hosted only and have no default host: nothing is synced until you name one.
+
+Self-hosted instances need a matching login: `gh auth login --hostname <host>`, `glab auth login --hostname <host>`, `tea login add` or `repos-manager <provider> login`.
 
 Precedence: flag > environment variable > config file > default.
+
+</details>
+
+<details>
+<summary><b>Plain git servers</b></summary>
+
+<br>
+
+The `any` provider syncs servers that have no forge API at all, including a bare `git init --bare` on a VPS. Its hosts are the keys of `repos`, and each one gets its own directory like any other host. There is nothing to log in to: these hosts use your SSH keys.
+
+List the clone URLs by hand:
+
+```json
+{
+  "repos": {
+    "git.example.org": [
+      "git@git.example.org:infra/ansible.git",
+      "ssh://me@vps.example.org:2222/srv/git/notes.git",
+      "https://git.example.org/a/b/c.git"
+    ]
+  }
+}
+```
+
+The local path comes from the URL, so those three land in `infra/ansible`, `srv/git/notes` and `a/b/c` under their host directory. A URL you listed is used exactly as written, so `--https` does not rewrite it.
+
+Or let the server list itself, when it knows how:
+
+```json
+{
+  "repos": {
+    "gitolite.example.org": { "discover": "gitolite", "user": "git" },
+    "soft.example.org":     { "discover": "soft-serve", "port": 23231 },
+    "vps.example.org":      { "discover": "find:/srv/git", "user": "me", "port": 2222 }
+  }
+}
+```
+
+| `discover` | What runs | Notes |
+|---|---|---|
+| `gitolite` | `ssh [-p <port>] <user>@<host> info` | `user` defaults to `git`. Config patterns (`CREATOR`, wildcards) are not repos and are dropped |
+| `soft-serve` | `ssh -p <port> <host> repo list` | `port` defaults to 23231, [Soft Serve](https://github.com/charmbracelet/soft-serve)'s default |
+| `find:<root>` | `find <root> -name '*.git' -prune` over SSH | Needs a real shell on the remote account, so it does not work with `git-shell` |
+
+`urls` and `discover` can be combined in one entry, and both are synced:
+
+```json
+{
+  "repos": {
+    "vps.example.org": {
+      "urls": ["ssh://me@vps.example.org:2222/srv/git/legacy.git"],
+      "discover": "find:/srv/git",
+      "user": "me",
+      "port": 2222
+    }
+  }
+}
+```
+
+Discovery runs with `BatchMode=yes` and a connect timeout, so an unknown host key or a key with no agent fails with a message instead of stalling the sync.
+
+</details>
+
+<details>
+<summary><b>Credential files</b></summary>
+
+<br>
+
+Providers without a CLI (or whose CLI you did not install) keep a token per host under `~/.config/repos-manager/`, written by `repos-manager <provider> login` with mode `0600` on unix. Each file is a JSON map keyed by host, so several instances coexist.
+
+| File | Written by | Shape |
+|---|---|---|
+| `bitbucket-creds` | `repos-manager bitbucket login` | `{"bitbucket.org":{"user":"me@example.com","token":"..."}}` |
+| `forgejo-creds` | `repos-manager forgejo login` | `{"git.example.org":{"url":"https://git.example.org","token":"..."}}` |
+| `onedev-creds` | `repos-manager onedev login` | `{"onedev.example.org":{"user":"me","token":"..."}}` |
+
+**Bitbucket Cloud:** app passwords were removed by Atlassian on 2026-07-28. Use an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens) with your account email as the user. An old single-line `user:password` file is still read, with a warning telling you to log in again.
+
+**Bitbucket Data Center:** any host other than `bitbucket.org` uses an HTTP access token (*profile picture > Manage account > HTTP access tokens*). Leave the user empty and it is sent as a Bearer, which is what project- and repository-scoped tokens require.
+
+**Forgejo / Gitea / Gogs:** a matching `tea` login wins over this file. The file is what makes Gogs work, since `tea login add` may refuse a Gogs server.
+
+**OneDev:** create the token at `https://<host>/~my/access-tokens`. Git over SSH uses OneDev's own port, 6611, which must be reachable unless you sync with `--https`.
 
 </details>
 

@@ -26,7 +26,7 @@ pub enum Command {
     Github(ProviderCmd),
     /// GitLab (uses the glab CLI)
     Gitlab(ProviderCmd),
-    /// Forgejo / Gitea / Gogs (tea login, API listing)
+    /// Forgejo / Gitea / Gogs (tea or a saved token, API listing)
     #[command(alias = "gitea", alias = "gogs")]
     Forgejo(ProviderCmd),
     /// Bitbucket (uses the bitbucket CLI or the API)
