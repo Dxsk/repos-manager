@@ -31,6 +31,8 @@ cargo install cargo-mutants --locked
 
 `make metrics` reads Mozilla's [rust-code-analysis](https://github.com/mozilla/rust-code-analysis) and fails when a function goes over the complexity budgets in [scripts/code-metrics.py](scripts/code-metrics.py). `make mutants` rewrites one expression at a time and checks that a test notices. A full run still reports about a dozen survivors in counters and printed lines, so read it as a report, not a gate. CI runs it only on the lines a pull request touches, where a survivor does mean the new code is untested. The ones that survive on purpose are listed, with a reason each, in [.cargo/mutants.toml](.cargo/mutants.toml).
 
+Two environment variables exist for the tests only and are not part of the user interface: `REPOS_MANAGER_UPDATE_URL` (plus `_CACHE` and `_TTL`) points the update check at a local server, and `REPOS_MANAGER_FAKE_TTY=1` makes the sync confirmation behave as if stdin and stdout were terminals, since `cargo test` has none.
+
 ## Pull requests
 
 - Fork the repository and branch from `main`, one feature per PR.

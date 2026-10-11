@@ -281,6 +281,16 @@ struct Forge {
 }
 
 fn forge(repos_status: u16) -> Forge {
+    forge_listing(repos_status, &[("me/repo".to_string(), None)])
+}
+
+/// `n` repositories named `me/repo0`..., each reporting `size_kb`, or no size
+/// at all like the providers that have no size to report.
+fn listing(n: usize, size_kb: Option<u64>) -> Vec<(String, Option<u64>)> {
+    (0..n).map(|i| (format!("me/repo{i}"), size_kb)).collect()
+}
+
+fn forge_listing(repos_status: u16, listed: &[(String, Option<u64>)]) -> Forge {
     let tmp = tempfile::tempdir().unwrap();
     let bare = tmp.path().join("remote.git");
     let seed = tmp.path().join("seed");
@@ -300,12 +310,21 @@ fn forge(repos_status: u16) -> Forge {
     git(&seed, &["commit", "--quiet", "--allow-empty", "-m", "init"]);
     git(&seed, &["push", "--quiet", bare.to_str().unwrap(), "main"]);
 
-    let repos = serde_json::json!([{
-        "full_name": "me/repo",
-        "ssh_url": bare.to_str().unwrap(),
-        "html_url": "https://unused/me/repo",
-    }])
-    .to_string();
+    let items: Vec<serde_json::Value> = listed
+        .iter()
+        .map(|(name, size_kb)| {
+            let mut item = serde_json::json!({
+                "full_name": name,
+                "ssh_url": bare.to_str().unwrap(),
+                "html_url": format!("https://unused/{name}"),
+            });
+            if let Some(kb) = size_kb {
+                item["size"] = (*kb).into();
+            }
+            item
+        })
+        .collect();
+    let repos = serde_json::Value::Array(items).to_string();
     let server = Server::start(move |target| {
         if target.starts_with("/api/v1/user/repos") {
             Response {
@@ -335,8 +354,12 @@ fn forge(repos_status: u16) -> Forge {
 }
 
 impl Forge {
-    fn sync(&self, extra: &[&str]) -> Output {
-        let base = self.tmp.path().join("base");
+    fn base(&self) -> PathBuf {
+        self.tmp.path().join("base")
+    }
+
+    fn sync_cmd(&self, extra: &[&str]) -> Command {
+        let base = self.base();
         let mut args = vec![
             "forgejo",
             "sync",
@@ -346,11 +369,32 @@ impl Forge {
             base.to_str().unwrap(),
         ];
         args.extend_from_slice(extra);
-        cmd(&args)
-            .env("TEA_CONFIG", &self.tea_config)
-            .output()
-            .unwrap()
+        let mut c = cmd(&args);
+        c.env("TEA_CONFIG", &self.tea_config);
+        c
     }
+
+    fn sync(&self, extra: &[&str]) -> Output {
+        self.sync_cmd(extra).output().unwrap()
+    }
+}
+
+/// Run with both streams pretending to be terminals and `reply` typed at the
+/// prompt. `REPOS_MANAGER_FAKE_TTY` exists for this: `cargo test` has no tty.
+fn prompted(mut command: Command, reply: &str) -> Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = command
+        .env("REPOS_MANAGER_FAKE_TTY", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(reply.as_bytes()).unwrap();
+    drop(stdin);
+    child.wait_with_output().unwrap()
 }
 
 #[test]
@@ -825,4 +869,181 @@ fn a_partial_listing_is_never_pruned() {
         out.contains("Pruning skipped: the repository list of this host is incomplete"),
         "{out}"
     );
+}
+
+/// 200 MB each, six of them: over the default thresholds.
+fn big_forge() -> Forge {
+    forge_listing(200, &listing(6, Some(200_000)))
+}
+
+/// The whole promise of the recon: a daily sync, where nothing is new and
+/// nothing is big, says not one word more than it always has.
+#[test]
+fn a_small_sync_is_never_summarized_nor_questioned() {
+    let f = forge_listing(200, &listing(2, Some(1024)));
+    for pass in ["clone", "update"] {
+        // A terminal changes nothing: the thresholds are what keep it quiet.
+        let o = prompted(f.sync_cmd(&[]), "");
+        assert!(o.status.success(), "{pass}: {}", stderr(&o));
+        let out = stdout(&o);
+        assert!(!out.contains("in scope"), "{pass}: {out}");
+        assert!(!out.contains("Proceed?"), "{pass}: {out}");
+        assert!(!out.contains("to download"), "{pass}: {out}");
+        assert!(out.contains("Found 2 repositories"), "{pass}: {out}");
+    }
+    let o = f.sync(&[]);
+    assert!(
+        stdout(&o).contains("Done: 0 cloned, 2 updated, 0 skipped, 0 errors"),
+        "{}",
+        stdout(&o)
+    );
+}
+
+/// Cron and CI: no terminal, so no question, but the summary is still printed
+/// and the sync carries on.
+#[test]
+fn without_a_terminal_the_summary_prints_and_the_sync_goes_on() {
+    let f = big_forge();
+    let o = f.sync(&[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains("6 in scope, 0 cloned, 6 new (1.1 GB)"),
+        "{out}"
+    );
+    assert!(out.contains("biggest new: me/repo0 195 MB"), "{out}");
+    assert!(
+        out.contains("6 clones, 0 updates, about 1.1 GB to download."),
+        "{out}"
+    );
+    assert!(!out.contains("Proceed?"), "{out}");
+    assert_eq!(clone_names(&f.base()).len(), 6, "{out}");
+}
+
+#[test]
+fn over_the_threshold_one_question_covers_the_run() {
+    let f = big_forge();
+    let o = prompted(f.sync_cmd(&[]), "n\n");
+    assert!(o.status.success(), "declining is not a failure");
+    let out = stdout(&o);
+    assert_eq!(out.matches("Proceed? [Y/n]").count(), 1, "{out}");
+    assert!(
+        out.contains("Nothing was cloned. Narrow the scope"),
+        "{out}"
+    );
+    for hint in ["--filter", "--ignore", ".repos.yml"] {
+        assert!(out.contains(hint), "{out}");
+    }
+    assert!(out.contains("6 in scope"), "{out}");
+    assert!(clone_names(&f.base()).is_empty(), "{out}");
+
+    // An empty line is the default, and the default is yes.
+    let o = prompted(f.sync_cmd(&[]), "\n");
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(clone_names(&f.base()).len(), 6, "{}", stdout(&o));
+}
+
+#[test]
+fn dry_run_and_yes_summarize_without_asking() {
+    let f = big_forge();
+    let o = prompted(f.sync_cmd(&["--dry-run"]), "");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("6 clones, 0 updates, about 1.1 GB"), "{out}");
+    assert!(!out.contains("Proceed?"), "{out}");
+    assert!(clone_names(&f.base()).is_empty(), "{out}");
+
+    let o = prompted(f.sync_cmd(&["-y"]), "");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("6 in scope, 0 cloned, 6 new"), "{out}");
+    assert!(!out.contains("Proceed?"), "{out}");
+    assert_eq!(clone_names(&f.base()).len(), 6, "{out}");
+}
+
+/// Plain git servers report no size at all, and one unreadable URL makes the
+/// listing short: the summary has to own up to both before asking.
+#[test]
+fn an_unknown_volume_and_a_short_listing_are_named_before_the_question() {
+    let tmp = tempfile::tempdir().unwrap();
+    let urls: Vec<String> = (0..5)
+        .map(|i| format!("\"{}\"", bare_url(tmp.path(), &format!("r{i}"))))
+        .collect();
+    let config = tmp.path().join("config.json");
+    fs::write(
+        &config,
+        format!(
+            r#"{{"repos":{{"local.invalid":[{},"nonsense"]}}}}"#,
+            urls.join(",")
+        ),
+    )
+    .unwrap();
+    let base = tmp.path().join("base");
+    let mut command = cmd(&[
+        "any",
+        "sync",
+        "--prune",
+        "--base-dir",
+        base.to_str().unwrap(),
+    ]);
+    command.env("REPOS_MANAGER_CONFIG", &config);
+
+    let o = prompted(command, "n\n");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("5 in scope, 0 cloned, 5 new (?)"), "{out}");
+    assert!(
+        out.contains("with --prune: skipped, the repository list of this host is incomplete"),
+        "{out}"
+    );
+    assert!(
+        out.contains("5 clones, 0 updates, unknown download volume."),
+        "{out}"
+    );
+    assert!(!out.contains("biggest new"), "{out}");
+    assert_eq!(out.matches("Proceed? [Y/n]").count(), 1, "{out}");
+    assert!(clone_names(&base).is_empty(), "{out}");
+}
+
+/// `confirm_sync` lives in config.json: the machine decides when to ask, the
+/// workspace's `.repos.yml` decides what is in scope.
+#[test]
+fn confirm_sync_never_still_prints_the_summary() {
+    let f = big_forge();
+    let config = f.tmp.path().join("config.json");
+    fs::write(&config, r#"{"confirm_sync":"never"}"#).unwrap();
+    let mut command = f.sync_cmd(&[]);
+    command.env("REPOS_MANAGER_CONFIG", &config);
+    let o = prompted(command, "n\n");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("6 in scope, 0 cloned, 6 new"), "{out}");
+    assert!(!out.contains("Proceed?"), "{out}");
+    assert_eq!(clone_names(&f.base()).len(), 6, "{out}");
+}
+
+/// `confirm_sync: always` asks even for a single update, and a lower
+/// `confirm_new_repos` moves the line where the question appears.
+#[test]
+fn confirm_sync_always_asks_for_anything_to_do() {
+    let f = forge_listing(200, &listing(1, Some(1024)));
+    let config = f.tmp.path().join("config.json");
+    fs::write(&config, r#"{"confirm_sync":"always"}"#).unwrap();
+    let ask = |reply: &str| {
+        let mut command = f.sync_cmd(&[]);
+        command.env("REPOS_MANAGER_CONFIG", &config);
+        prompted(command, reply)
+    };
+    let o = ask("n\n");
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        stdout(&o).contains("1 in scope, 0 cloned, 1 new"),
+        "{}",
+        stdout(&o)
+    );
+    assert!(clone_names(&f.base()).is_empty());
+
+    let o = ask("y\n");
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(clone_names(&f.base()), ["repo0"]);
 }

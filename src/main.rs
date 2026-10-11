@@ -4,6 +4,7 @@ mod git;
 mod http;
 mod matcher;
 mod output;
+mod plan;
 mod process;
 mod providers;
 mod status;
@@ -55,6 +56,7 @@ fn apply_sync(settings: &mut Settings, args: &SyncArgs) -> SyncOptions {
         prune: args.prune,
         force: args.force,
         dry_run: args.dry_run,
+        assume_yes: args.yes,
     }
 }
 

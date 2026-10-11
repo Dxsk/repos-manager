@@ -23,6 +23,9 @@ This creates `~/.config/repos-manager/config.json`. The path is the same on ever
   "check_updates": true,
   "scan_network_mounts": false,
   "gitlab_statistics": true,
+  "confirm_sync": "auto",
+  "confirm_new_repos": 5,
+  "confirm_download_gb": 1,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],
@@ -42,6 +45,9 @@ This creates `~/.config/repos-manager/config.json`. The path is the same on ever
 | `check_updates` | Check for a newer release and show a banner | `true` |
 | `scan_network_mounts` | Let `status` traverse FUSE, NFS or SMB mounts under `base_dir` (see warning below) | `false` |
 | `gitlab_statistics` | Ask GitLab for repository sizes. The full project serializer makes the listing heavier than `simple=true`; set `false` to turn it off, sizes then stay unknown | `true` |
+| `confirm_sync` | When a sync asks before cloning: `auto`, `always` or `never` (see below) | `auto` |
+| `confirm_new_repos` | New clones, counted across the whole run, that make `auto` ask | `5` |
+| `confirm_download_gb` | Gigabytes to download, counted across the whole run, that make `auto` ask | `1` |
 | `hosts.<provider>` | List of hosts to sync for that provider | See defaults below |
 | `repos.<host>` | Plain git servers with no forge API, synced by the `any` provider | Empty |
 
@@ -56,6 +62,30 @@ Opt out at any time without editing the config file:
 ```bash
 REPOS_MANAGER_NO_UPDATE_CHECK=1 repos-manager status
 ```
+
+### Sync confirmation
+
+Before the first clone, `sync` reports what it is about to do, and asks once when the run is big (see Usage, Before it clones). These three keys decide when that happens. They describe **the machine**, which is why they live here and not in the workspace's `.repos.yml`: what to sync is a property of the directory, how careful to be before downloading is a property of the computer you are on.
+
+{% raw %}
+```json
+{
+  "confirm_sync": "auto",
+  "confirm_new_repos": 5,
+  "confirm_download_gb": 1
+}
+```
+{% endraw %}
+
+| `confirm_sync` | Behaviour |
+|----------------|-----------|
+| `auto` (default) | Summarize and ask only when the run crosses `confirm_new_repos` or `confirm_download_gb` |
+| `always` | Ask as soon as there is anything to clone or update |
+| `never` | Never ask. A run over the thresholds is still summarized, so the information is not lost |
+
+Both thresholds are counted over the whole run, not per host, so `sync --all` asks once or not at all. A laptop on a metered connection is a good place for `"confirm_download_gb": 0.2`, a workstation on fibre for `"confirm_sync": "never"`.
+
+Whatever the mode, the question is only ever asked when stdin and stdout are both terminals: a scheduled sync or a CI job prints the summary and carries on. `--yes` and `--dry-run` also print the summary without asking.
 
 ### Network-mount scanning
 

@@ -267,6 +267,7 @@ Aliases: `gitea` and `gogs` for `forgejo`, `srht` for `sourcehut`, `git` for `an
 | `--prune` | Remove local repos that no longer exist on the remote |
 | `--force` | With `--prune`, go ahead even when most local repos would be removed |
 | `--dry-run` | Show what would be done without changing anything |
+| `-y`, `--yes` | Clone without asking, however much there is to download |
 | `--host <host>` | Target a self-hosted instance (provider sync only) |
 | `--parallel <n>` | Number of parallel jobs (default: 4) |
 | `-v`, `--verbose` | Show debug output |
@@ -284,6 +285,9 @@ repos-manager github sync --filter Dxsk/repos-manager
 # Several patterns, and a few exceptions
 repos-manager sync --all --filter 'Dxsk/*' --filter 'other-org/tooling'
 repos-manager sync --all --ignore 'Dxsk/old-*'
+
+# A big first sync, with no question asked
+repos-manager sync --all --yes
 
 # Preview, then clean up repos deleted on the remote
 repos-manager sync --all --prune --dry-run
@@ -314,6 +318,30 @@ If more than half of the local repos of a host would go, the remote listing prob
 
 Each host has its own lock, so two syncs of the same host cannot overlap while different hosts sync side by side. The lock is released by the OS if the process dies.
 
+### Before it clones
+
+A sync lists every host first, then says what it is about to do:
+
+```
+github.com   42 in scope, 39 cloned, 3 new (1.2 GB)
+             biggest new: org/a 586 MB, org/b 586 MB
+gitlab.corp  18 in scope, 0 cloned, 18 new (4.7 GB, 2 unknown)
+             biggest new: team/monorepo 3.1 GB, team/assets 900 MB
+             with --prune: 2 local repos would be deleted
+
+21 clones, 39 updates, about 5.9 GB to download, 2 of unknown size.
+Proceed? [Y/n]
+```
+
+- `in scope` is what the filters kept for that host, `cloned` what is already on disk and `new` what would be cloned. The volume in brackets covers the new repos only: an update transfers very little.
+- Those figures are the repository sizes the forge APIs report, measured on the server, not the size of the transfer, which is why the total says **about**. A size a provider does not report counts as unknown and is never estimated: a host whose new repos all have unknown sizes shows `?`.
+- You only see this when the run is worth a word: by default 5 new clones or more, or 1 GB or more to download, counted across the whole run. A daily sync where nothing is new prints exactly what it always did.
+- The question is asked once for the whole run, `sync --all` included, and only when stdin and stdout are both terminals. A cron job or a CI step gets the summary and carries on, it never waits for an answer.
+- `-y` and `--dry-run` print the summary without asking. Answering `n` exits successfully, clones nothing and says how to narrow the scope.
+- A host whose listing came back short already has `--prune` disabled, and the summary says so before the question rather than after the run.
+
+Thresholds and prompting are set per machine with `confirm_sync`, `confirm_new_repos` and `confirm_download_gb` in the config file.
+
 ## Configuration
 
 <details open>
@@ -331,6 +359,9 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
   "check_updates": true,
   "scan_network_mounts": false,
   "gitlab_statistics": true,
+  "confirm_sync": "auto",
+  "confirm_new_repos": 5,
+  "confirm_download_gb": 1,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com", "gitlab.example.org"],
@@ -353,6 +384,9 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
 | `check_updates` | `true` | Background update check, see [Updating](#updating) |
 | `scan_network_mounts` | `false` | Let `status` walk network and FUSE mounts (Linux) |
 | `gitlab_statistics` | `true` | Ask GitLab for repository sizes (a heavier listing); `false` keeps the light listing and sizes stay unknown |
+| `confirm_sync` | `auto` | When a sync asks before cloning: `auto` over the thresholds below, `always` as soon as there is anything to do, `never` for no question at all (a big run is still summarized) |
+| `confirm_new_repos` | `5` | New clones, run-wide, that make `auto` ask |
+| `confirm_download_gb` | `1` | Gigabytes to download, run-wide, that make `auto` ask |
 | `hosts.<provider>` | provider's SaaS host | One hostname or a list. Each one is synced into its own `<base_dir>/<host>/` |
 | `repos.<host>` | none | Plain git servers, see the **Plain git servers** block below |
 

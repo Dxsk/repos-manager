@@ -14,6 +14,7 @@ use crate::config::Settings;
 use crate::git;
 use crate::matcher::{Decision, HostFilter, RepoFilter};
 use crate::output;
+use crate::plan::{self, Plan};
 use crate::providers::{ListError, Provider, Repo};
 
 #[derive(Debug, Clone, Default)]
@@ -25,6 +26,8 @@ pub struct SyncOptions {
     pub prune: bool,
     pub force: bool,
     pub dry_run: bool,
+    /// `-y`: print the recon summary but never ask.
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -114,7 +117,7 @@ fn repo_path(host_dir: &Path, full_name: &str) -> PathBuf {
 }
 
 pub fn sync_repo(local_path: &Path, clone_url: &str) -> (Outcome, String) {
-    if local_path.join(".git").is_dir() {
+    if git::is_clone(local_path) {
         if git::is_dirty(local_path) {
             return (Outcome::Skipped, "dirty, skipped".into());
         }
@@ -546,7 +549,76 @@ fn warn_empty_scope(host: &str, filter: &HostFilter<'_>) {
     ));
 }
 
-/// Everything after listing: filter, clone/update, prune, report.
+/// One host's jobs and its row in the recon, built from the repos the filter
+/// kept. Returns every listed path (which prune must never touch) and how
+/// many repos were left out, on top of the row.
+fn collect_host(
+    index: usize,
+    h: &Listed,
+    filter: &HostFilter<'_>,
+    settings: &Settings,
+    opts: &SyncOptions,
+    jobs: &mut Vec<Job>,
+) -> (HashSet<PathBuf>, usize, plan::HostRow) {
+    let (listed, kept, mut skipped) = in_scope(h, filter);
+    let url = |r: &Repo| r.clone_url(settings.use_https).to_string();
+    let candidates: Vec<_> = kept
+        .iter()
+        .map(|(r, p)| (repo_name(&h.dir, p), p.as_path(), url(r)))
+        .collect();
+    let conflicts = path_conflicts(&candidates, Fs::current(), origin_url);
+    let mut row = plan::HostRow {
+        host: h.host.clone(),
+        incomplete: !h.complete,
+        ..Default::default()
+    };
+    for (n, (repo, path)) in kept.into_iter().enumerate() {
+        let full_name = &repo.full_name;
+        if let Some(reason) = conflicts.get(&n) {
+            output::warn(&format!("{full_name} (skipped: {reason})"));
+            skipped += 1;
+            continue;
+        }
+        // One answer for the recon, the dry run and the job weight alike.
+        let on_disk = git::is_clone(&path);
+        if on_disk {
+            row.cloned += 1;
+        } else {
+            row.new.push(plan::NewRepo {
+                name: full_name.clone(),
+                size_kb: repo.size_kb,
+            });
+        }
+        if opts.dry_run {
+            let verb = if on_disk { "update" } else { "clone" };
+            output::info(&format!("  [dry-run] would {verb} {full_name}"));
+            continue;
+        }
+        jobs.push(Job {
+            host: index,
+            weight: if on_disk {
+                0
+            } else {
+                repo.size_kb.unwrap_or(0) + 1
+            },
+            path,
+            url: url(repo),
+            name: if h.heading.is_some() {
+                format!("{}/{full_name}", h.host)
+            } else {
+                full_name.clone()
+            },
+        });
+    }
+    // A host whose listing is short already has prune disabled, and the
+    // summary says so instead of promising a count.
+    row.prunable = (opts.prune && h.complete).then(|| prunable(&h.dir, &listed, filter));
+    (listed, skipped, row)
+}
+
+/// Everything after listing: filter, recon, clone/update, prune, report.
+/// An empty result means the user declined: nothing ran, and that is not an
+/// error.
 fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec<Result<Summary>> {
     // A broken filter file must stop every host: it would otherwise run with
     // a wider scope than the user wrote, and --prune acts on that scope.
@@ -558,6 +630,10 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
     let mut jobs = Vec::new();
     // Per host: every listed path (never pruned) and repos skipped by the filter.
     let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
+    let mut plan = Plan {
+        prune: opts.prune,
+        ..Default::default()
+    };
 
     for ((i, h), host_filter) in hosts.iter().enumerate().zip(&filters) {
         if let Some(heading) = &h.heading
@@ -567,46 +643,16 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         }
         output::info(&format!("Found {} repositories", h.repos.len()));
         output::blank();
-        let (listed, kept, mut skipped) = in_scope(h, host_filter);
-        let url = |r: &Repo| r.clone_url(settings.use_https).to_string();
-        let candidates: Vec<_> = kept
-            .iter()
-            .map(|(r, p)| (repo_name(&h.dir, p), p.as_path(), url(r)))
-            .collect();
-        let conflicts = path_conflicts(&candidates, Fs::current(), origin_url);
-        for (n, (repo, path)) in kept.into_iter().enumerate() {
-            let full_name = &repo.full_name;
-            if let Some(reason) = conflicts.get(&n) {
-                output::warn(&format!("{full_name} (skipped: {reason})"));
-                skipped += 1;
-                continue;
-            }
-            if opts.dry_run {
-                let verb = if path.join(".git").is_dir() {
-                    "update"
-                } else {
-                    "clone"
-                };
-                output::info(&format!("  [dry-run] would {verb} {full_name}"));
-                continue;
-            }
-            jobs.push(Job {
-                host: i,
-                weight: if path.join(".git").is_dir() {
-                    0
-                } else {
-                    repo.size_kb.unwrap_or(0) + 1
-                },
-                path,
-                url: url(repo),
-                name: if h.heading.is_some() {
-                    format!("{}/{full_name}", h.host)
-                } else {
-                    full_name.clone()
-                },
-            });
-        }
+        let (listed, skipped, row) = collect_host(i, h, host_filter, settings, opts, &mut jobs);
+        plan.hosts.push(row);
         plans.push((listed, skipped));
+    }
+
+    // The recon: here the scope, the local state and the new repos are known
+    // for every host, and nothing has been cloned yet. One question per run.
+    let skip_prompt = opts.assume_yes || opts.dry_run;
+    if !plan::approved(&plan, &settings.confirm, skip_prompt, &settings.base_dir) {
+        return Vec::new();
     }
 
     let multi = hosts.len() > 1;
@@ -674,6 +720,29 @@ pub fn find_repos(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Local repos `--prune` would act on: no longer listed, and in the scope of
+/// this host's filter.
+fn prune_candidates<'a>(
+    host_dir: &Path,
+    local: &'a [PathBuf],
+    listed: &HashSet<PathBuf>,
+    filter: &HostFilter<'_>,
+) -> Vec<&'a PathBuf> {
+    local
+        .iter()
+        .filter(|r| !listed.contains(*r))
+        .filter(|r| matches!(filter.decide(&repo_name(host_dir, r)), Decision::Keep))
+        .collect()
+}
+
+/// How many repos `--prune` would delete, for the summary printed before the
+/// confirmation. Local-only work is not checked here: that is a git call per
+/// candidate, and prune refuses to delete it anyway, so this is deliberately
+/// an upper bound rather than a slow recon.
+fn prunable(host_dir: &Path, listed: &HashSet<PathBuf>, filter: &HostFilter<'_>) -> usize {
+    prune_candidates(host_dir, &find_repos(host_dir), listed, filter).len()
+}
+
 /// Deletion is irreversible while the remote listing can be wrong (renamed
 /// repo, revoked access, truncated API answer), so a candidate must be
 /// unlisted, in the filter's scope and free of local-only work. The filter is
@@ -697,11 +766,7 @@ pub fn prune(
     }
 
     let local = find_repos(host_dir);
-    let candidates: Vec<&PathBuf> = local
-        .iter()
-        .filter(|r| !listed.contains(*r))
-        .filter(|r| matches!(filter.decide(&repo_name(host_dir, r)), Decision::Keep))
-        .collect();
+    let candidates = prune_candidates(host_dir, &local, listed, filter);
     if candidates.len() >= 2 && candidates.len() * 2 > local.len() && !opts.force {
         let msg = format!(
             "{} of {} local repositories are no longer listed, the listing looks incomplete",
@@ -1449,6 +1514,28 @@ hosts:
 
     fn no_filter(base: &Path) -> RepoFilter {
         RepoFilter::load(base, &[], &[]).unwrap()
+    }
+
+    /// What the summary announces before the question comes from the same
+    /// selection prune itself acts on.
+    #[test]
+    fn prunable_counts_what_prune_would_act_on() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        let host = base.join("host");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join(".repos.yml"), "ignore: [u/spared]\n").unwrap();
+        for leaf in ["keep", "gone", "spared"] {
+            init_repo(&host.join("u").join(leaf));
+        }
+        let listed: HashSet<PathBuf> = [host.join("u").join("keep")].into();
+        let rules = no_filter(&base);
+        let filter = rules.for_host("host");
+        // u/keep is still listed and u/spared is out of scope: only u/gone.
+        assert_eq!(prunable(&host, &listed, &filter), 1);
+        assert_eq!(prunable(&host, &HashSet::new(), &filter), 2);
+        // A host with nothing on disk yet is not a half-read listing.
+        assert_eq!(prunable(&base.join("other"), &listed, &filter), 0);
     }
 
     #[test]

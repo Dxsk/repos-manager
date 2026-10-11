@@ -42,6 +42,7 @@ repos-manager github sync --filter 'Dxsk/*'  # Only Dxsk's repos
 repos-manager sync --all --ignore 'Dxsk/old-*'  # Everything but these
 repos-manager sync --all --prune             # Remove deleted remote repos
 repos-manager sync --all --dry-run           # Preview without changes
+repos-manager sync --all --yes               # No confirmation, whatever the size
 ```
 
 For each repository:
@@ -59,6 +60,33 @@ For each repository:
 - anything outside the base directory.
 
 When more than half of a host's local repos would go, the listing is treated as incomplete and prune stops: check with `--dry-run`, then add `--force`.
+
+#### Before it clones
+
+Every host is listed first, and a sync says what it is about to do before downloading anything:
+
+```text
+github.com   42 in scope, 39 cloned, 3 new (1.2 GB)
+             biggest new: org/a 586 MB, org/b 586 MB
+gitlab.corp  18 in scope, 0 cloned, 18 new (4.7 GB, 2 unknown)
+             biggest new: team/monorepo 3.1 GB, team/assets 900 MB
+             with --prune: 2 local repos would be deleted
+
+21 clones, 39 updates, about 5.9 GB to download, 2 of unknown size.
+Proceed? [Y/n]
+```
+
+`in scope` is what the filters kept for that host, `cloned` what is already on disk, `new` what would be cloned. The volume in brackets is that of the new repositories only, since an update transfers very little.
+
+The figures come from the forge APIs, which report the size of the repository **on the server**, not the size of the transfer: that is why the total says "about". A size a provider does not report is counted as unknown and never estimated, so a host whose new repositories all have unknown sizes shows `?` instead of a figure.
+
+The summary and the question only appear when the run is worth a word: by default 5 new clones or more, or 1 GB or more to download, counted across the whole run rather than per host. A daily sync where nothing is new prints exactly what it has always printed.
+
+The question is asked once per run, `sync --all` included, and only when stdin and stdout are both terminals. A cron job, a CI step or a pipe gets the summary and carries straight on, so nothing can ever wait for an answer that will not come. `--yes` and `--dry-run` print the summary without asking. Answering `n` exits with a success code, clones nothing, and prints how to narrow the scope (`--filter`, `--ignore`, `<base_dir>/.repos.yml`).
+
+A host whose listing came back short already has `--prune` disabled for it, and the summary says so on that host's line, before the question rather than after the run.
+
+See the Configuration page, Sync confirmation, for `confirm_sync` and its thresholds.
 
 ### status
 
@@ -136,9 +164,10 @@ Sync flags (`<provider> sync` and `sync --all`):
 | `--prune` | Remove local repos not on remote | Off |
 | `--force` | With `--prune`, allow removing most local repos | Off |
 | `--dry-run` | Preview without making changes | Off |
+| `--yes`, `-y` | Do not ask before cloning | Off |
 | `--host <host>` | Custom host for self-hosted (provider sync only) | Configured hosts |
 | `--parallel <n>` | Concurrent sync jobs | 4 |
 | `--verbose`, `-v` | Show debug output | Off |
 | `--quiet`, `-q` | Suppress info/success messages (errors still shown) | Off |
 
-`status` accepts `--base-dir`, `--verbose` and `--quiet`. `update` accepts `--yes` / `-y`. Both `--flag value` and `--flag=value` forms work.
+`status` accepts `--base-dir`, `--verbose` and `--quiet`. `update` accepts `--yes` / `-y` too. Both `--flag value` and `--flag=value` forms work.

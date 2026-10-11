@@ -119,6 +119,18 @@ pub fn status_all(settings: &Settings) {
     ));
 }
 
+/// One line on stderr, kept short, overwritten by the next repo.
+fn progress(rel: &str, total: usize) {
+    let shown = if rel.chars().count() > 70 {
+        let tail: String = rel.chars().rev().take(69).collect();
+        format!("…{}", tail.chars().rev().collect::<String>())
+    } else {
+        rel.to_string()
+    };
+    eprint!("\r  {} {shown}\x1b[K", gray(&format!("[{total}]")));
+    let _ = std::io::stderr().flush();
+}
+
 /// Walk `base`, print every repo that is not clean and count them by state.
 fn scan(base: &Path, skip_mounts: &[PathBuf], show_progress: bool) -> Counts {
     let (mut total, mut clean, mut dirty, mut ahead, mut behind, mut diverged) = (0, 0, 0, 0, 0, 0);
@@ -138,7 +150,9 @@ fn scan(base: &Path, skip_mounts: &[PathBuf], show_progress: bool) -> Counts {
             continue;
         }
         it.skip_current_dir();
-        let Some(repo) = entry.path().parent() else {
+        // The repo is the parent, and whether it counts is the very question
+        // the sync recon and the job weighting ask of a directory.
+        let Some(repo) = entry.path().parent().filter(|p| git::is_clone(p)) else {
             continue;
         };
         let rel = repo
@@ -149,21 +163,7 @@ fn scan(base: &Path, skip_mounts: &[PathBuf], show_progress: bool) -> Counts {
         total += 1;
 
         if show_progress {
-            let shown = if rel.chars().count() > 70 {
-                let tail: String = rel
-                    .chars()
-                    .rev()
-                    .take(69)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect();
-                format!("…{tail}")
-            } else {
-                rel.clone()
-            };
-            eprint!("\r  {} {shown}\x1b[K", gray(&format!("[{total}]")));
-            let _ = std::io::stderr().flush();
+            progress(&rel, total);
         }
 
         let st = repo_state(repo);

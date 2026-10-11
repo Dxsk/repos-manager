@@ -100,6 +100,13 @@ fn network_guards(user: &[String], env_ssh: bool) -> (Vec<String>, Option<String
     (config, ssh)
 }
 
+/// What every part of the tool calls a clone: a directory holding a `.git`
+/// directory. Shared so `status`, the job weighting and the sync recon can
+/// never count differently.
+pub fn is_clone(dir: &Path) -> bool {
+    dir.join(".git").is_dir()
+}
+
 pub fn is_dirty(dir: &Path) -> bool {
     run(dir, &["status", "--porcelain"]).is_ok_and(|s| !s.is_empty())
 }

@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::output;
+use crate::plan::{self, Confirm, ConfirmSync};
 use crate::providers::Provider;
 
 pub fn home_dir() -> PathBuf {
@@ -65,6 +66,9 @@ struct FileConfig {
     check_updates: Option<bool>,
     scan_network_mounts: Option<bool>,
     gitlab_statistics: Option<bool>,
+    confirm_sync: Option<String>,
+    confirm_new_repos: Option<usize>,
+    confirm_download_gb: Option<f64>,
     #[serde(default)]
     hosts: HashMap<String, Hosts>,
     #[serde(default)]
@@ -79,8 +83,31 @@ pub struct Settings {
     pub check_updates: bool,
     pub scan_network_mounts: bool,
     pub gitlab_statistics: bool,
+    /// When a sync stops to confirm what it is about to clone.
+    pub confirm: Confirm,
     hosts: HashMap<Provider, Vec<String>>,
     any: BTreeMap<String, AnyHost>,
+}
+
+/// `confirm_sync` and its thresholds. These describe the machine, not the
+/// workspace: the filters live in `.repos.yml`, next to the repositories.
+fn confirm_settings(file: &FileConfig) -> Confirm {
+    let mut confirm = Confirm::default();
+    if let Some(mode) = &file.confirm_sync {
+        match ConfirmSync::parse(mode) {
+            Some(m) => confirm.mode = m,
+            None => output::warn(&format!(
+                "config: unknown confirm_sync value: {mode}, using auto"
+            )),
+        }
+    }
+    if let Some(n) = file.confirm_new_repos {
+        confirm.new_repos = n;
+    }
+    if let Some(gb) = file.confirm_download_gb {
+        confirm.download_kb = plan::gb_to_kb(gb);
+    }
+    confirm
 }
 
 fn expand_tilde(s: &str) -> PathBuf {
@@ -107,6 +134,7 @@ impl Settings {
             FileConfig::default()
         };
 
+        let confirm = confirm_settings(&file);
         let base_dir = env_nonempty("REPOS_MANAGER_BASE_DIR")
             .or(file.base_dir)
             .map(|s| expand_tilde(&s))
@@ -171,6 +199,7 @@ impl Settings {
             check_updates,
             scan_network_mounts: file.scan_network_mounts.unwrap_or(false),
             gitlab_statistics: file.gitlab_statistics.unwrap_or(true),
+            confirm,
             hosts,
             any,
         })
@@ -207,6 +236,9 @@ const DEFAULT_CONFIG: &str = r#"{
   "check_updates": true,
   "scan_network_mounts": false,
   "gitlab_statistics": true,
+  "confirm_sync": "auto",
+  "confirm_new_repos": 5,
+  "confirm_download_gb": 1,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],

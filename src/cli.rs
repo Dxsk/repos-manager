@@ -141,6 +141,9 @@ pub struct SyncArgs {
     /// Show what would be done without making changes
     #[arg(long)]
     pub dry_run: bool,
+    /// Do not ask before cloning, however much there is to download
+    #[arg(short, long)]
+    pub yes: bool,
     /// Custom host (self-hosted instances), overrides the configured hosts
     #[arg(long)]
     pub host: Option<String>,
