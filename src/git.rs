@@ -35,9 +35,25 @@ pub fn run(dir: &Path, args: &[&str]) -> Result<String> {
         .env("GCM_INTERACTIVE", "never");
     let out = process::output(&mut cmd, process::timeout("GIT", 3600))?;
     if !out.status.success() {
-        bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
+        bail!("{}", one_line(&String::from_utf8_lossy(&out.stderr)));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// git's stderr as a single line. Two reasons: a result line is one line per
+/// repository, and git's closing advice about access rights sends the reader
+/// after a permission problem even when the server said what was really wrong.
+fn one_line(stderr: &str) -> String {
+    const ADVICE: [&str; 2] = [
+        "Please make sure you have the correct access rights",
+        "and the repository exists.",
+    ];
+    let kept: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !ADVICE.contains(l))
+        .collect();
+    kept.join("; ")
 }
 
 const GUARDED: [&str; 3] = ["core.sshcommand", "http.lowspeedlimit", "http.lowspeedtime"];
@@ -136,6 +152,34 @@ pub fn invalid_on_windows(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verbatim stderr of a clone that a Forgejo instance answered with a 500.
+    #[test]
+    fn a_git_failure_reads_on_one_line_without_the_advice() {
+        let stderr = "Forgejo: Internal Server Error (no message for end users)
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+";
+        let expected = concat!(
+            "Forgejo: Internal Server Error (no message for end users); ",
+            "fatal: Could not read from remote repository."
+        );
+        assert_eq!(one_line(stderr), expected);
+    }
+
+    #[test]
+    fn a_single_line_failure_is_left_alone() {
+        assert_eq!(
+            one_line(
+                "fatal: couldn't find remote ref HEAD
+"
+            ),
+            "fatal: couldn't find remote ref HEAD"
+        );
+        assert_eq!(one_line(""), "");
+    }
 
     #[test]
     fn network_guards_never_override_the_user() {

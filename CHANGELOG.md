@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- A git failure spanning several lines, such as an SSH or server error, broke the one line per repository report and ended on git's advice to check your access rights, which pointed at a permission problem that was often not the cause. The result line keeps what the server said, on one line
 - `--prune --dry-run` ended on `Pruned 2 repositories` although it had deleted nothing. It says `Would prune` now, and counts one repository in the singular
 
 ## 1.1.0 (2026-10-12)
