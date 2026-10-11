@@ -18,7 +18,7 @@ use serde_json::Value;
 use ureq::Agent;
 
 use super::{
-    ListError, Listing, Repo, has_cli, run_capture, run_interactive, str_field, u64_field,
+    ListError, Listing, Repo, has_cli, opt_u64_field, run_capture, run_interactive, str_field,
 };
 use crate::{config, http, output};
 
@@ -209,7 +209,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
             ssh_url: clone_link(r, "ssh"),
             https_url: clone_link(r, "https"),
             // Bitbucket reports bytes.
-            size_kb: u64_field(r, "size") / 1024,
+            size_kb: opt_u64_field(r, "size").map(|b| b / 1024),
         })
         .filter(|r| !r.full_name.is_empty())
         .collect()
@@ -488,6 +488,17 @@ mod tests {
         assert_eq!(repos[0].full_name, "prj/my-repo");
         assert_eq!(repos[0].https_url, "https://bb/scm/prj/my-repo.git");
         assert_eq!(repos[0].ssh_url, "ssh://git@bb:7999/prj/my-repo.git");
+        assert_eq!(repos[0].size_kb, None);
+    }
+
+    #[test]
+    fn cloud_size_is_none_when_absent_and_zero_when_empty() {
+        let items: Vec<Value> = serde_json::from_str(
+            r#"[{"full_name":"t/none"},{"full_name":"t/empty","size":0},{"full_name":"t/big","size":2048}]"#,
+        )
+        .unwrap();
+        let sizes: Vec<_> = parse(&items).into_iter().map(|r| r.size_kb).collect();
+        assert_eq!(sizes, [None, Some(0), Some(2)]);
     }
 
     #[test]

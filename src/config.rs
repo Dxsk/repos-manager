@@ -64,6 +64,7 @@ struct FileConfig {
     protocol: Option<String>,
     check_updates: Option<bool>,
     scan_network_mounts: Option<bool>,
+    gitlab_statistics: Option<bool>,
     #[serde(default)]
     hosts: HashMap<String, Hosts>,
     #[serde(default)]
@@ -77,6 +78,7 @@ pub struct Settings {
     pub use_https: bool,
     pub check_updates: bool,
     pub scan_network_mounts: bool,
+    pub gitlab_statistics: bool,
     hosts: HashMap<Provider, Vec<String>>,
     any: BTreeMap<String, AnyHost>,
 }
@@ -168,6 +170,7 @@ impl Settings {
             use_https,
             check_updates,
             scan_network_mounts: file.scan_network_mounts.unwrap_or(false),
+            gitlab_statistics: file.gitlab_statistics.unwrap_or(true),
             hosts,
             any,
         })
@@ -203,6 +206,7 @@ const DEFAULT_CONFIG: &str = r#"{
   "protocol": "ssh",
   "check_updates": true,
   "scan_network_mounts": false,
+  "gitlab_statistics": true,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],
@@ -281,6 +285,7 @@ mod tests {
         assert!(s.check_updates);
         assert!(!s.use_https);
         assert!(!s.scan_network_mounts);
+        assert!(s.gitlab_statistics);
     }
 
     #[test]
@@ -343,6 +348,8 @@ mod tests {
         let s = load(&p);
         assert!(!s.check_updates);
         assert!(s.scan_network_mounts);
+        let (_d, p) = write(r#"{"gitlab_statistics":false}"#);
+        assert!(!load(&p).gitlab_statistics);
         assert!(s.use_https);
     }
 

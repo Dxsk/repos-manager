@@ -595,7 +595,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                 weight: if path.join(".git").is_dir() {
                     0
                 } else {
-                    repo.size_kb + 1
+                    repo.size_kb.unwrap_or(0) + 1
                 },
                 path,
                 url: url(repo),

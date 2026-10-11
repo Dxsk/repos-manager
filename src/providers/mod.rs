@@ -40,8 +40,9 @@ pub struct Repo {
     pub full_name: String,
     pub ssh_url: String,
     pub https_url: String,
-    /// Size reported by the API, 0 when unknown. Only orders the clones.
-    pub size_kb: u64,
+    /// `None` when the provider did not report a size, `Some(0)` for a repo
+    /// that really is empty. A missing size is never estimated.
+    pub size_kb: Option<u64>,
 }
 
 impl Repo {
@@ -180,7 +181,7 @@ impl Provider {
     pub fn list_repos(self, host: &str, settings: &Settings) -> Result<Listing, ListError> {
         let mut listing = match self {
             Provider::Github => github::list_repos(host),
-            Provider::Gitlab => gitlab::list_repos(host),
+            Provider::Gitlab => gitlab::list_repos(host, settings.gitlab_statistics),
             Provider::Forgejo => forgejo::list_repos(host),
             Provider::Bitbucket => bitbucket::list_repos(host),
             Provider::Radicle => radicle::list_repos(),
@@ -270,8 +271,8 @@ fn parse_paginated(raw: &str) -> Result<Vec<Value>> {
     Ok(all)
 }
 
-fn u64_field(v: &Value, key: &str) -> u64 {
-    v.get(key).and_then(Value::as_u64).unwrap_or_default()
+fn opt_u64_field(v: &Value, key: &str) -> Option<u64> {
+    v.get(key).and_then(Value::as_u64)
 }
 
 fn str_field(v: &Value, key: &str) -> String {

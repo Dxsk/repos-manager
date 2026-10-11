@@ -22,6 +22,7 @@ This creates `~/.config/repos-manager/config.json`. The path is the same on ever
   "protocol": "ssh",
   "check_updates": true,
   "scan_network_mounts": false,
+  "gitlab_statistics": true,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com"],
@@ -40,6 +41,7 @@ This creates `~/.config/repos-manager/config.json`. The path is the same on ever
 | `protocol` | Clone protocol (`ssh` or `https`) | `ssh` |
 | `check_updates` | Check for a newer release and show a banner | `true` |
 | `scan_network_mounts` | Let `status` traverse FUSE, NFS or SMB mounts under `base_dir` (see warning below) | `false` |
+| `gitlab_statistics` | Ask GitLab for repository sizes. The full project serializer makes the listing heavier than `simple=true`; set `false` to turn it off, sizes then stay unknown | `true` |
 | `hosts.<provider>` | List of hosts to sync for that provider | See defaults below |
 | `repos.<host>` | Plain git servers with no forge API, synced by the `any` provider | Empty |
 
@@ -62,6 +64,10 @@ REPOS_MANAGER_NO_UPDATE_CHECK=1 repos-manager status
 On Linux, `status` reads `/proc/self/mountinfo` by default, finds every mount point under `base_dir` whose filesystem type matches `fuse`, `fuse.*`, `nfs`, `cifs`, `smb*`, `smbfs`, `afs`, `ceph` or `davfs`, and prunes it from the walk. Use `--verbose` to see which mounts were skipped. On macOS and Windows there is no such detection.
 
 Set `scan_network_mounts: true` only if you really do host working copies on a reliable network share. The scan will then descend into those mounts and print a warning that this can cause long hangs on flaky links.
+
+### GitLab repository sizes
+
+GitLab only reports a repository size when the listing uses its full project serializer (`statistics=true`), which makes the payload heavier than the `simple=true` listing used before. That cost has not been measured against a real instance. On a very large GitLab, set `"gitlab_statistics": false` to go back to the light listing: every GitLab repository then has an unknown size. Projects where you are below the Reporter role have an unknown size either way.
 
 ### Multiple hosts per provider
 

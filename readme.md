@@ -330,6 +330,7 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
   "protocol": "ssh",
   "check_updates": true,
   "scan_network_mounts": false,
+  "gitlab_statistics": true,
   "hosts": {
     "github":    ["github.com"],
     "gitlab":    ["gitlab.com", "gitlab.example.org"],
@@ -351,6 +352,7 @@ Each host has its own lock, so two syncs of the same host cannot overlap while d
 | `protocol` | `ssh` | `ssh` or `https` |
 | `check_updates` | `true` | Background update check, see [Updating](#updating) |
 | `scan_network_mounts` | `false` | Let `status` walk network and FUSE mounts (Linux) |
+| `gitlab_statistics` | `true` | Ask GitLab for repository sizes (a heavier listing); `false` keeps the light listing and sizes stay unknown |
 | `hosts.<provider>` | provider's SaaS host | One hostname or a list. Each one is synced into its own `<base_dir>/<host>/` |
 | `repos.<host>` | none | Plain git servers, see the **Plain git servers** block below |
 
