@@ -47,7 +47,7 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 
 **Not every provider is equally proven.** GitHub, GitLab, Forgejo and the config URLs of the plain git server are **stable**: their listing has been run against the live API, offline tests cover the parsing.
 
-Six surfaces are **alpha**: Bitbucket Cloud, Bitbucket Data Center, Radicle, Sourcehut, OneDev, and the SSH discovery modes of the plain git server (`gitolite`, `soft-serve`, `find:<root>`). They are implemented against the published API documentation and covered by offline tests only, and no live server of that kind has ever answered a request from `repos-manager`. They may work on the first try, or list nothing. If one misbehaves, an issue with the raw payload the server returned and the server version is what makes a fix possible, and it becomes a test fixture. Per provider detail in the [provider reference](site/src/docs/providers.md#provider-status).
+Six surfaces are **alpha**: Bitbucket Cloud, Bitbucket Data Center, Radicle, Sourcehut, OneDev, and the SSH discovery modes of the plain git server (`gitolite`, `soft-serve`, `find:<root>`). They are implemented against the published API documentation and covered by offline tests only, and no live server of that kind has ever answered a request from `repos-manager`. They may work on the first try, or list nothing. If one misbehaves, an issue with the raw payload the server returned and the server version is what makes a fix possible, and it becomes a test fixture. Per provider detail in the [provider reference](https://repos-manager.dxscloud.fr/docs/providers/#provider-status).
 
 ## Installation
 
@@ -345,44 +345,18 @@ gitlab.corp  18 in scope, 0 cloned, 18 new (4.7 GB, 2 unknown)
 Proceed? [Y/n]
 ```
 
-- `in scope` is what the filters kept for that host, `cloned` what is already on disk and `new` what would be cloned. The volume in brackets covers the new repos only: an update transfers very little.
-- Those figures are the repository sizes the forge APIs report, measured on the server, not the size of the transfer, which is why the total says **about**. A size a provider does not report counts as unknown and is never estimated: a host whose new repos all have unknown sizes shows `?`.
-- You only see this when the run is worth a word: by default 5 new clones or more, or 1 GB or more to download, counted across the whole run. A daily sync where nothing is new prints exactly what it always did.
-- The question is asked once for the whole run, `sync --all` included, and only when stdin and stdout are both terminals. A cron job or a CI step gets the summary and carries on, it never waits for an answer.
-- `-y` and `--dry-run` print the summary without asking. Answering `n` exits successfully, clones nothing and says how to narrow the scope.
-- A host whose listing came back short already has `--prune` disabled, and the summary says so before the question rather than after the run.
-
-Thresholds and prompting are set per machine with `confirm_sync`, `confirm_new_repos` and `confirm_download_gb` in the config file.
-
-### Planning a big sync
+- The volume covers the new repos only, and it is the size the forge reports on the server, not the size of the transfer, hence **about**. A size a provider does not report shows as `?` and is never estimated.
+- You only see this above a threshold, by default 5 new clones or 1 GB across the whole run. A daily sync where nothing is new prints exactly what it always did.
+- The question is asked once per run and only when stdin and stdout are both terminals, so cron and CI get the summary and carry on. `-y` and `--dry-run` print it without asking, and `n` exits successfully without cloning.
 
 Two flags turn that summary into a workflow, and neither clones anything:
 
 ```sh
-# 1. Reconnaissance only: the same summary, then it stops
-repos-manager sync --all --plan
-
-# 2. A file holding every repo in scope, biggest first, all commented out
-repos-manager sync --all --write-ignore
+repos-manager sync --all --plan          # the summary, then stop
+repos-manager sync --all --write-ignore  # every repo in scope, commented out, into .repos.yml
 ```
 
-`--plan` always prints, even under the thresholds, even under `-q` and even when there is nothing to do, and it never asks a question. It is not `--dry-run`: `--dry-run` lists every repository as "would clone / would update", `--plan` prints the aggregate summary only.
-
-`--write-ignore` writes `<base-dir>/.repos.yml` and stops. Every entry is commented out, so the file as written changes nothing: **uncomment the repositories you do not want**, then sync.
-
-```yaml
-# Written by repos-manager on 2026-10-11.
-# Uncomment a repository to stop syncing it. Sizes are what the forge reports.
-
-hosts:
-  github.com:
-    ignore:
-      # - 'Dxsk/monorepo'          # 3.1 GB
-      # - 'Dxsk/assets'            # 900 MB
-      # - 'Dxsk/notes'             # ?
-```
-
-It refuses to overwrite an existing `.repos.yml` unless you add `--force`, and a rewrite carries the rules already in the file over into the new one, uncommented above the catalogue, so a rewrite can never widen what you sync. See [`.repos.yml`](#filtering) for the file itself.
+Uncomment in `<base-dir>/.repos.yml` what you do not want, then sync. Thresholds and prompting are set per machine with `confirm_sync`, `confirm_new_repos` and `confirm_download_gb` in the config file. Full rules in the [usage docs](https://repos-manager.dxscloud.fr/docs/usage/).
 
 ## Configuration
 
@@ -481,20 +455,7 @@ Or let the server list itself, when it knows how:
 | `soft-serve` | `ssh -p <port> <host> repo list` | `port` defaults to 23231, [Soft Serve](https://github.com/charmbracelet/soft-serve)'s default |
 | `find:<root>` | `find <root> -name '*.git' -prune` over SSH | Needs a real shell on the remote account, so it does not work with `git-shell` |
 
-`urls` and `discover` can be combined in one entry, and both are synced:
-
-```json
-{
-  "repos": {
-    "vps.example.org": {
-      "urls": ["ssh://me@vps.example.org:2222/srv/git/legacy.git"],
-      "discover": "find:/srv/git",
-      "user": "me",
-      "port": 2222
-    }
-  }
-}
-```
+`urls` and `discover` can be combined in one entry, and both are synced.
 
 Discovery runs with `BatchMode=yes` and a connect timeout, so an unknown host key or a key with no agent fails with a message instead of stalling the sync.
 
@@ -546,17 +507,15 @@ hosts:
     ignore: [Dxsk/old-project]
 ```
 
-Patterns are the same everywhere: `*` and `?` wildcards, `owner/*` also matches nested paths (`group/subgroup/project`), and they are matched against the remote full name, not the local path. Host keys ignore case.
+`only` is an allow-list, one matching pattern is enough. `ignore` is a deny-list, and a repo it catches is reported as `ignored`. Allow-lists stack and a repo must pass all of them (`--filter` flags, then the host block, then the global list) while deny-lists add up. So a `hosts:` block can only narrow what the global lists allow, and it can never pull a repository into the reach of `--prune`.
 
-`only` is an allow-list: one matching pattern is enough. `ignore` is a deny-list, and a repo it catches is reported as `ignored`. Allow-lists stack and a repo must pass all of them, in this order: the `--filter` flags, the `hosts.<host>` block, then the global `only`. Deny-lists simply add up.
-
-So a `hosts:` block can only narrow what the global lists allow, never widen it, and it can never pull a repository into `--prune`'s reach. When two stacked allow-lists have nothing in common, the host ends up with nothing in scope and repos-manager says which lists caused it instead of leaving it looking like an empty remote. An `only: []` is ignored with a warning rather than emptying the scope.
+Patterns use `*` and `?`, `owner/*` also matches nested paths, and they are matched against the remote full name rather than the local path. Host keys ignore case.
 
 Since this file drives `--prune`, a typo in it is an error, not a shrug: an unknown key, malformed YAML or an unreadable file stops the run before any host is synced.
 
-**Let repos-manager write it.** `repos-manager sync --all --write-ignore` generates this file from what a sync would actually do: every repository in scope, per host, biggest first, each one commented out with the size the forge reports next to it (`?` when it reports none, and those come last). Uncomment what you do not want. The generator only ever emits `ignore` lists, never an `only` list, so nothing it writes can empty your scope by accident.
+`repos-manager sync --all --write-ignore` writes the file for you, holding every repository in scope with its size, all commented out. `.repos-filter` and `.repos-ignore` keep working as in 1.0 while there is no `.repos.yml`.
 
-**Legacy text files.** `.repos-filter` (allow-list) and `.repos-ignore` (deny-list), one pattern per line with `#` comments, still work exactly as in 1.0 as long as there is no `.repos.yml`. Once that file exists it takes over and the text files are ignored, with a warning.
+Pattern syntax, stacking order and the generated file in detail: [filtering docs](https://repos-manager.dxscloud.fr/docs/filtering/).
 
 </details>
 
