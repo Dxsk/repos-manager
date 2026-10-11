@@ -14,6 +14,7 @@
 
 - **Bitbucket credentials changed shape.** Atlassian removed app passwords on 2026-07-28, so the old credential no longer authenticates anything. Cloud now needs an Atlassian API token sent as Basic auth with the account email, and `~/.config/repos-manager/bitbucket-creds` became a JSON map keyed by host so Cloud and self-hosted instances coexist. An old single-line `user:password` file is still read as the `bitbucket.org` entry, with a warning rather than a silent rewrite
 - The Bitbucket Cloud listing now covers every workspace the user is a member of, instead of the single workspace named after their username
+- `repos-manager onedev login` keeps the scheme it was given, so an instance served over plain HTTP can be synced. An entry saved without one still defaults to HTTPS
 
 - All hosts of a sync (`sync --all`, or a provider with several hosts) now fetch their repository lists concurrently, and their clones and updates share one queue, so `--parallel` bounds the total number of git processes
 - Updates fetch once and fast-forward the already fetched default branch instead of running a second `git pull`, about twice as fast on many repositories. Result lines now say `updated` or `up to date`
@@ -22,6 +23,7 @@
 
 ### Fixed
 
+- A listing that lost entries was still reported as complete, so `--prune` read the gap as a deleted remote and removed the clone. Providers now say when entries are missing (a page cap reached, a page that is not a list, an organization that failed, a configured URL that could not be read) and that host is left alone, as it already was for a provider that failed outright
 - A listing could never end on a server that ignores pagination: Gogs answers the repository endpoints with the whole list on every request, whatever `page` says, so the loop kept asking for a full page forever. A listing now stops when a page repeats the previous one, warns, and keeps what it collected
 - A sync could hang forever on a dead connection or a prompt nobody could answer (unknown SSH host key, passphrase without agent, Git Credential Manager window). SSH now runs in batch mode with keepalives, stalled HTTPS transfers are aborted, and every git command and provider listing has a hard timeout (`REPOS_MANAGER_GIT_TIMEOUT`, `REPOS_MANAGER_LIST_TIMEOUT`). Settings you configured yourself are never overridden
 - Repositories whose names map to the same directory once the filesystem normalizes them (`Repo` and `repo` on Windows and macOS, or the two Unicode spellings of `café` on macOS, where APFS compares names normalized) or that would nest inside another clone (GitLab project `g/p` next to subgroup `g/p`) are now skipped with the reason. One clone used to silently stand in for another, or the parent failed on every sync. On a collision the repo already cloned keeps its directory. Names Windows cannot hold (`aux`, `con`, a trailing dot, which made `name.` and `name` share one clone) are skipped too

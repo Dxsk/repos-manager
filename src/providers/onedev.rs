@@ -50,26 +50,35 @@ fn ssh_host(host: &str) -> &str {
     host.split(':').next().unwrap_or(host)
 }
 
-pub fn creds_for_host(raw: &str, host: &str) -> Option<(String, String)> {
+/// `(base url, user, token)`. The base url carries the scheme the login was
+/// given, so an instance served over plain HTTP stays reachable.
+pub fn creds_for_host(raw: &str, host: &str) -> Option<(String, String, String)> {
     let entry = serde_json::from_str::<Value>(raw).ok()?.get(host)?.clone();
     let (user, token) = (str_field(&entry, "user"), str_field(&entry, "token"));
-    (!user.is_empty() && !token.is_empty()).then_some((user, token))
+    let base = match str_field(&entry, "url") {
+        url if url.is_empty() => format!("https://{host}"),
+        url => url.trim_end_matches('/').to_string(),
+    };
+    (!user.is_empty() && !token.is_empty()).then_some((base, user, token))
 }
 
 /// Keep the entries of the other hosts so several instances can coexist.
-fn merged_creds(existing: &str, host: &str, user: &str, token: &str) -> String {
+fn merged_creds(existing: &str, host: &str, base: &str, user: &str, token: &str) -> String {
     let mut map = match serde_json::from_str(existing) {
         Ok(Value::Object(m)) => m,
         _ => Map::new(),
     };
-    map.insert(host.to_string(), json!({"user": user, "token": token}));
+    map.insert(
+        host.to_string(),
+        json!({"url": base, "user": user, "token": token}),
+    );
     Value::Object(map).to_string()
 }
 
-fn save_creds(path: &Path, host: &str, user: &str, token: &str) -> Result<()> {
+fn save_creds(path: &Path, host: &str, base: &str, user: &str, token: &str) -> Result<()> {
     let existing = fs::read_to_string(path).unwrap_or_default();
     fs::create_dir_all(path.parent().expect("creds path has a parent"))?;
-    fs::write(path, merged_creds(&existing, host, user, token))?;
+    fs::write(path, merged_creds(&existing, host, base, user, token))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -80,13 +89,19 @@ fn save_creds(path: &Path, host: &str, user: &str, token: &str) -> Result<()> {
 
 pub fn login() -> Result<()> {
     output::info("OneDev is self-hosted: enter the instance to sync.");
-    let host = prompt_line("OneDev host (example: onedev.example.org): ")?;
-    let host = host_only(&host).to_string();
+    let typed = prompt_line("OneDev host (example: onedev.example.org): ")?;
+    let host = host_only(&typed).to_string();
     if host.is_empty() {
         bail!("a host is required");
     }
+    // An instance behind plain HTTP has to be reachable too, so the scheme is
+    // kept when the login was given one.
+    let base = match typed.split_once("://") {
+        Some((scheme, _)) => format!("{scheme}://{host}"),
+        None => format!("https://{host}"),
+    };
     output::info(&format!(
-        "Create an access token at: https://{host}/~my/access-tokens"
+        "Create an access token at: {base}/~my/access-tokens"
     ));
     let user = prompt_line("OneDev account name: ")?;
     if user.is_empty() {
@@ -99,7 +114,7 @@ pub fn login() -> Result<()> {
     }
 
     let path = creds_path();
-    save_creds(&path, &host, &user, token)?;
+    save_creds(&path, &host, &base, &user, token)?;
     output::success(&format!(
         "Credentials for {host} saved to {}",
         path.display()
@@ -143,17 +158,12 @@ fn ssh_url(host: &str, path: &str) -> String {
 
 pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     let raw = fs::read_to_string(creds_path()).unwrap_or_default();
-    let Some((user, token)) = creds_for_host(&raw, host) else {
+    let Some((base, user, token)) = creds_for_host(&raw, host) else {
         return Err(ListError::Skip(format!(
             "no credentials for host '{host}'. Run: repos-manager onedev login"
         )));
     };
-    Ok(list_from_api(
-        &format!("https://{host}"),
-        host,
-        &user,
-        &token,
-    )?)
+    Ok(list_from_api(&base, host, &user, &token)?)
 }
 
 fn list_from_api(base: &str, host: &str, user: &str, token: &str) -> Result<Listing> {
@@ -259,23 +269,32 @@ mod tests {
 
     #[test]
     fn creds_are_merged_per_host() {
-        let first = merged_creds("", "a.org", "me", "t1");
-        assert_eq!(creds_for_host(&first, "a.org").unwrap().1, "t1");
+        let first = merged_creds("", "a.org", "https://a.org", "me", "t1");
+        assert_eq!(creds_for_host(&first, "a.org").unwrap().2, "t1");
 
-        let both = merged_creds(&first, "b.org", "you", "t2");
-        assert_eq!(creds_for_host(&both, "a.org").unwrap().0, "me");
+        let both = merged_creds(&first, "b.org", "http://b.org", "you", "t2");
+        assert_eq!(creds_for_host(&both, "a.org").unwrap().1, "me");
         assert_eq!(
             creds_for_host(&both, "b.org").unwrap(),
-            ("you".into(), "t2".into())
+            ("http://b.org".into(), "you".into(), "t2".into())
         );
         assert_eq!(creds_for_host(&both, "c.org"), None);
+
+        // An entry written before the url field defaults to HTTPS.
+        assert_eq!(
+            creds_for_host(r#"{"a.org":{"user":"me","token":"t"}}"#, "a.org").unwrap(),
+            ("https://a.org".into(), "me".into(), "t".into())
+        );
 
         // A corrupted file must not lock the user out of saving a new entry.
         assert!(creds_for_host("{oops", "a.org").is_none());
         assert_eq!(
-            creds_for_host(&merged_creds("{oops", "a.org", "me", "t"), "a.org")
-                .unwrap()
-                .1,
+            creds_for_host(
+                &merged_creds("{oops", "a.org", "https://a.org", "me", "t"),
+                "a.org"
+            )
+            .unwrap()
+            .2,
             "t"
         );
         assert_eq!(creds_for_host(r#"{"a.org":{"user":"me"}}"#, "a.org"), None);
@@ -285,11 +304,11 @@ mod tests {
     fn saved_file_is_readable_and_private() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sub").join("onedev-creds");
-        save_creds(&path, "a.org", "me", "t1").unwrap();
-        save_creds(&path, "b.org", "you", "t2").unwrap();
+        save_creds(&path, "a.org", "https://a.org", "me", "t1").unwrap();
+        save_creds(&path, "b.org", "https://b.org", "you", "t2").unwrap();
         let raw = fs::read_to_string(&path).unwrap();
-        assert_eq!(creds_for_host(&raw, "a.org").unwrap().1, "t1");
-        assert_eq!(creds_for_host(&raw, "b.org").unwrap().1, "t2");
+        assert_eq!(creds_for_host(&raw, "a.org").unwrap().2, "t1");
+        assert_eq!(creds_for_host(&raw, "b.org").unwrap().2, "t2");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
