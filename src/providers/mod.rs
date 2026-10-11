@@ -213,6 +213,20 @@ fn run_interactive(program: &str, args: &[&str]) -> Result<()> {
 /// Run a command and return its stdout. stderr is captured and included in the error.
 fn run_capture(cmd: &mut Command) -> Result<String> {
     let out = crate::process::output(cmd, crate::process::timeout("LIST", 300))?;
+    captured(cmd, out)
+}
+
+/// Same, for a CLI that takes its payload on stdin rather than in an argument.
+fn run_capture_input(cmd: &mut Command, input: &str) -> Result<String> {
+    let out = crate::process::output_with_input(
+        cmd,
+        input.as_bytes(),
+        crate::process::timeout("LIST", 300),
+    )?;
+    captured(cmd, out)
+}
+
+fn captured(cmd: &Command, out: std::process::Output) -> Result<String> {
     if !out.status.success() {
         bail!(
             "{:?} failed: {}",
