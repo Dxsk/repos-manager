@@ -659,20 +659,22 @@ Both releases include `SHA256SUMS` and `SHA256SUMS-binaries`. The install script
 <br>
 
 1. Describe the changes under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md).
-2. Run the release target with the new version:
+2. Run the release script with the new version:
 
    ```sh
-   make release V=1.1.0
+   python scripts/release.py 1.1.0    # or: make release V=1.1.0
    ```
 
    The working tree must be clean. It sets the version in `Cargo.toml`, `Cargo.lock` and the documentation site, turns the `Unreleased` heading into `## 1.1.0 (date)`, then commits `chore: release v1.1.0` and creates the signed `v1.1.0` tag (`git tag -s`, so a GPG signing key is needed). Nothing is pushed yet, so you can still check the result.
+
+   `make release` just calls the script, so a checkout without `make` loses nothing. On Windows the signing key usually lives in the GnuPG keyring rather than the one Git Bash reads: `git config --global gpg.program` has to point at `gpg.exe` for the tag to sign.
 3. Push to the forge:
 
    ```sh
    git push --follow-tags
    ```
 
-The tag starts the Forgejo release, and the push mirror carries `main` and the tag to GitHub, which builds the full release. There is no automatic version bump: the version only changes through `make release`.
+The tag starts the Forgejo release, and the push mirror carries `main` and the tag to GitHub, which builds the full release. There is no automatic version bump: the version only changes through the release script.
 
 Since the mirror overwrites GitHub on every sync, never commit or tag directly on GitHub.
 

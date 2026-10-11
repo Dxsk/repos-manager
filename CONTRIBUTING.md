@@ -8,7 +8,7 @@ The full guide (setup, testing, adding a provider, CI) is on the documentation s
 
 ## Quick start
 
-You need a stable [Rust toolchain](https://rustup.rs), `make` and `git` 2.28 or newer.
+You need a stable [Rust toolchain](https://rustup.rs) and `git` 2.28 or newer. `make` is optional, see below.
 
 ```bash
 git clone https://github.com/Dxsk/repos-manager.git
@@ -21,6 +21,17 @@ make lint       # rustfmt and clippy, as enforced by CI
 make metrics    # per-function complexity budgets (needs rust-code-analysis-cli)
 make mutants    # mutation testing on sync and git (needs cargo-mutants, slow)
 ```
+
+`make` is a convenience, not a requirement: every target is one command you can run directly, which is how the project is developed on Windows.
+
+| Target | Direct command |
+|--------|----------------|
+| `make build` | `cargo build --release --locked` |
+| `make test` | `cargo test --locked` |
+| `make lint` | `cargo fmt --check` then `cargo clippy --all-targets --locked -- -D warnings` |
+| `make metrics` | `python scripts/code-metrics.py` |
+| `make coverage` | `cargo llvm-cov --locked --summary-only` |
+| `make release V=x.y.z` | `python scripts/release.py x.y.z` |
 
 The extra tools:
 
@@ -38,7 +49,7 @@ Two environment variables exist for the tests only and are not part of the user 
 - Fork the repository and branch from `main`, one feature per PR.
 - `make test`, `make lint` and `make metrics` must pass.
 - Add your change under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md) (`### Added`, `### Changed`, `### Removed` or `### Fixed`).
-- Use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`) and do not bump the version: it only changes through `make release`.
+- Use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`) and do not bump the version: it only changes through [scripts/release.py](scripts/release.py).
 
 Open the pull request on [GitHub](https://github.com/Dxsk/repos-manager/pulls).
 

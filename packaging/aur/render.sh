@@ -52,9 +52,10 @@ done
 [ "$publish" = --publish ] || exit 0
 
 # The global git config may have no identity (set per repo by git-identity),
-# so AUR commits reuse the one of this repository.
-name=$(git -C "$here" config user.name)
-email=$(git -C "$here" config user.email)
+# so AUR commits reuse the one of this repository, falling back to the author
+# of HEAD: with neither configured, set -u would abort here.
+name=$(git -C "$here" config user.name || git -C "$here" log -1 --format=%an)
+email=$(git -C "$here" config user.email || git -C "$here" log -1 --format=%ae)
 
 for pkg in "$PKG" "$PKG-bin"; do
     git clone -q "ssh://aur@aur.archlinux.org/$pkg.git" "$tmp/$pkg"

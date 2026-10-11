@@ -57,17 +57,9 @@ clean:
 # make release V=1.1.0
 # Bumps the version, dates the "Unreleased" changelog section, commits and
 # tags. Pushing the tag to Forgejo (and the mirror) triggers the releases.
+# The steps live in the script so a checkout without make can cut a release.
 release:
 	@test -n "$(V)" || { echo "usage: make release V=x.y.z"; exit 1; }
-	@git diff --quiet && git diff --cached --quiet || { echo "commit your changes first"; exit 1; }
-	@grep -q '^## Unreleased' CHANGELOG.md || { echo "CHANGELOG.md has no '## Unreleased' section"; exit 1; }
-	sed -i.bak 's/^version = ".*"/version = "$(V)"/' Cargo.toml && rm Cargo.toml.bak
-	sed -i.bak 's/"version": ".*"/"version": "$(V)"/' site/src/_data/site.json && rm site/src/_data/site.json.bak
-	sed -i.bak 's/^VERSION=".*"/VERSION="$(V)"/' repos-manager.sh && rm repos-manager.sh.bak
-	sed -i.bak "s/^## Unreleased/## $(V) ($$(date +%F))/" CHANGELOG.md && rm CHANGELOG.md.bak
-	cargo update --workspace --offline
-	git commit -m "chore: release v$(V)" Cargo.toml Cargo.lock CHANGELOG.md site/src/_data/site.json repos-manager.sh
-	git tag -s "v$(V)" -m "v$(V)"
-	@echo "Now run: git push --follow-tags"
+	$(PYTHON) scripts/release.py $(V)
 
 .PHONY: build test coverage lint metrics mutants install uninstall completions uninstall-completions clean release

@@ -12,7 +12,7 @@ Security issues are reported privately through a [GitHub security advisory](http
 
 ## Setup
 
-You need a recent stable [Rust toolchain](https://rustup.rs) (with `rustfmt` and `clippy`), `make` and `git` 2.28 or newer.
+You need a recent stable [Rust toolchain](https://rustup.rs) (with `rustfmt` and `clippy`) and `git` 2.28 or newer. `make` is optional: see the table below for the direct command behind each target.
 
 ```bash
 git clone https://github.com/Dxsk/repos-manager.git
@@ -39,6 +39,17 @@ The root `Makefile` wraps the usual commands:
 | `make install` / `make uninstall` | Install into `$(PREFIX)/bin` (`PREFIX ?= ~/.local`, `DESTDIR` supported) |
 | `make completions` | bash, zsh and fish completions in your user directories |
 | `make release V=x.y.z` | Cut a release, see below |
+
+`make` is a convenience, not a requirement. Every target is one command, so a checkout with no `make` (every Windows one) runs them directly:
+
+| Target | Direct command |
+|--------|----------------|
+| `make build` | `cargo build --release --locked` |
+| `make test` | `cargo test --locked` |
+| `make lint` | `cargo fmt --check` then `cargo clippy --all-targets --locked -- -D warnings` |
+| `make metrics` | `python scripts/code-metrics.py` |
+| `make coverage` | `cargo llvm-cov --locked --summary-only` |
+| `make release V=x.y.z` | `python scripts/release.py x.y.z` |
 
 ## Running tests
 
@@ -80,7 +91,7 @@ All checks must pass before merging.
 Releases are cut by the maintainer, by hand, from `main` on the upstream forge. There is no automatic version bump.
 
 1. Describe your changes under `## Unreleased` in `CHANGELOG.md`, grouped as `### Added`, `### Changed`, `### Removed` and `### Fixed`. Contributors do this in their pull request.
-2. The maintainer runs `make release V=x.y.z` on a clean tree. It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the signed `vx.y.z` tag (`git tag -s`, so a GPG signing key is needed). Nothing is pushed yet.
+2. The maintainer runs `python scripts/release.py x.y.z` on a clean tree (`make release V=x.y.z` calls the same script). It sets the version in `Cargo.toml`, `Cargo.lock` and `site/src/_data/site.json`, renames `## Unreleased` to `## x.y.z (YYYY-MM-DD)`, commits `chore: release vx.y.z` and creates the signed `vx.y.z` tag (`git tag -s`, so a GPG signing key is needed). Nothing is pushed yet.
 3. `git push --follow-tags` sends the commit and tag to the forge.
 
 The tag starts the Forgejo release (Linux x86_64 and aarch64 musl, `x86_64-pc-windows-gnu` zip and the x86_64 installer). The forge push mirror then forwards `main` and the tag to GitHub, which builds the full release: Linux, macOS, Windows x86_64 and ARM64 (`msvc`) and both installers. Both releases ship `SHA256SUMS` and `SHA256SUMS-binaries`. The install script and `repos-manager update` download from GitHub, so its release must carry every asset.
@@ -234,4 +245,4 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 | Changelog | Add your entry under `## Unreleased` in `CHANGELOG.md` |
 | Commits | Conventional style (`feat:`, `fix:`, `docs:`, `test:`) |
 
-Do not bump the version in your pull request: it only changes through `make release`.
+Do not bump the version in your pull request: it only changes through `scripts/release.py`.
