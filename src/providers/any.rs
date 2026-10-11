@@ -45,9 +45,25 @@ fn is_pattern(name: &str) -> bool {
 
 /// Where the repo lands under `<base_dir>/<host>/`, from its clone URL.
 pub fn full_name(url: &str) -> Option<String> {
-    let path = url_path(url)?.trim_matches('/');
+    let path = drop_drive(url_path(url)?.trim_matches('/'));
     let name = path.strip_suffix(".git").unwrap_or(path).trim_matches('/');
     (!name.is_empty() && is_safe(name)).then(|| name.to_string())
+}
+
+/// A local mirror reached as `file:///C:/mirrors/x.git` would otherwise want a
+/// directory named `C:`, which Windows cannot hold.
+fn drop_drive(path: &str) -> &str {
+    match path.split_once('/') {
+        Some((first, rest)) if is_drive(first) => rest,
+        // A bare drive letter names no repository.
+        None if is_drive(path) => "",
+        _ => path,
+    }
+}
+
+fn is_drive(part: &str) -> bool {
+    let bytes = part.as_bytes();
+    bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic()
 }
 
 fn repo(full_name: &str, url: &str) -> Repo {
@@ -249,10 +265,21 @@ mod tests {
             ("ssh://h/plain", "plain"),
             ("git://h/o/r.git/", "o/r"),
             ("http://h/o/r", "o/r"),
+            // A local mirror, which is a plain git server like any other.
+            ("file:///srv/git/notes.git", "srv/git/notes"),
+            ("file:///C:/mirrors/notes.git", "mirrors/notes"),
+            ("file:///c:/notes.git", "notes"),
         ] {
             assert_eq!(full_name(url).as_deref(), Some(want), "{url}");
         }
-        for url in ["https://h", "git@h:", "nonsense", "git@h:../escape.git", ""] {
+        for url in [
+            "https://h",
+            "git@h:",
+            "nonsense",
+            "git@h:../escape.git",
+            "file:///C:/",
+            "",
+        ] {
             assert_eq!(full_name(url), None, "{url}");
         }
     }

@@ -461,3 +461,150 @@ fn several_hosts_sync_in_one_run_without_live_progress_in_pipes() {
     assert!(out.contains("[2/2]"), "{out}");
     assert!(!out.contains('⟳') && !out.contains('\x1b'), "{out:?}");
 }
+
+/// A bare repo on disk, reachable as a `file://` URL, is a plain git server
+/// like any other: it exercises the `any` provider end to end, offline.
+fn local_server() -> (tempfile::TempDir, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let bare = tmp.path().join("notes.git");
+    let seed = tmp.path().join("seed");
+    fs::create_dir_all(&seed).unwrap();
+    git(
+        tmp.path(),
+        &[
+            "init",
+            "--quiet",
+            "--bare",
+            "-b",
+            "main",
+            bare.to_str().unwrap(),
+        ],
+    );
+    git(&seed, &["init", "--quiet", "-b", "main"]);
+    git(&seed, &["commit", "--quiet", "--allow-empty", "-m", "init"]);
+    git(&seed, &["push", "--quiet", bare.to_str().unwrap(), "main"]);
+
+    let path = bare.to_str().unwrap().replace('\\', "/");
+    let url = if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
+    };
+    (tmp, url)
+}
+
+#[test]
+fn any_sync_clones_then_updates_a_configured_url() {
+    let (tmp, url) = local_server();
+    let config = tmp.path().join("config.json");
+    fs::write(
+        &config,
+        format!(r#"{{"repos":{{"local.invalid":["{url}"]}}}}"#),
+    )
+    .unwrap();
+    let base = tmp.path().join("base");
+    let sync = |provider: &str, extra: &[&str]| {
+        let mut args = vec![provider, "sync", "--base-dir", base.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        cmd(&args)
+            .env("REPOS_MANAGER_CONFIG", &config)
+            .output()
+            .unwrap()
+    };
+
+    let o = sync("any", &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("Found 1 repositories"), "{out}");
+    assert!(out.contains("notes (cloned)"), "{out}");
+    assert!(base.join("local.invalid").is_dir(), "{out}");
+
+    // `git` is an alias of `any`, and the second run finds the clone in place.
+    let o = sync("git", &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("notes (up to date)"), "{out}");
+    assert!(
+        out.contains("Done: 0 cloned, 1 updated, 0 skipped, 0 errors"),
+        "{out}"
+    );
+}
+
+#[test]
+fn any_reports_a_host_with_no_repos_and_an_unusable_url() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("config.json");
+    // `hosts.any` may name a host the `repos` key says nothing about.
+    fs::write(
+        &config,
+        r#"{"hosts":{"any":["listed.invalid","nowhere.invalid"]},
+            "repos":{"listed.invalid":["nonsense"],"other.invalid":["git@h:a/b.git"]}}"#,
+    )
+    .unwrap();
+    let o = cmd(&["any", "sync", "--base-dir", tmp.path().to_str().unwrap()])
+        .env("REPOS_MANAGER_CONFIG", &config)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("Skipping nowhere.invalid"), "{out}");
+    assert!(out.contains("\"repos\""), "{out}");
+    // An unparsable URL warns without failing the host.
+    assert!(out.contains("nonsense"), "{out}");
+}
+
+#[test]
+fn self_hosted_only_providers_need_a_host() {
+    let tmp = tempfile::tempdir().unwrap();
+    for provider in ["onedev", "any"] {
+        // --base-dir keeps the run away from the real ~/Documents.
+        let o = run(&[provider, "sync", "--base-dir", tmp.path().to_str().unwrap()]);
+        assert!(!o.status.success(), "{provider}");
+        assert!(
+            stderr(&o).contains("no hosts configured"),
+            "{provider}: {}",
+            stderr(&o)
+        );
+    }
+}
+
+#[test]
+fn onedev_skips_a_host_without_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("config.json");
+    fs::write(&config, r#"{"hosts":{"onedev":["onedev.invalid"]}}"#).unwrap();
+    let o = cmd(&["onedev", "sync", "--base-dir", tmp.path().to_str().unwrap()])
+        .env("REPOS_MANAGER_CONFIG", &config)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        stdout(&o).contains("Skipping onedev.invalid: no credentials"),
+        "{}",
+        stdout(&o)
+    );
+}
+
+#[test]
+fn every_provider_and_alias_is_reachable() {
+    for name in [
+        "github",
+        "gitlab",
+        "forgejo",
+        "gitea",
+        "gogs",
+        "bitbucket",
+        "radicle",
+        "sourcehut",
+        "srht",
+        "onedev",
+        "any",
+        "git",
+    ] {
+        let o = run(&[name, "--help"]);
+        assert!(o.status.success(), "{name}: {}", stderr(&o));
+        assert!(stdout(&o).contains("sync"), "{name}");
+    }
+    // `login <provider>` is left out on purpose: it would start a real auth
+    // flow. An unknown name is already rejected in bad_arguments_are_rejected.
+}
