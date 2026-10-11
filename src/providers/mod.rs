@@ -2,17 +2,22 @@
 //! bitbucket, rad). Forgejo and the Bitbucket fallback call the HTTP API
 //! with credentials the CLI (or `repos-manager bitbucket login`) stored.
 
+mod any;
 mod bitbucket;
 mod forgejo;
 mod github;
 mod gitlab;
+mod onedev;
 mod radicle;
+mod sourcehut;
 
 use std::fmt;
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
+
+use crate::config::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Provider {
@@ -21,6 +26,10 @@ pub enum Provider {
     Forgejo,
     Bitbucket,
     Radicle,
+    Sourcehut,
+    Onedev,
+    /// A plain git server: URLs from the config, or listed over SSH.
+    Any,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -57,12 +66,15 @@ impl From<anyhow::Error> for ListError {
 }
 
 impl Provider {
-    pub const ALL: [Provider; 5] = [
+    pub const ALL: [Provider; 8] = [
         Provider::Github,
         Provider::Gitlab,
         Provider::Forgejo,
         Provider::Bitbucket,
         Provider::Radicle,
+        Provider::Sourcehut,
+        Provider::Onedev,
+        Provider::Any,
     ];
 
     pub fn name(self) -> &'static str {
@@ -72,6 +84,9 @@ impl Provider {
             Provider::Forgejo => "forgejo",
             Provider::Bitbucket => "bitbucket",
             Provider::Radicle => "radicle",
+            Provider::Sourcehut => "sourcehut",
+            Provider::Onedev => "onedev",
+            Provider::Any => "any",
         }
     }
 
@@ -79,9 +94,12 @@ impl Provider {
         match s {
             "github" => Some(Provider::Github),
             "gitlab" => Some(Provider::Gitlab),
-            "forgejo" | "gitea" => Some(Provider::Forgejo),
+            "forgejo" | "gitea" | "gogs" => Some(Provider::Forgejo),
             "bitbucket" => Some(Provider::Bitbucket),
             "radicle" => Some(Provider::Radicle),
+            "sourcehut" | "srht" => Some(Provider::Sourcehut),
+            "onedev" => Some(Provider::Onedev),
+            "any" | "git" => Some(Provider::Any),
             _ => None,
         }
     }
@@ -93,6 +111,10 @@ impl Provider {
             Provider::Forgejo => "tea",
             Provider::Bitbucket => "bitbucket",
             Provider::Radicle => "rad",
+            Provider::Sourcehut => "hut",
+            Provider::Onedev => "onedev",
+            // Plain git servers need no forge CLI.
+            Provider::Any => "git",
         }
     }
 
@@ -103,12 +125,20 @@ impl Provider {
             Provider::Forgejo => "codeberg.org",
             Provider::Bitbucket => "bitbucket.org",
             Provider::Radicle => "radicle",
+            Provider::Sourcehut => "git.sr.ht",
+            // Both are self-hosted only: without a configured host there is
+            // nothing to sync, so they get no default.
+            Provider::Onedev | Provider::Any => "",
         }
     }
 
     /// Whether this provider can be used on this machine (CLI installed, or a fallback credential).
     pub fn available(self) -> bool {
-        has_cli(self.cli()) || (self == Provider::Bitbucket && bitbucket::has_api_creds())
+        match self {
+            Provider::Bitbucket => has_cli("bitbucket") || bitbucket::has_api_creds(),
+            Provider::Onedev => onedev::has_api_creds(),
+            _ => has_cli(self.cli()),
+        }
     }
 
     pub fn login(self) -> Result<()> {
@@ -118,16 +148,22 @@ impl Provider {
             Provider::Forgejo => forgejo::login(),
             Provider::Bitbucket => bitbucket::login(),
             Provider::Radicle => radicle::login(),
+            Provider::Sourcehut => sourcehut::login(),
+            Provider::Onedev => onedev::login(),
+            Provider::Any => any::login(),
         }
     }
 
-    pub fn list_repos(self, host: &str) -> Result<Vec<Repo>, ListError> {
+    pub fn list_repos(self, host: &str, settings: &Settings) -> Result<Vec<Repo>, ListError> {
         let repos = match self {
             Provider::Github => github::list_repos(host),
             Provider::Gitlab => gitlab::list_repos(host),
             Provider::Forgejo => forgejo::list_repos(host),
             Provider::Bitbucket => bitbucket::list_repos(),
             Provider::Radicle => radicle::list_repos(),
+            Provider::Sourcehut => sourcehut::list_repos(host),
+            Provider::Onedev => onedev::list_repos(host),
+            Provider::Any => any::list_repos(host, settings),
         }?;
         Ok(sorted_unique(repos))
     }
@@ -271,7 +307,14 @@ pub mod tests {
         for p in Provider::ALL {
             assert_eq!(Provider::from_name(p.name()), Some(p));
         }
-        assert_eq!(Provider::from_name("gitea"), Some(Provider::Forgejo));
+        for (alias, want) in [
+            ("gitea", Provider::Forgejo),
+            ("gogs", Provider::Forgejo),
+            ("srht", Provider::Sourcehut),
+            ("git", Provider::Any),
+        ] {
+            assert_eq!(Provider::from_name(alias), Some(want));
+        }
     }
 
     #[test]
@@ -297,11 +340,26 @@ pub mod tests {
     #[test]
     fn provider_metadata() {
         let clis: Vec<_> = Provider::ALL.iter().map(|p| p.cli()).collect();
-        assert_eq!(clis, ["gh", "glab", "tea", "bitbucket", "rad"]);
+        assert_eq!(
+            clis,
+            [
+                "gh",
+                "glab",
+                "tea",
+                "bitbucket",
+                "rad",
+                "hut",
+                "onedev",
+                "git"
+            ]
+        );
         assert_eq!(Provider::Gitlab.default_host(), "gitlab.com");
         assert_eq!(Provider::Bitbucket.default_host(), "bitbucket.org");
         assert_eq!(Provider::Radicle.to_string(), "radicle");
         assert_eq!(Provider::from_name("sourceforge"), None);
+        assert_eq!(Provider::Sourcehut.default_host(), "git.sr.ht");
+        assert_eq!(Provider::Any.default_host(), "");
+        assert_eq!(Provider::Onedev.default_host(), "");
         for p in Provider::ALL {
             // Must not panic whatever is installed.
             let _ = p.available();

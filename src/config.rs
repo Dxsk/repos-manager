@@ -1,6 +1,6 @@
 //! Settings resolution: CLI flag > `REPOS_MANAGER_*` env var > config.json > defaults.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,30 @@ enum Hosts {
     Many(Vec<String>),
 }
 
+/// One entry of `repos`: either a bare list of clone URLs, or a host that can
+/// list its own repositories over SSH.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ReposEntry {
+    Urls(Vec<String>),
+    Spec(AnyHost),
+}
+
+/// A plain git server reached over SSH.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AnyHost {
+    /// Clone URLs listed by hand.
+    #[serde(default)]
+    pub urls: Vec<String>,
+    /// How to ask the server for its repositories: `gitolite`, `soft-serve`
+    /// or `find:<root>`. Without it, only `urls` are synced.
+    pub discover: Option<String>,
+    /// SSH port, when it is not 22 (Soft Serve defaults to 23231).
+    pub port: Option<u16>,
+    /// SSH user, when it is not the local one (`git` for gitolite).
+    pub user: Option<String>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct FileConfig {
     base_dir: Option<String>,
@@ -42,6 +66,8 @@ struct FileConfig {
     scan_network_mounts: Option<bool>,
     #[serde(default)]
     hosts: HashMap<String, Hosts>,
+    #[serde(default)]
+    repos: BTreeMap<String, ReposEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +78,7 @@ pub struct Settings {
     pub check_updates: bool,
     pub scan_network_mounts: bool,
     hosts: HashMap<Provider, Vec<String>>,
+    any: BTreeMap<String, AnyHost>,
 }
 
 fn expand_tilde(s: &str) -> PathBuf {
@@ -94,10 +121,32 @@ impl Settings {
         let check_updates = env_nonempty("REPOS_MANAGER_NO_UPDATE_CHECK").as_deref() != Some("1")
             && file.check_updates.unwrap_or(true);
 
+        let any: BTreeMap<String, AnyHost> = file
+            .repos
+            .into_iter()
+            .map(|(host, entry)| {
+                let spec = match entry {
+                    ReposEntry::Urls(urls) => AnyHost {
+                        urls,
+                        ..Default::default()
+                    },
+                    ReposEntry::Spec(spec) => spec,
+                };
+                (host, spec)
+            })
+            .filter(|(host, spec)| {
+                !host.is_empty() && (!spec.urls.is_empty() || spec.discover.is_some())
+            })
+            .collect();
+
+        // Self-hosted-only providers have no default host; `any` takes its
+        // hosts from the `repos` keys unless `hosts.any` says otherwise.
         let mut hosts: HashMap<Provider, Vec<String>> = Provider::ALL
             .iter()
+            .filter(|p| !p.default_host().is_empty())
             .map(|p| (*p, vec![p.default_host().to_string()]))
             .collect();
+        hosts.insert(Provider::Any, any.keys().cloned().collect());
         for (key, value) in file.hosts {
             let Some(provider) = Provider::from_name(&key) else {
                 output::warn(&format!("config: unknown provider in hosts: {key}"));
@@ -120,11 +169,17 @@ impl Settings {
             check_updates,
             scan_network_mounts: file.scan_network_mounts.unwrap_or(false),
             hosts,
+            any,
         })
     }
 
     pub fn hosts(&self, provider: Provider) -> &[String] {
         self.hosts.get(&provider).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// The `repos` entry of a plain git host, if it has one.
+    pub fn any_host(&self, host: &str) -> Option<&AnyHost> {
+        self.any.get(host)
     }
 
     pub fn validate_base_dir(&self) -> Result<()> {
@@ -153,7 +208,8 @@ const DEFAULT_CONFIG: &str = r#"{
     "gitlab":    ["gitlab.com"],
     "forgejo":   ["codeberg.org"],
     "bitbucket": ["bitbucket.org"]
-  }
+  },
+  "repos": {}
 }
 "#;
 
@@ -217,6 +273,9 @@ mod tests {
         let s = load(Path::new("/nonexistent/config.json"));
         assert_eq!(s.hosts(Provider::Forgejo), ["codeberg.org"]);
         assert_eq!(s.hosts(Provider::Radicle), ["radicle"]);
+        assert_eq!(s.hosts(Provider::Sourcehut), ["git.sr.ht"]);
+        assert!(s.hosts(Provider::Onedev).is_empty());
+        assert!(s.hosts(Provider::Any).is_empty());
         assert_eq!(s.base_dir, home_dir().join("Documents"));
         assert_eq!(s.parallel, 4);
         assert!(s.check_updates);
@@ -240,6 +299,41 @@ mod tests {
         let s = load(&p);
         assert_eq!(s.hosts(Provider::Forgejo), ["g.org"]);
         assert_eq!(s.hosts(Provider::Github), ["github.com"]);
+    }
+
+    #[test]
+    fn plain_git_hosts_come_from_repos() {
+        let (_d, p) = write(
+            r#"{"repos":{
+                "git.example.org":["git@git.example.org:infra/ansible.git"],
+                "soft.example.org":{"discover":"soft-serve","port":23231},
+                "empty.example.org":[],
+                "":["git@x:y.git"]
+            }}"#,
+        );
+        let s = load(&p);
+        assert_eq!(
+            s.hosts(Provider::Any),
+            ["git.example.org", "soft.example.org"]
+        );
+        assert_eq!(
+            s.any_host("git.example.org").unwrap().urls,
+            ["git@git.example.org:infra/ansible.git"]
+        );
+        let soft = s.any_host("soft.example.org").unwrap();
+        assert_eq!(soft.discover.as_deref(), Some("soft-serve"));
+        assert_eq!(soft.port, Some(23231));
+        assert!(s.any_host("empty.example.org").is_none());
+    }
+
+    #[test]
+    fn repos_hosts_can_be_narrowed_by_hosts_any() {
+        let (_d, p) = write(
+            r#"{"hosts":{"any":["b.example.org"]},
+                "repos":{"a.example.org":["git@a:x.git"],"b.example.org":["git@b:y.git"]}}"#,
+        );
+        let s = load(&p);
+        assert_eq!(s.hosts(Provider::Any), ["b.example.org"]);
     }
 
     #[test]

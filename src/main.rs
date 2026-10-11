@@ -102,6 +102,9 @@ fn run(cli: Cli) -> Result<()> {
         Command::Forgejo(p) => provider_cmd(Provider::Forgejo, p.action, settings),
         Command::Bitbucket(p) => provider_cmd(Provider::Bitbucket, p.action, settings),
         Command::Radicle(p) => provider_cmd(Provider::Radicle, p.action, settings),
+        Command::Sourcehut(p) => provider_cmd(Provider::Sourcehut, p.action, settings),
+        Command::Onedev(p) => provider_cmd(Provider::Onedev, p.action, settings),
+        Command::Any(p) => provider_cmd(Provider::Any, p.action, settings),
         Command::Login { provider } => {
             prepare(&settings)?;
             login(provider.map(Into::into))
@@ -165,7 +168,7 @@ fn login(provider: Option<Provider>) -> Result<()> {
         .filter(|p| p.available())
         .collect();
     if found.is_empty() {
-        bail!("no provider CLI found (gh, glab, tea, bitbucket, rad)");
+        bail!("no provider CLI found (gh, glab, tea, bitbucket, rad, hut)");
     }
     for p in found {
         output::heading(&format!("=== Login {p} ==="));

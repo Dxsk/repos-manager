@@ -70,6 +70,8 @@ fn help_lists_providers_and_commands() {
         "forgejo",
         "bitbucket",
         "radicle",
+        "sourcehut",
+        "onedev",
         "login",
         "sync",
         "status",
