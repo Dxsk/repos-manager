@@ -5,7 +5,7 @@ use std::process::Command;
 
 use anyhow::{Result, anyhow};
 
-use super::{ListError, Repo, has_cli, run_capture};
+use super::{ListError, Listing, Repo, has_cli, run_capture};
 use crate::config::{AnyHost, Settings};
 use crate::output;
 
@@ -39,8 +39,11 @@ fn is_safe(name: &str) -> bool {
 
 /// gitolite also reports the config patterns you may create repos under
 /// (`CREATOR/..*`, a character class); they are not clonable repositories.
+/// A gitolite line may hold a wildcard rule rather than a repo. Only the glob
+/// and character-class markers are a reliable signal: `+`, `$` and `^` are
+/// regex metacharacters but are also legal in a name (`cpp+exercises`).
 fn is_pattern(name: &str) -> bool {
-    name.contains("CREATOR") || name.contains(['*', '[', ']', '\\', '+', '$', '^', '?'])
+    name.contains("CREATOR") || name.contains(['*', '[', ']', '\\'])
 }
 
 /// Where the repo lands under `<base_dir>/<host>/`, from its clone URL.
@@ -149,14 +152,17 @@ pub fn soft_serve_names(out: &str) -> Vec<String> {
 
 /// `find <root> -name '*.git' -prune` prints absolute paths; the name is what
 /// is left once `<root>` and the suffix are gone.
-pub fn find_names(out: &str, root: &str) -> Vec<String> {
+/// `(name, remote path)`. The path is kept as printed: a repo that is not
+/// bare prints `<root>/work/.git`, and rebuilding `<root>/work.git` from the
+/// name would point at nothing.
+pub fn find_names(out: &str, root: &str) -> Vec<(String, String)> {
     let root = root.trim_end_matches('/');
     out.lines()
         .map(str::trim)
         .filter_map(|path| {
             let rel = path.strip_suffix(".git")?;
             let rel = rel.strip_prefix(root).unwrap_or(rel).trim_matches('/');
-            (!rel.is_empty() && is_safe(rel)).then(|| rel.to_string())
+            (!rel.is_empty() && is_safe(rel)).then(|| (rel.to_string(), path.to_string()))
         })
         .collect()
 }
@@ -213,10 +219,7 @@ fn find(host: &str, spec: &AnyHost, root: &str) -> Result<Vec<Repo>, ListError> 
     let root = root.trim_end_matches('/');
     Ok(find_names(&raw, root)
         .iter()
-        .map(|name| {
-            let url = ssh_url(user, host, spec.port, &format!("{root}/{name}.git"));
-            repo(name, &url)
-        })
+        .map(|(name, path)| repo(name, &ssh_url(user, host, spec.port, path)))
         .collect())
 }
 
@@ -238,17 +241,20 @@ fn discover(host: &str, spec: &AnyHost, mode: &str) -> Result<Vec<Repo>, ListErr
     }
 }
 
-pub fn list_repos(host: &str, settings: &Settings) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str, settings: &Settings) -> Result<Listing, ListError> {
     let Some(spec) = settings.any_host(host) else {
         return Err(ListError::Skip(format!(
             "no repos configured for '{host}'. Add them under \"repos\" in the config"
         )));
     };
     let mut repos = from_urls(&spec.urls);
+    // A URL that could not be read is missing from the listing, and pruning
+    // would then delete the clone it points at.
+    let partial = repos.len() < spec.urls.len();
     if let Some(mode) = spec.discover.as_deref() {
         repos.extend(discover(host, spec, mode)?);
     }
-    Ok(repos)
+    Ok(Listing { repos, partial })
 }
 
 #[cfg(test)]
@@ -305,13 +311,15 @@ mod tests {
                    the gitolite config gives you the following access:\n\
                    \u{20}R W\tSecureBrowse\n\
                    @R W    gitolite\n\
+                   \u{20}R W\tcpp+exercises\n\
                    @C R W  private/sitaram/[\\w.-]+\n\
                    @C @R W public/sitaram/CREATOR/..*\n\
                    @R_ @W_ testing\n\
                    \n";
         assert_eq!(
             gitolite_names(out),
-            ["SecureBrowse", "gitolite", "testing"].map(String::from)
+            // `+` is a regex metacharacter but a legal repo name too.
+            ["SecureBrowse", "gitolite", "cpp+exercises", "testing"].map(String::from)
         );
     }
 
@@ -330,7 +338,31 @@ mod tests {
                    /srv/git/not-a-repo\n/srv/git/../escape.git\n";
         assert_eq!(
             find_names(out, "/srv/git/"),
-            ["infra/ansible", "notes", "work"].map(String::from)
+            [
+                ("infra/ansible", "/srv/git/infra/ansible.git"),
+                ("notes", "/srv/git/notes.git"),
+                // Not bare: the path printed by find is the one to clone.
+                ("work", "/srv/git/work/.git"),
+            ]
+            .map(|(n, p)| (n.to_string(), p.to_string()))
+        );
+    }
+
+    #[test]
+    fn found_repos_clone_from_the_path_find_printed() {
+        let out = "/srv/git/notes.git
+/srv/git/work/.git
+";
+        let urls: Vec<String> = find_names(out, "/srv/git")
+            .iter()
+            .map(|(_, path)| ssh_url(Some("me"), "h", None, path))
+            .collect();
+        assert_eq!(
+            urls,
+            [
+                "ssh://me@h/srv/git/notes.git",
+                "ssh://me@h/srv/git/work/.git"
+            ]
         );
     }
 
@@ -439,9 +471,9 @@ mod tests {
         let err = list_repos("other.example.org", &settings).unwrap_err();
         assert!(matches!(err, ListError::Skip(m) if m.contains("\"repos\"")));
 
-        let repos = list_repos("known.example.org", &settings).unwrap();
-        assert_eq!(repos.len(), 1);
-        assert_eq!(repos[0].full_name, "a/b");
+        let listing = list_repos("known.example.org", &settings).unwrap();
+        assert_eq!(listing.repos.len(), 1);
+        assert_eq!(listing.repos[0].full_name, "a/b");
 
         let err = list_repos("bad.example.org", &settings).unwrap_err();
         assert!(

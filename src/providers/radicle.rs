@@ -3,7 +3,9 @@ use std::process::Command;
 use anyhow::{Result, bail};
 use serde_json::Value;
 
-use super::{ListError, Repo, has_cli, require_cli, run_capture, run_interactive, str_field};
+use super::{
+    ListError, Listing, Repo, has_cli, require_cli, run_capture, run_interactive, str_field,
+};
 
 pub fn login() -> Result<()> {
     if !has_cli("rad") {
@@ -33,11 +35,11 @@ fn command() -> Command {
     cmd
 }
 
-pub fn list_repos() -> Result<Vec<Repo>, ListError> {
+pub fn list_repos() -> Result<Listing, ListError> {
     require_cli("rad")?;
     let raw = run_capture(&mut command())?;
     let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
-    Ok(parse(&items))
+    Ok(parse(&items).into())
 }
 
 #[cfg(test)]

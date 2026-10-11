@@ -12,7 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Map, Value, json};
 
-use super::{ListError, Repo, str_field, with_git_suffix};
+use super::{ListError, Listing, Repo, str_field, with_git_suffix};
 use crate::{config, http, output};
 
 /// `GET /~api/projects` answers 406 above 100 unless the token is an admin one.
@@ -141,7 +141,7 @@ fn ssh_url(host: &str, path: &str) -> String {
     with_git_suffix(&format!("ssh://git@{}:{SSH_PORT}/{path}", ssh_host(host)))
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     let raw = fs::read_to_string(creds_path()).unwrap_or_default();
     let Some((user, token)) = creds_for_host(&raw, host) else {
         return Err(ListError::Skip(format!(
@@ -156,13 +156,19 @@ pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
     )?)
 }
 
-fn list_from_api(base: &str, host: &str, user: &str, token: &str) -> Result<Vec<Repo>> {
+fn list_from_api(base: &str, host: &str, user: &str, token: &str) -> Result<Listing> {
     let auth = format!("Basic {}", STANDARD.encode(format!("{user}:{token}")));
-    Ok(parse(host, &fetch_pages(base, &auth, MAX_PAGES)?))
+    let (items, partial) = fetch_pages(base, &auth, MAX_PAGES)?;
+    Ok(Listing {
+        repos: parse(host, &items),
+        partial,
+    })
 }
 
 /// OneDev paginates with `offset` and `count`, and returns a bare JSON array.
-fn fetch_pages(base: &str, auth: &str, max_pages: usize) -> Result<Vec<Value>> {
+/// `(items, truncated)`. A page cap reached with full pages in hand, or a
+/// body that is not a list, both mean entries are missing.
+fn fetch_pages(base: &str, auth: &str, max_pages: usize) -> Result<(Vec<Value>, bool)> {
     let agent = http::agent(Duration::from_secs(30));
     let mut all = Vec::new();
     for page in 0..max_pages {
@@ -178,14 +184,16 @@ fn fetch_pages(base: &str, auth: &str, max_pages: usize) -> Result<Vec<Value>> {
             .context("OneDev API /~api/projects")?
             .body_mut()
             .read_json()?;
-        let Value::Array(items) = body else { break };
+        let Value::Array(items) = body else {
+            return Ok((all, true));
+        };
         let full = items.len() >= PAGE_SIZE;
         all.extend(items);
         if !full {
-            break;
+            return Ok((all, false));
         }
     }
-    Ok(all)
+    Ok((all, true))
 }
 
 #[cfg(test)]
@@ -305,9 +313,10 @@ mod tests {
             _ => Response::not_found(),
         });
 
-        let repos = list_from_api(&server.url, "h", "me", "secret").unwrap();
-        assert_eq!(repos.len(), PAGE_SIZE + 1);
-        assert_eq!(repos.last().unwrap().full_name, "b/last");
+        let listing = list_from_api(&server.url, "h", "me", "secret").unwrap();
+        assert_eq!(listing.repos.len(), PAGE_SIZE + 1);
+        assert_eq!(listing.repos.last().unwrap().full_name, "b/last");
+        assert!(!listing.partial, "a short page ends the listing");
 
         let auth = format!("Basic {}", STANDARD.encode("me:secret"));
         let reqs = server.requests();
@@ -320,15 +329,18 @@ mod tests {
     #[test]
     fn a_server_ignoring_offset_is_capped() {
         let server = Server::start(|_| full_page("a"));
-        let items = fetch_pages(&server.url, "Basic x", 3).unwrap();
+        let (items, truncated) = fetch_pages(&server.url, "Basic x", 3).unwrap();
         assert_eq!(items.len(), 3 * PAGE_SIZE);
+        assert!(truncated, "the cap cut the listing short");
         assert_eq!(server.requests().len(), 3);
     }
 
     #[test]
     fn non_array_answers_and_errors() {
         let server = Server::start(|_| Response::json(r#"{"error":"nope"}"#));
-        assert!(fetch_pages(&server.url, "Basic x", 2).unwrap().is_empty());
+        let (items, truncated) = fetch_pages(&server.url, "Basic x", 2).unwrap();
+        assert!(items.is_empty());
+        assert!(truncated, "an error object is not an exhausted listing");
 
         let failing = Server::start(|_| Response::not_found());
         let err = list_from_api(&failing.url, "h", "me", "t").unwrap_err();

@@ -458,9 +458,11 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
         let (mut complete, mut any) = (true, false);
         for (h, list) in lists {
             match list {
-                Ok(r) => {
+                Ok(listing) => {
                     any = true;
-                    merge_unique(&mut repos, r);
+                    // A listing missing entries must never drive a prune.
+                    complete &= !listing.partial;
+                    merge_unique(&mut repos, listing.repos);
                 }
                 Err(ListError::Skip(reason)) => {
                     announce();

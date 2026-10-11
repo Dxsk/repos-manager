@@ -13,7 +13,9 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 use ureq::Agent;
 
-use super::{ListError, Repo, has_cli, run_interactive, str_field, u64_field, with_git_suffix};
+use super::{
+    ListError, Listing, Repo, has_cli, run_interactive, str_field, u64_field, with_git_suffix,
+};
 use crate::config::{app_config_dir, home_dir};
 use crate::{http, output};
 
@@ -207,7 +209,9 @@ fn item_ids(items: &[Value]) -> Vec<String> {
         .collect()
 }
 
-fn paginate(agent: &Agent, base: &str, token: &str, path: &str) -> Result<Vec<Value>> {
+/// `(items, truncated)`. Truncated means the cap was hit with a full page in
+/// hand, so entries are missing.
+fn paginate(agent: &Agent, base: &str, token: &str, path: &str) -> Result<(Vec<Value>, bool)> {
     let sep = if path.contains('?') { '&' } else { '?' };
     let mut all = Vec::new();
     let mut previous: Option<Vec<String>> = None;
@@ -234,9 +238,10 @@ fn paginate(agent: &Agent, base: &str, token: &str, path: &str) -> Result<Vec<Va
             output::warn(&format!(
                 "{path}: stopped after {MAX_PAGES} pages, the listing may be incomplete"
             ));
+            return Ok((all, true));
         }
     }
-    Ok(all)
+    Ok((all, false))
 }
 
 pub fn parse(items: &[Value]) -> Vec<Repo> {
@@ -252,7 +257,7 @@ pub fn parse(items: &[Value]) -> Vec<Repo> {
         .collect()
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     let tea_config = tea_config_candidates(|k| std::env::var_os(k))
         .into_iter()
         .find(|p| p.is_file());
@@ -261,10 +266,12 @@ pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
 }
 
 /// The user's own repos plus those of every org they belong to.
-fn list_from_api(base: &str, token: &str) -> Result<Vec<Repo>> {
+fn list_from_api(base: &str, token: &str) -> Result<Listing> {
     let agent = http::agent(Duration::from_secs(30));
-    let mut items = paginate(&agent, base, token, "/api/v1/user/repos")?;
-    for org in paginate(&agent, base, token, "/api/v1/user/orgs")? {
+    let (mut items, mut partial) = paginate(&agent, base, token, "/api/v1/user/repos")?;
+    let (orgs, orgs_partial) = paginate(&agent, base, token, "/api/v1/user/orgs")?;
+    partial |= orgs_partial;
+    for org in orgs {
         let name = org
             .get("username")
             .or_else(|| org.get("name"))
@@ -274,11 +281,22 @@ fn list_from_api(base: &str, token: &str) -> Result<Vec<Repo>> {
             continue;
         }
         match paginate(&agent, base, token, &format!("/api/v1/orgs/{name}/repos")) {
-            Ok(org_items) => items.extend(org_items),
-            Err(e) => output::warn(&format!("org {name}: {e:#}")),
+            Ok((org_items, org_partial)) => {
+                items.extend(org_items);
+                partial |= org_partial;
+            }
+            // The org's repos are missing from the listing, so pruning it
+            // would delete them.
+            Err(e) => {
+                output::warn(&format!("org {name}: {e:#}"));
+                partial = true;
+            }
         }
     }
-    Ok(parse(&items))
+    Ok(Listing {
+        repos: parse(&items),
+        partial,
+    })
 }
 
 #[cfg(test)]
@@ -487,11 +505,15 @@ logins:
             }
         });
 
-        let repos = list_from_api(&server.url, "secret").unwrap();
+        let listing = list_from_api(&server.url, "secret").unwrap();
+        let repos = &listing.repos;
         assert_eq!(repos.len(), PAGE_SIZE + 2);
         assert!(repos.iter().any(|r| r.full_name == "me/last"));
         let org = repos.iter().find(|r| r.full_name == "org1/a").unwrap();
         assert_eq!(org.https_url, "https://h/org1/a.git");
+        // One org answered an error object and another 404ed: their repos are
+        // missing from the listing.
+        assert!(listing.partial);
 
         let reqs = server.requests();
         assert!(reqs.iter().all(|r| r.contains("token secret")));
@@ -512,8 +534,10 @@ logins:
             }
         });
 
-        let repos = list_from_api(&server.url, "t").unwrap();
-        assert_eq!(repos.len(), PAGE_SIZE);
+        let listing = list_from_api(&server.url, "t").unwrap();
+        assert_eq!(listing.repos.len(), PAGE_SIZE);
+        // The whole list came back at once, so nothing is missing.
+        assert!(!listing.partial);
         // Two identical repo pages plus the orgs page, then it gives up.
         assert_eq!(server.requests().len(), 3);
     }
@@ -527,8 +551,9 @@ logins:
         });
 
         let agent = http::agent(Duration::from_secs(10));
-        let items = paginate(&agent, &server.url, "t", "/api/v1/user/repos").unwrap();
+        let (items, truncated) = paginate(&agent, &server.url, "t", "/api/v1/user/repos").unwrap();
         assert_eq!(items.len(), MAX_PAGES * PAGE_SIZE);
+        assert!(truncated, "the cap cut the listing short");
         assert_eq!(server.requests().len(), MAX_PAGES);
     }
 

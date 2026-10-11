@@ -3,7 +3,7 @@ use std::process::Command;
 use serde_json::Value;
 
 use super::{
-    ListError, Repo, parse_paginated, require_cli, run_capture, str_field, u64_field,
+    ListError, Listing, Repo, parse_paginated, require_cli, run_capture, str_field, u64_field,
     with_git_suffix,
 };
 
@@ -35,10 +35,10 @@ fn command(host: &str) -> Command {
     cmd
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     require_cli("gh")?;
     let raw = run_capture(&mut command(host))?;
-    Ok(parse(&parse_paginated(&raw)?))
+    Ok(parse(&parse_paginated(&raw)?).into())
 }
 
 #[cfg(test)]

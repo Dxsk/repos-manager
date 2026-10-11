@@ -608,3 +608,37 @@ fn every_provider_and_alias_is_reachable() {
     // `login <provider>` is left out on purpose: it would start a real auth
     // flow. An unknown name is already rejected in bad_arguments_are_rejected.
 }
+
+/// A URL the config holds but the provider could not read leaves the listing
+/// short of one entry. Pruning it would delete a clone whose remote is alive.
+#[test]
+fn a_partial_listing_is_never_pruned() {
+    let (tmp, url) = local_server();
+    let config = tmp.path().join("config.json");
+    fs::write(
+        &config,
+        format!(r#"{{"repos":{{"local.invalid":["{url}","nonsense"]}}}}"#),
+    )
+    .unwrap();
+    let base = tmp.path().join("base");
+    let sync = |extra: &[&str]| {
+        let mut args = vec!["any", "sync", "--base-dir", base.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        cmd(&args)
+            .env("REPOS_MANAGER_CONFIG", &config)
+            .output()
+            .unwrap()
+    };
+
+    let o = sync(&[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(stdout(&o).contains("notes (cloned)"), "{}", stdout(&o));
+
+    let o = sync(&["--prune"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains("Pruning skipped: the repository list of this host is incomplete"),
+        "{out}"
+    );
+}

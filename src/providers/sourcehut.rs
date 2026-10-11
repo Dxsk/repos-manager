@@ -5,7 +5,9 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use super::{ListError, Repo, has_cli, require_cli, run_capture_input, run_interactive, str_field};
+use super::{
+    ListError, Listing, Repo, has_cli, require_cli, run_capture_input, run_interactive, str_field,
+};
 
 /// The git.sr.ht root `repositories` field returns every repo the token can
 /// reach, private and unlisted included, so nothing is filtered here.
@@ -109,7 +111,7 @@ fn fetch_page(host: &str, cursor: Option<&str>) -> Result<Value, ListError> {
     Ok(serde_json::from_str(&raw).context("invalid JSON from hut")?)
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     require_cli("hut")?;
     let mut repos = Vec::new();
     let mut cursor = None;
@@ -121,7 +123,11 @@ pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
             break;
         }
     }
-    Ok(repos)
+    // A cursor still in hand means the cap cut the listing short.
+    Ok(Listing {
+        repos,
+        partial: cursor.is_some(),
+    })
 }
 
 #[cfg(test)]

@@ -54,6 +54,25 @@ impl Repo {
     }
 }
 
+/// What a provider found on one host.
+#[derive(Debug, Default)]
+pub struct Listing {
+    pub repos: Vec<Repo>,
+    /// Set when entries are known to be missing: a page cap was hit, an
+    /// organization failed, a configured URL could not be read. Pruning a
+    /// partial listing would delete clones that still exist on the remote.
+    pub partial: bool,
+}
+
+impl From<Vec<Repo>> for Listing {
+    fn from(repos: Vec<Repo>) -> Self {
+        Self {
+            repos,
+            partial: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ListError {
     /// Host not usable (not logged in, no credentials): skipped with a warning.
@@ -158,8 +177,8 @@ impl Provider {
         }
     }
 
-    pub fn list_repos(self, host: &str, settings: &Settings) -> Result<Vec<Repo>, ListError> {
-        let repos = match self {
+    pub fn list_repos(self, host: &str, settings: &Settings) -> Result<Listing, ListError> {
+        let mut listing = match self {
             Provider::Github => github::list_repos(host),
             Provider::Gitlab => gitlab::list_repos(host),
             Provider::Forgejo => forgejo::list_repos(host),
@@ -169,7 +188,8 @@ impl Provider {
             Provider::Onedev => onedev::list_repos(host),
             Provider::Any => any::list_repos(host, settings),
         }?;
-        Ok(sorted_unique(repos))
+        listing.repos = sorted_unique(listing.repos);
+        Ok(listing)
     }
 }
 

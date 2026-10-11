@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ureq::Agent;
 
-use super::{ListError, Repo, has_cli, run_capture, run_interactive, str_field, u64_field};
+use super::{
+    ListError, Listing, Repo, has_cli, run_capture, run_interactive, str_field, u64_field,
+};
 use crate::{config, http, output};
 
 const CLOUD_HOST: &str = "bitbucket.org";
@@ -137,9 +139,14 @@ fn prompt_creds(host: &str) -> Result<Creds> {
     })
 }
 
-/// Merge `entry` into the map held in `raw`, keeping the entries of other hosts.
+/// Merge `entry` into the map held in `raw`, keeping the entries of other
+/// hosts. A legacy app password is not carried over: it cannot authenticate
+/// anything any more, and keeping it would turn the warning into a 401.
 fn merged_creds(raw: &str, host: &str, entry: Creds) -> Result<String> {
-    let mut map = parse_creds(raw).0;
+    let (mut map, legacy) = parse_creds(raw);
+    if legacy {
+        map.clear();
+    }
     map.insert(host.to_string(), entry);
     Ok(serde_json::to_string_pretty(&map)?)
 }
@@ -233,11 +240,11 @@ fn cli_command() -> Command {
     cmd
 }
 
-pub fn list_repos(host: &str) -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(host: &str) -> Result<Listing, ListError> {
     if host == CLOUD_HOST && has_cli("bitbucket") {
         let raw = run_capture(&mut cli_command())?;
         let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
-        return Ok(parse(&items));
+        return Ok(parse(&items).into());
     }
 
     let Some(creds) = creds_for_host(host) else {
@@ -267,13 +274,13 @@ fn get_json(agent: &Agent, url: &str, auth: &str, what: &str) -> Result<Value> {
 }
 
 /// Follow the `next` links of the paginated 2.0 API from `first_page`.
-fn list_cloud(first_page: &str, creds: &Creds) -> Result<Vec<Repo>> {
+fn list_cloud(first_page: &str, creds: &Creds) -> Result<Listing> {
     let agent = http::agent(Duration::from_secs(30));
     let auth = auth_header(creds);
     let mut next = Some(first_page.to_string());
     let mut items = Vec::new();
     for _ in 0..MAX_PAGES {
-        let Some(url) = next else { break };
+        let Some(url) = next.take() else { break };
         let page = get_json(&agent, &url, &auth, "Bitbucket API")?;
         if let Some(values) = page.get("values").and_then(Value::as_array) {
             items.extend(values.iter().cloned());
@@ -285,13 +292,17 @@ fn list_cloud(first_page: &str, creds: &Creds) -> Result<Vec<Repo>> {
             .filter(|n| *n != url)
             .map(String::from);
     }
-    Ok(parse(&items))
+    // A page still pending means the cap cut the listing short.
+    Ok(Listing {
+        repos: parse(&items),
+        partial: next.is_some(),
+    })
 }
 
 /// The 1.0 API pages with `start`, reported back as `nextPageStart` until
 /// `isLastPage`. Identifiers of adjacent objects are not contiguous, so the
 /// offset must come from the payload and not from the number of items seen.
-fn list_server(base: &str, creds: &Creds) -> Result<Vec<Repo>> {
+fn list_server(base: &str, creds: &Creds) -> Result<Listing> {
     let agent = http::agent(Duration::from_secs(30));
     let auth = auth_header(creds);
     let page_url = |start: Option<u64>| match start {
@@ -302,7 +313,7 @@ fn list_server(base: &str, creds: &Creds) -> Result<Vec<Repo>> {
     let mut items = Vec::new();
     let mut seen = 0;
     for _ in 0..MAX_PAGES {
-        let Some(url) = next else { break };
+        let Some(url) = next.take() else { break };
         let page = get_json(&agent, &url, &auth, "Bitbucket Data Center API")?;
         if let Some(values) = page.get("values").and_then(Value::as_array) {
             items.extend(values.iter().cloned());
@@ -313,7 +324,10 @@ fn list_server(base: &str, creds: &Creds) -> Result<Vec<Repo>> {
             .inspect(|s| seen = *s)
             .map(|s| page_url(Some(s)));
     }
-    Ok(parse_server(&items))
+    Ok(Listing {
+        repos: parse_server(&items),
+        partial: next.is_some(),
+    })
 }
 
 fn next_page_start(page: &Value) -> Option<u64> {
@@ -397,6 +411,14 @@ mod tests {
 
         let fresh = merged_creds("", "bitbucket.org", cloud("a@b.c", "t")).unwrap();
         assert_eq!(parse_creds(&fresh).0.len(), 1);
+
+        // Logging in to another host must not silence the legacy warning by
+        // promoting a dead app password to a normal entry.
+        let migrated = merged_creds("me:app-pass", "bb.corp.example", bearer("dc")).unwrap();
+        let (map, legacy) = parse_creds(&migrated);
+        assert!(!legacy);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["bb.corp.example"], bearer("dc"));
     }
 
     #[test]
@@ -441,9 +463,10 @@ mod tests {
         base.set(server.url.clone()).unwrap();
 
         let first = format!("{}/repositories?role=member&pagelen=100", server.url);
-        let repos = list_cloud(&first, &cloud("user", "pass")).unwrap();
-        let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
+        let listing = list_cloud(&first, &cloud("user", "pass")).unwrap();
+        let names: Vec<_> = listing.repos.iter().map(|r| r.full_name.as_str()).collect();
         assert_eq!(names, ["t/a", "t/b"]);
+        assert!(!listing.partial, "the last page ends the listing");
         let auth = format!("Basic {}", STANDARD.encode("user:pass"));
         let reqs = server.requests();
         assert_eq!(reqs.len(), 2);
@@ -482,9 +505,10 @@ mod tests {
             }
         });
 
-        let repos = list_server(&server.url, &cloud("me", "t")).unwrap();
-        let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
+        let listing = list_server(&server.url, &cloud("me", "t")).unwrap();
+        let names: Vec<_> = listing.repos.iter().map(|r| r.full_name.as_str()).collect();
         assert_eq!(names, ["prj/a", "prj/b"]);
+        assert!(!listing.partial);
 
         let reqs = server.requests();
         assert_eq!(reqs.len(), 2);
@@ -499,7 +523,12 @@ mod tests {
     #[test]
     fn data_center_sends_bearer_without_user() {
         let server = Server::start(|_| Response::json(r#"{"isLastPage":true,"values":[]}"#));
-        assert!(list_server(&server.url, &bearer("tok")).unwrap().is_empty());
+        assert!(
+            list_server(&server.url, &bearer("tok"))
+                .unwrap()
+                .repos
+                .is_empty()
+        );
         let reqs = server.requests();
         assert_eq!(reqs.len(), 1);
         assert!(reqs[0].contains("Bearer tok"), "{:?}", reqs[0]);
