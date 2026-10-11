@@ -222,8 +222,7 @@ After a sync, your workspace mirrors the remote namespaces:
 
 ```
 ~/Documents/
-  .repos-filter
-  .repos-ignore
+  .repos.yml
   github.com/
     dxsk/
       my-project/
@@ -261,7 +260,8 @@ Aliases: `gitea` and `gogs` for `forgejo`, `srht` for `sourcehut`, `git` for `an
 
 | Flag | Description |
 |---|---|
-| `--filter <pattern>` | Only sync matching repos (`Dxsk/*` or `Dxsk/project`) |
+| `--filter <pattern>` | Only sync matching repos (`Dxsk/*` or `Dxsk/project`), repeatable |
+| `--ignore <pattern>` | Skip matching repos, repeatable |
 | `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
 | `--https` | Use HTTPS clone URLs instead of SSH |
 | `--prune` | Remove local repos that no longer exist on the remote |
@@ -280,6 +280,10 @@ Aliases: `gitea` and `gogs` for `forgejo`, `srht` for `sourcehut`, `git` for `an
 # Only one owner, or a single repo
 repos-manager github sync --filter 'Dxsk/*'
 repos-manager github sync --filter Dxsk/repos-manager
+
+# Several patterns, and a few exceptions
+repos-manager sync --all --filter 'Dxsk/*' --filter 'other-org/tooling'
+repos-manager sync --all --ignore 'Dxsk/old-*'
 
 # Preview, then clean up repos deleted on the remote
 repos-manager sync --all --prune --dry-run
@@ -302,7 +306,7 @@ Existing clean repos get `git fetch --all --prune`, then a fast-forward of the r
 `--prune` only deletes a local repo when all of these hold:
 
 - the remote no longer lists it;
-- it is in scope: not in `.repos-ignore`, and matched by `.repos-filter` and `--filter` when set;
+- it is in scope for that host: allowed by every `only` list that applies to it, and matched by no `ignore` list (see [`.repos.yml`](#filtering));
 - it holds no local-only work: no uncommitted or untracked changes, no unpushed commits, no stash;
 - it sits inside the base directory.
 
@@ -441,27 +445,38 @@ Providers without a CLI (or whose CLI you did not install) keep a token per host
 
 </details>
 
-<details>
-<summary><b>Filter and ignore files</b></summary>
+<details id="filtering">
+<summary><b>Filtering: .repos.yml</b></summary>
 
 <br>
 
-Both files live at the root of the base directory and use the same patterns: `*` and `?` wildcards, `owner/*` also matches nested paths (`group/subgroup/project`), `#` starts a comment and empty lines are ignored.
+One file at the root of the base directory decides what gets synced, globally and per host:
 
-`.repos-filter` syncs **only** repos matching at least one pattern. If the file is missing, everything is synced; if it exists but holds no pattern, nothing is.
+```yaml
+# Everywhere
+only:
+  - Dxsk/*
+ignore:
+  - test-org/*
 
-```
-# Only my repos, plus one from another org
-Dxsk/*
-other-org/some-project
+# Per host, on top of the lists above
+hosts:
+  gitlab.corp:
+    only: [team/*]
+    ignore: [team/archive-*]
+  github.com:
+    ignore: [Dxsk/old-project]
 ```
 
-`.repos-ignore` excludes repos, and is applied **after** `.repos-filter`.
+Patterns are the same everywhere: `*` and `?` wildcards, `owner/*` also matches nested paths (`group/subgroup/project`), and they are matched against the remote full name, not the local path. Host keys ignore case.
 
-```
-Dxsk/old-project
-test-org/*
-```
+`only` is an allow-list: one matching pattern is enough. `ignore` is a deny-list, and a repo it catches is reported as `ignored`. Allow-lists stack and a repo must pass all of them, in this order: the `--filter` flags, the `hosts.<host>` block, then the global `only`. Deny-lists simply add up.
+
+So a `hosts:` block can only narrow what the global lists allow, never widen it, and it can never pull a repository into `--prune`'s reach. When two stacked allow-lists have nothing in common, the host ends up with nothing in scope and repos-manager says which lists caused it instead of leaving it looking like an empty remote. An `only: []` is ignored with a warning rather than emptying the scope.
+
+Since this file drives `--prune`, a typo in it is an error, not a shrug: an unknown key, malformed YAML or an unreadable file stops the run before any host is synced.
+
+**Legacy text files.** `.repos-filter` (allow-list) and `.repos-ignore` (deny-list), one pattern per line with `#` comments, still work exactly as in 1.0 as long as there is no `.repos.yml`. Once that file exists it takes over and the text files are ignored, with a warning.
 
 </details>
 
@@ -536,7 +551,7 @@ Installed through a package manager (AUR, `cargo install`, and later Homebrew, S
 
 ### Upgrading from 0.x
 
-1.0 is a breaking release: the Bash tool became a native binary, and the 0.x `repos-manager update` cannot install it. Your config file, `.repos-filter`, `.repos-ignore` and synced repositories are kept as they are.
+1.0 is a breaking release: the Bash tool became a native binary, and the 0.x `repos-manager update` cannot install it. Your config file, `.repos-filter`, `.repos-ignore` and synced repositories are kept as they are (the two filter files are still read, see [Filtering](#filtering)).
 
 ```sh
 # 1. Remove the 0.x Bash install (make install put it here)

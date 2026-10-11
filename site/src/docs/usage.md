@@ -39,6 +39,7 @@ repos-manager github sync                    # Sync GitHub repos
 repos-manager sync --all                     # All providers
 repos-manager sync --all --parallel 8        # 8 concurrent jobs
 repos-manager github sync --filter 'Dxsk/*'  # Only Dxsk's repos
+repos-manager sync --all --ignore 'Dxsk/old-*'  # Everything but these
 repos-manager sync --all --prune             # Remove deleted remote repos
 repos-manager sync --all --dry-run           # Preview without changes
 ```
@@ -54,7 +55,7 @@ For each repository:
 `--prune` removes local repos under the host directory that are no longer listed by the remote. It never deletes:
 
 - a repo with uncommitted or untracked changes, unpushed commits or a stash;
-- a repo in `.repos-ignore`, or outside `.repos-filter` or `--filter`;
+- a repo an `ignore` list catches, or one no `only` list allows (see [Filtering](/docs/filtering/));
 - anything outside the base directory.
 
 When more than half of a host's local repos would go, the listing is treated as incomplete and prune stops: check with `--dry-run`, then add `--force`.
@@ -128,7 +129,8 @@ Sync flags (`<provider> sync` and `sync --all`):
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--filter <pattern>` | Filter repos by pattern | None |
+| `--filter <pattern>` | Only sync matching repos, repeatable | None |
+| `--ignore <pattern>` | Skip matching repos, repeatable | None |
 | `--base-dir <path>` | Base directory | `~/Documents` |
 | `--https` | Use HTTPS instead of SSH | SSH |
 | `--prune` | Remove local repos not on remote | Off |

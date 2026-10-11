@@ -50,7 +50,8 @@ fn apply_sync(settings: &mut Settings, args: &SyncArgs) -> SyncOptions {
         settings.parallel = n.into();
     }
     SyncOptions {
-        filter: args.filter.clone(),
+        only: args.filter.clone(),
+        ignore: args.ignore.clone(),
         prune: args.prune,
         force: args.force,
         dry_run: args.dry_run,
@@ -209,7 +210,8 @@ mod tests {
     fn sync_flags_override_settings() {
         let mut settings = Settings::for_tests(&PathBuf::from("/from/config"));
         let args = SyncArgs {
-            filter: Some("o/*".into()),
+            filter: vec!["o/*".into(), "p/*".into()],
+            ignore: vec!["o/old".into()],
             https: true,
             prune: true,
             dry_run: true,
@@ -224,7 +226,8 @@ mod tests {
         assert_eq!(settings.base_dir, PathBuf::from("/from/flag"));
         assert!(settings.use_https);
         assert_eq!(settings.parallel, 7);
-        assert_eq!(opts.filter.as_deref(), Some("o/*"));
+        assert_eq!(opts.only, ["o/*", "p/*"]);
+        assert_eq!(opts.ignore, ["o/old"]);
         assert!(opts.prune && opts.dry_run);
     }
 
@@ -235,6 +238,7 @@ mod tests {
         assert_eq!(settings.base_dir, PathBuf::from("/base"));
         assert!(!settings.use_https);
         assert_eq!(settings.parallel, 4);
-        assert!(opts.filter.is_none() && !opts.prune && !opts.dry_run);
+        assert!(opts.only.is_empty() && opts.ignore.is_empty());
+        assert!(!opts.prune && !opts.dry_run);
     }
 }

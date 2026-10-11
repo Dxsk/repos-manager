@@ -123,9 +123,12 @@ pub struct CommonFlags {
 
 #[derive(Debug, Clone, Default, Args)]
 pub struct SyncArgs {
-    /// Filter repos by pattern (e.g. owner/* or owner/project)
+    /// Sync only repos matching a pattern, repeatable (e.g. owner/* or owner/project)
     #[arg(long, value_name = "PATTERN")]
-    pub filter: Option<String>,
+    pub filter: Vec<String>,
+    /// Skip repos matching a pattern, repeatable
+    #[arg(long, value_name = "PATTERN")]
+    pub ignore: Vec<String>,
     /// Use HTTPS instead of SSH
     #[arg(long)]
     pub https: bool,
@@ -184,6 +187,10 @@ mod tests {
             "sync",
             "--filter",
             "Dxsk/*",
+            "--filter",
+            "other/repo",
+            "--ignore",
+            "Dxsk/old",
             "--https",
             "--prune",
             "--dry-run",
@@ -198,7 +205,8 @@ mod tests {
         else {
             panic!("wrong parse");
         };
-        assert_eq!(a.filter.as_deref(), Some("Dxsk/*"));
+        assert_eq!(a.filter, ["Dxsk/*", "other/repo"]);
+        assert_eq!(a.ignore, ["Dxsk/old"]);
         assert!(a.https && a.prune && a.dry_run && a.common.quiet);
         assert_eq!(a.parallel, Some(8));
     }

@@ -1,62 +1,118 @@
 ---
 title: Filtering
-description: "Choose exactly which repositories repos-manager syncs with --filter, .repos-filter allow-lists and .repos-ignore glob patterns."
+description: "Choose exactly which repositories repos-manager syncs with .repos.yml allow-lists and deny-lists, per host, plus the --filter and --ignore flags."
 order: 5
 ---
 
-## .repos-filter
+## .repos.yml
 
-Create `<base_dir>/.repos-filter` to sync **only** repos matching at least one pattern. If the file is missing, all repos are synced. If it exists but holds no pattern, nothing is synced, so delete it rather than emptying it.
+One file at the root of the base directory decides what gets synced: `<base_dir>/.repos.yml`.
 
-```bash
-# Only sync repos from Dxsk
-Dxsk/*
+```yaml
+# Everywhere
+only:
+  - Dxsk/*
+ignore:
+  - test-org/*
 
-# Plus a specific repo from another org
-other-org/some-project
+# Per host, on top of the lists above
+hosts:
+  gitlab.corp:
+    only: [team/*]
+    ignore: [team/archive-*]
+  github.com:
+    ignore: [Dxsk/old-project]
 ```
 
-## .repos-ignore
+Both keys are optional, and so is the whole file: with no `.repos.yml` and no legacy text file, everything you can access is synced.
 
-Create `<base_dir>/.repos-ignore` to exclude repos from syncing. Applied **after** `.repos-filter`. Ignored repos are reported as skipped.
+- `only` is an **allow-list**: a repo passes it as soon as it matches **at least one** pattern.
+- `ignore` is a **deny-list**: a repo matching any pattern is skipped, and reported as `ignored`.
 
-```bash
-# Ignore a specific repo
-Dxsk/old-project
+Host keys are matched against the host name without regard to case, so `GitLab.Corp` and `gitlab.corp` are the same block.
 
-# Ignore all repos from an owner
-test-org/*
+## How the layers combine
 
-# Glob pattern
-*/tmp-*
+Three layers can hold an allow-list, and they are evaluated in this order:
+
+1. the `--filter` flags, taken together as one allow-list;
+2. the `hosts.<host>` block of the host being synced;
+3. the global `only` list.
+
+A repo has to pass **every** layer that is present. Deny-lists are not layered, they simply add up: `--ignore`, the global `ignore` and the host's `ignore` all apply at once.
+
+The practical consequence is worth spelling out: **a `hosts:` block can only narrow what the global lists already allow, never widen it.** With
+
+```yaml
+only: [Dxsk/*]
+hosts:
+  github.com:
+    only: [other-org/*]
 ```
+
+`other-org/*` is **not** synced on `github.com`: nothing matches both lists, so that host has nothing in scope. repos-manager says so rather than letting it look like an empty remote:
+
+```
+⚠ No repository of github.com is in scope: 'hosts.github.com.only' and 'only' have nothing in common
+```
+
+This also means a host block can never pull a repository into `--prune`'s reach. It can only take one out, which is the safe direction.
+
+An empty list (`only: []`, globally or per host) is **not** an allow-list that rejects everything. It is ignored, with a warning naming the file and the host, so a generated or half-edited file cannot silently empty your scope.
 
 ## Pattern syntax
 
 - `owner/repo`: exact match (case-sensitive)
-- `owner/*`: all repos from an owner (including nested paths like `group/subgroup/repo`)
+- `owner/*`: every repo of an owner, nested paths included (`group/subgroup/repo`)
 - `*` and `?` glob wildcards (`*` also crosses `/`, so `*/tmp-*` matches any owner)
-- `#` starts a comment, on its own line or after a pattern
-- Empty lines are ignored
+- patterns are matched against the remote full name (`owner/repo`), not the local path
 
-## --filter flag
+## --filter and --ignore
 
-The `--filter` flag works the same way but from the command line:
+The same patterns work from the command line, and both flags are repeatable:
 
 ```bash
-# Sync only repos from a specific owner
+# One owner, or a single repo
 repos-manager github sync --filter 'Dxsk/*'
-
-# Sync a single repo
 repos-manager github sync --filter Dxsk/repos-manager
+
+# Several patterns: a repo matching any of them passes
+repos-manager sync --all --filter 'Dxsk/*' --filter 'other-org/tooling'
+
+# Everything but a few
+repos-manager sync --all --ignore 'Dxsk/old-*' --ignore 'test-org/*'
 ```
 
-## Precedence
+Quote patterns containing `*` so your shell does not expand them.
 
-1. `--filter` flag (command line)
-2. `.repos-filter` file (must match)
-3. `.repos-ignore` file (excluded)
+## When something is wrong with the file
 
-A repo must pass all three checks to be synced. Patterns are matched against the remote full name (`owner/repo`), not the local path.
+`.repos.yml` drives `--prune`, so a file repos-manager cannot trust stops the run instead of falling back to "no filter":
 
-Quote patterns containing `*` on the command line so your shell does not expand them.
+- an unknown key (`onlyy:`, `host:`, a misplaced `only:`) is an error naming the key;
+- a malformed YAML document is an error naming the file;
+- a file that cannot be read is an error naming the file.
+
+No host is synced and nothing is pruned until the file parses.
+
+## Legacy text files
+
+The two 1.0 text files still work, unchanged, **as long as there is no `.repos.yml`**:
+
+- `<base_dir>/.repos-filter`, one allow-list pattern per line;
+- `<base_dir>/.repos-ignore`, one deny-list pattern per line.
+
+Both accept `#` comments and blank lines. A `.repos-filter` that exists but holds no pattern still lets nothing through, which is why the YAML `only: []` behaves differently.
+
+As soon as a `.repos.yml` exists it takes over completely, and repos-manager warns once that the text files are being ignored. Moving over is a copy and paste:
+
+```yaml
+# .repos-filter          ->  only:
+# .repos-ignore          ->  ignore:
+only:
+  - Dxsk/*
+  - other-org/some-project
+ignore:
+  - Dxsk/old-project
+  - test-org/*
+```

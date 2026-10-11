@@ -1,10 +1,20 @@
-//! Repo name filtering: `--filter`, `.repos-filter` (allow-list) and
-//! `.repos-ignore` (deny-list), both read from the base directory.
+//! Repo name filtering: `<base_dir>/.repos.yml`, the legacy `.repos-filter`
+//! and `.repos-ignore` text files, and the `--filter` / `--ignore` flags.
 
+use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::Path;
 
+use anyhow::{Result, anyhow};
 use glob::{MatchOptions, Pattern};
+use serde::Deserialize;
+
+use crate::output;
+
+const CONFIG_FILE: &str = ".repos.yml";
+const LEGACY_ONLY: &str = ".repos-filter";
+const LEGACY_IGNORE: &str = ".repos-ignore";
 
 const OPTS: MatchOptions = MatchOptions {
     case_sensitive: true,
@@ -40,40 +50,181 @@ pub fn load_patterns(path: &Path) -> Vec<String> {
         .collect()
 }
 
-pub struct RepoFilter {
-    cli_filter: Option<String>,
-    allow: Option<Vec<String>>,
+/// `.repos.yml`. Unknown keys are refused rather than ignored: a typo such as
+/// `onlyy:` would silently widen the scope, which is what deletes
+/// repositories under `--prune`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileConfig {
+    #[serde(default)]
+    only: Option<Vec<String>>,
+    #[serde(default)]
     ignore: Vec<String>,
+    #[serde(default)]
+    hosts: HashMap<String, FileRules>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileRules {
+    #[serde(default)]
+    only: Option<Vec<String>>,
+    #[serde(default)]
+    ignore: Vec<String>,
+}
+
+/// One allow-list, named after the key it came from so an empty scope can be
+/// traced back to the layers that caused it.
+#[derive(Debug)]
+struct Layer {
+    source: String,
+    patterns: Vec<String>,
+}
+
+impl Layer {
+    fn new(source: &str, patterns: Vec<String>) -> Self {
+        Self {
+            source: source.to_string(),
+            patterns,
+        }
+    }
+
+    /// An allow-list is an OR-list: one matching pattern is enough.
+    fn matches(&self, name: &str) -> bool {
+        self.patterns.iter().any(|p| match_pattern(p, name))
+    }
+}
+
+#[derive(Debug)]
+struct HostRules {
+    only: Option<Layer>,
+    ignore: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct RepoFilter {
+    cli: Option<Layer>,
+    global: Option<Layer>,
+    /// `--ignore` plus the global deny-list.
+    ignore: Vec<String>,
+    /// Keyed by lowercased host name: hostnames are case-insensitive, and so
+    /// is the Windows filesystem.
+    hosts: HashMap<String, HostRules>,
+}
+
+/// The rules that apply to one host. Allow-lists combine with AND and
+/// deny-lists add up, so a host block can only ever narrow the global scope.
+#[derive(Debug)]
+pub struct HostFilter<'a> {
+    only: Vec<&'a Layer>,
+    ignore: Vec<&'a str>,
 }
 
 pub enum Decision {
     Keep,
-    /// Silently dropped (`--filter` or `.repos-filter` miss).
+    /// Silently dropped (no allow-list matched).
     Drop,
-    /// Explicitly ignored via `.repos-ignore`, reported as skipped.
+    /// Explicitly ignored, reported as skipped.
     Ignored,
 }
 
+/// An `only: []` empties the scope of everything it covers, and a generated
+/// file must never do that by accident, so it warns instead of filtering.
+fn layer(path: &Path, source: &str, patterns: Option<Vec<String>>) -> Option<Layer> {
+    let patterns = patterns?;
+    if patterns.is_empty() {
+        output::warn(&format!(
+            "{}: {source} is empty, it is not used as an allow-list",
+            path.display()
+        ));
+        return None;
+    }
+    Some(Layer::new(source, patterns))
+}
+
 impl RepoFilter {
-    pub fn load(base_dir: &Path, cli_filter: Option<String>) -> Self {
-        let filter_file = base_dir.join(".repos-filter");
-        let allow = filter_file.is_file().then(|| load_patterns(&filter_file));
-        Self {
-            cli_filter,
-            allow,
-            ignore: load_patterns(&base_dir.join(".repos-ignore")),
+    pub fn load(base_dir: &Path, cli_only: &[String], cli_ignore: &[String]) -> Result<Self> {
+        let mut filter = Self {
+            cli: (!cli_only.is_empty()).then(|| Layer::new("--filter", cli_only.to_vec())),
+            global: None,
+            ignore: cli_ignore.to_vec(),
+            hosts: HashMap::new(),
+        };
+        let path = base_dir.join(CONFIG_FILE);
+        match fs::read_to_string(&path) {
+            Ok(text) => filter.read_config(base_dir, &path, &text)?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => filter.read_legacy(base_dir),
+            // Falling back to "no filter" here would hand --prune the whole host.
+            Err(e) => return Err(anyhow!(e).context(format!("cannot read {}", path.display()))),
         }
+        Ok(filter)
     }
 
-    pub fn decide(&self, name: &str) -> Decision {
-        if let Some(f) = &self.cli_filter
-            && !match_pattern(f, name)
+    /// `.repos.yml` replaces the text files outright: reading both would make
+    /// the active rules depend on which file the user last remembered.
+    fn read_config(&mut self, base_dir: &Path, path: &Path, text: &str) -> Result<()> {
+        if [LEGACY_ONLY, LEGACY_IGNORE]
+            .iter()
+            .any(|n| base_dir.join(n).exists())
         {
-            return Decision::Drop;
+            output::warn(&format!(
+                "{} is in use, {LEGACY_ONLY} and {LEGACY_IGNORE} are ignored",
+                path.display()
+            ));
         }
-        if let Some(allow) = &self.allow
-            && !allow.iter().any(|p| match_pattern(p, name))
-        {
+        let config = serde_yaml_ng::from_str::<Option<FileConfig>>(text)
+            .map_err(|e| anyhow!("invalid {}: {e}", path.display()))?
+            .unwrap_or_default();
+        self.global = layer(path, "only", config.only);
+        self.ignore.extend(config.ignore);
+        for (host, rules) in config.hosts {
+            let source = format!("hosts.{host}.only");
+            self.hosts.insert(
+                host.to_lowercase(),
+                HostRules {
+                    only: layer(path, &source, rules.only),
+                    ignore: rules.ignore,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// The 1.0 text files, read exactly as they were: an existing but
+    /// patternless `.repos-filter` still lets nothing through.
+    fn read_legacy(&mut self, base_dir: &Path) {
+        let file = base_dir.join(LEGACY_ONLY);
+        if file.is_file() {
+            self.global = Some(Layer::new(LEGACY_ONLY, load_patterns(&file)));
+        }
+        self.ignore
+            .extend(load_patterns(&base_dir.join(LEGACY_IGNORE)));
+    }
+
+    /// One view per host, so the same rules drive its sync and its prune.
+    pub fn for_host(&self, host: &str) -> HostFilter<'_> {
+        let rules = self.hosts.get(&host.to_lowercase());
+        // Evaluation order: --filter, then the host block, then the global one.
+        let only = [
+            self.cli.as_ref(),
+            rules.and_then(|r| r.only.as_ref()),
+            self.global.as_ref(),
+        ];
+        HostFilter {
+            only: only.into_iter().flatten().collect(),
+            ignore: self
+                .ignore
+                .iter()
+                .chain(rules.into_iter().flat_map(|r| &r.ignore))
+                .map(String::as_str)
+                .collect(),
+        }
+    }
+}
+
+impl HostFilter<'_> {
+    pub fn decide(&self, name: &str) -> Decision {
+        if self.only.iter().any(|l| !l.matches(name)) {
             return Decision::Drop;
         }
         if self.ignore.iter().any(|p| match_pattern(p, name)) {
@@ -81,11 +232,24 @@ impl RepoFilter {
         }
         Decision::Keep
     }
+
+    /// The allow-lists in force, named as the keys they come from.
+    pub fn only_sources(&self) -> Vec<&str> {
+        self.only.iter().map(|l| l.source.as_str()).collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn load(dir: &Path) -> RepoFilter {
+        RepoFilter::load(dir, &[], &[]).unwrap()
+    }
+
+    fn write(dir: &Path, name: &str, content: &str) {
+        fs::write(dir.join(name), content).unwrap();
+    }
 
     #[test]
     fn exact_and_glob() {
@@ -105,23 +269,179 @@ mod tests {
     #[test]
     fn filter_and_ignore_files() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join(".repos-filter"),
-            "# comment\nDxsk/*  # inline\n\n",
-        )
-        .unwrap();
-        fs::write(dir.path().join(".repos-ignore"), "Dxsk/old\n").unwrap();
-        let f = RepoFilter::load(dir.path(), None);
-        assert!(matches!(f.decide("Dxsk/new"), Decision::Keep));
-        assert!(matches!(f.decide("Dxsk/old"), Decision::Ignored));
-        assert!(matches!(f.decide("Other/x"), Decision::Drop));
+        write(dir.path(), LEGACY_ONLY, "# comment\nDxsk/*  # inline\n\n");
+        write(dir.path(), LEGACY_IGNORE, "Dxsk/old\n");
+        let f = load(dir.path());
+        let h = f.for_host("github.com");
+        assert!(matches!(h.decide("Dxsk/new"), Decision::Keep));
+        assert!(matches!(h.decide("Dxsk/old"), Decision::Ignored));
+        assert!(matches!(h.decide("Other/x"), Decision::Drop));
+    }
+
+    #[test]
+    fn an_empty_legacy_filter_file_still_lets_nothing_through() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), LEGACY_ONLY, "# nothing but a comment\n");
+        let f = load(dir.path());
+        assert!(matches!(f.for_host("h").decide("a/b"), Decision::Drop));
     }
 
     #[test]
     fn no_files_keeps_everything() {
         let dir = tempfile::tempdir().unwrap();
-        let f = RepoFilter::load(dir.path(), Some("a/*".into()));
-        assert!(matches!(f.decide("a/b"), Decision::Keep));
-        assert!(matches!(f.decide("b/c"), Decision::Drop));
+        let f = RepoFilter::load(dir.path(), &["a/*".into()], &[]).unwrap();
+        let h = f.for_host("h");
+        assert!(matches!(h.decide("a/b"), Decision::Keep));
+        assert!(matches!(h.decide("b/c"), Decision::Drop));
+    }
+
+    #[test]
+    fn cli_patterns_are_one_or_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let only = ["a/*".to_string(), "b/c".to_string()];
+        let f = RepoFilter::load(dir.path(), &only, &["a/x".to_string()]).unwrap();
+        let h = f.for_host("h");
+        assert!(matches!(h.decide("a/b"), Decision::Keep));
+        assert!(matches!(h.decide("b/c"), Decision::Keep));
+        assert!(matches!(h.decide("a/x"), Decision::Ignored));
+        assert!(matches!(h.decide("b/d"), Decision::Drop));
+    }
+
+    #[test]
+    fn yaml_global_rules_apply_to_every_host() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "only:\n  - Dxsk/*\nignore:\n  - Dxsk/old\n",
+        );
+        let f = load(dir.path());
+        for host in ["github.com", "gitlab.corp"] {
+            let h = f.for_host(host);
+            assert!(matches!(h.decide("Dxsk/new"), Decision::Keep), "{host}");
+            assert!(matches!(h.decide("Dxsk/old"), Decision::Ignored), "{host}");
+            assert!(matches!(h.decide("other/x"), Decision::Drop), "{host}");
+        }
+    }
+
+    #[test]
+    fn a_host_block_narrows_that_host_only() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "hosts:\n  gitlab.corp:\n    only: [team/*]\n    ignore: [team/archive-*]\n",
+        );
+        let f = load(dir.path());
+        let corp = f.for_host("gitlab.corp");
+        assert!(matches!(corp.decide("team/app"), Decision::Keep));
+        assert!(matches!(corp.decide("team/archive-old"), Decision::Ignored));
+        assert!(matches!(corp.decide("other/x"), Decision::Drop));
+        // Another host is untouched by that block.
+        let gh = f.for_host("github.com");
+        assert!(matches!(gh.decide("other/x"), Decision::Keep));
+        assert!(matches!(gh.decide("team/archive-old"), Decision::Keep));
+    }
+
+    #[test]
+    fn a_host_block_can_never_widen_the_global_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "only: [Dxsk/*]\nignore: [Dxsk/old]\nhosts:\n  github.com:\n    only: [other/*]\n",
+        );
+        let f = load(dir.path());
+        let h = f.for_host("github.com");
+        // The host list cannot bring `other/*` in, nor bring `Dxsk/old` back.
+        assert!(matches!(h.decide("other/x"), Decision::Drop));
+        assert!(matches!(h.decide("Dxsk/new"), Decision::Drop));
+        assert!(matches!(h.decide("Dxsk/old"), Decision::Drop));
+        assert_eq!(h.only_sources(), ["hosts.github.com.only", "only"]);
+    }
+
+    #[test]
+    fn host_keys_match_case_insensitively() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "hosts:\n  GitLab.Corp:\n    only: [team/*]\n",
+        );
+        let f = load(dir.path());
+        assert!(matches!(
+            f.for_host("gitlab.corp").decide("other/x"),
+            Decision::Drop
+        ));
+        // The key keeps its spelling in messages.
+        assert_eq!(
+            f.for_host("GITLAB.CORP").only_sources(),
+            ["hosts.GitLab.Corp.only"]
+        );
+    }
+
+    #[test]
+    fn an_empty_only_list_is_not_an_allow_list() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "only: []\nhosts:\n  github.com:\n    only: []\n",
+        );
+        let f = load(dir.path());
+        let h = f.for_host("github.com");
+        assert!(matches!(h.decide("anything/at-all"), Decision::Keep));
+        assert!(h.only_sources().is_empty());
+    }
+
+    #[test]
+    fn every_allow_list_layer_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "only: [a/*]\nhosts:\n  h:\n    only: [b/*]\n",
+        );
+        let f = RepoFilter::load(dir.path(), &["c/*".to_string()], &[]).unwrap();
+        assert_eq!(
+            f.for_host("h").only_sources(),
+            ["--filter", "hosts.h.only", "only"]
+        );
+    }
+
+    #[test]
+    fn the_yaml_file_replaces_the_legacy_files() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), LEGACY_ONLY, "nothing/matches-this\n");
+        write(dir.path(), LEGACY_IGNORE, "a/b\n");
+        write(dir.path(), CONFIG_FILE, "only: [a/*]\n");
+        let f = load(dir.path());
+        assert!(matches!(f.for_host("h").decide("a/b"), Decision::Keep));
+    }
+
+    #[test]
+    fn an_unknown_key_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), CONFIG_FILE, "onlyy:\n  - a/*\n");
+        let e = RepoFilter::load(dir.path(), &[], &[]).unwrap_err();
+        let msg = format!("{e:#}");
+        assert!(msg.contains(CONFIG_FILE), "{msg}");
+        assert!(msg.contains("onlyy"), "{msg}");
+    }
+
+    #[test]
+    fn a_malformed_file_names_itself_and_aborts() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), CONFIG_FILE, "only: [a/*\n");
+        let e = RepoFilter::load(dir.path(), &[], &[]).unwrap_err();
+        assert!(format!("{e:#}").contains(CONFIG_FILE), "{e:#}");
+    }
+
+    #[test]
+    fn an_empty_file_filters_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), CONFIG_FILE, "# only comments\n");
+        let f = load(dir.path());
+        assert!(matches!(f.for_host("h").decide("a/b"), Decision::Keep));
     }
 }

@@ -12,13 +12,16 @@ use walkdir::WalkDir;
 
 use crate::config::Settings;
 use crate::git;
-use crate::matcher::{Decision, RepoFilter};
+use crate::matcher::{Decision, HostFilter, RepoFilter};
 use crate::output;
 use crate::providers::{ListError, Provider, Repo};
 
 #[derive(Debug, Clone, Default)]
 pub struct SyncOptions {
-    pub filter: Option<String>,
+    /// `--filter`: one OR-list, like any other allow-list layer.
+    pub only: Vec<String>,
+    /// `--ignore`, added to the deny-lists of `.repos.yml`.
+    pub ignore: Vec<String>,
     pub prune: bool,
     pub force: bool,
     pub dry_run: bool,
@@ -352,8 +355,11 @@ fn run_parallel(jobs: Vec<Job>, parallel: usize) -> Vec<(usize, Outcome)> {
 struct Listed {
     dir: PathBuf,
     repos: Vec<Repo>,
-    /// Set when several hosts sync together: (heading, host).
-    label: Option<(String, String)>,
+    /// The host these repos came from, which selects its filter rules. Several
+    /// providers may share it, the first one listed names the directory.
+    host: String,
+    /// Set when several hosts sync together, so their output is separated.
+    heading: Option<String>,
     /// False when a provider sharing this directory failed or was skipped:
     /// its repos are missing from `repos`, so pruning would delete them.
     complete: bool,
@@ -481,7 +487,8 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
             hosts.push(Listed {
                 dir: dir.clone(),
                 repos,
-                label: multi.then(|| (heading.clone(), host.to_string())),
+                host: host.to_string(),
+                heading: multi.then(|| heading.clone()),
                 complete,
                 announced,
             });
@@ -498,38 +505,69 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
     ok
 }
 
+/// What one host keeps after filtering: every listed path (which prune must
+/// never touch), the repos still in scope and how many the filter dropped.
+type Scope<'a> = (HashSet<PathBuf>, Vec<(&'a Repo, PathBuf)>, usize);
+
+fn in_scope<'a>(h: &'a Listed, filter: &HostFilter<'_>) -> Scope<'a> {
+    let mut listed = HashSet::new();
+    let mut skipped = 0;
+    let mut kept = Vec::new();
+    for repo in &h.repos {
+        let full_name = &repo.full_name;
+        let path = repo_path(&h.dir, full_name);
+        listed.insert(path.clone());
+        match filter.decide(full_name) {
+            Decision::Drop => {}
+            Decision::Ignored => {
+                output::skip(&format!("{full_name} (ignored)"));
+                skipped += 1;
+            }
+            Decision::Keep => kept.push((repo, path)),
+        }
+    }
+    if kept.is_empty() && !h.repos.is_empty() {
+        warn_empty_scope(&h.host, filter);
+    }
+    (listed, kept, skipped)
+}
+
+/// Stacked allow-lists can leave a host with nothing to sync, which on screen
+/// looks exactly like an empty remote. Name every layer that narrowed it.
+fn warn_empty_scope(host: &str, filter: &HostFilter<'_>) {
+    let sources = filter.only_sources();
+    if sources.len() < 2 {
+        return;
+    }
+    let named: Vec<String> = sources.iter().map(|s| format!("'{s}'")).collect();
+    output::warn(&format!(
+        "No repository of {host} is in scope: {} have nothing in common",
+        named.join(" and ")
+    ));
+}
+
 /// Everything after listing: filter, clone/update, prune, report.
 fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec<Result<Summary>> {
-    let filter = RepoFilter::load(&settings.base_dir, opts.filter.clone());
+    // A broken filter file must stop every host: it would otherwise run with
+    // a wider scope than the user wrote, and --prune acts on that scope.
+    let filter = match RepoFilter::load(&settings.base_dir, &opts.only, &opts.ignore) {
+        Ok(f) => f,
+        Err(e) => return vec![Err(e)],
+    };
+    let filters: Vec<HostFilter> = hosts.iter().map(|h| filter.for_host(&h.host)).collect();
     let mut jobs = Vec::new();
     // Per host: every listed path (never pruned) and repos skipped by the filter.
     let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
 
-    for (i, h) in hosts.iter().enumerate() {
-        if let Some((heading, _)) = &h.label
+    for ((i, h), host_filter) in hosts.iter().enumerate().zip(&filters) {
+        if let Some(heading) = &h.heading
             && !h.announced
         {
             output::heading(heading);
         }
         output::info(&format!("Found {} repositories", h.repos.len()));
         output::blank();
-        let mut listed = HashSet::new();
-        let mut skipped = 0;
-        let mut kept = Vec::new();
-        for repo in &h.repos {
-            let full_name = &repo.full_name;
-            let path = repo_path(&h.dir, full_name);
-            listed.insert(path.clone());
-            match filter.decide(full_name) {
-                Decision::Drop => continue,
-                Decision::Ignored => {
-                    output::skip(&format!("{full_name} (ignored)"));
-                    skipped += 1;
-                    continue;
-                }
-                Decision::Keep => kept.push((repo, path)),
-            }
-        }
+        let (listed, kept, mut skipped) = in_scope(h, host_filter);
         let url = |r: &Repo| r.clone_url(settings.use_https).to_string();
         let candidates: Vec<_> = kept
             .iter()
@@ -561,9 +599,10 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                 },
                 path,
                 url: url(repo),
-                name: match &h.label {
-                    Some((_, host)) => format!("{host}/{full_name}"),
-                    None => full_name.clone(),
+                name: if h.heading.is_some() {
+                    format!("{}/{full_name}", h.host)
+                } else {
+                    full_name.clone()
                 },
             });
         }
@@ -588,7 +627,7 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
             if opts.prune && !h.complete {
                 output::warn("Pruning skipped: the repository list of this host is incomplete");
             } else if opts.prune {
-                prune(&settings.base_dir, &h.dir, &listed, &filter, opts)?;
+                prune(&settings.base_dir, &h.dir, &listed, &filters[i], opts)?;
             }
             let summary = Summary {
                 cloned: count(Outcome::Cloned),
@@ -596,12 +635,11 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
                 skipped: count(Outcome::Skipped) + skipped,
                 errored: count(Outcome::Errored),
             };
-            let label = match &h.label {
-                Some((_, host)) => format!(" {host}"),
-                None => {
-                    output::blank();
-                    String::new()
-                }
+            let label = if h.heading.is_some() {
+                format!(" {}", h.host)
+            } else {
+                output::blank();
+                String::new()
             };
             output::info(&format!(
                 "Done{label}: {} cloned, {} updated, {} skipped, {} errors",
@@ -638,12 +676,13 @@ pub fn find_repos(root: &Path) -> Vec<PathBuf> {
 
 /// Deletion is irreversible while the remote listing can be wrong (renamed
 /// repo, revoked access, truncated API answer), so a candidate must be
-/// unlisted, in the filter's scope and free of local-only work.
+/// unlisted, in the filter's scope and free of local-only work. The filter is
+/// the one of the host being pruned, never a wider set of rules.
 pub fn prune(
     base: &Path,
     host_dir: &Path,
     listed: &HashSet<PathBuf>,
-    filter: &RepoFilter,
+    filter: &HostFilter<'_>,
     opts: &SyncOptions,
 ) -> Result<()> {
     if !host_dir.is_dir() {
@@ -1230,7 +1269,8 @@ pub mod tests {
         Listed {
             dir: dir.to_path_buf(),
             repos,
-            label: None,
+            host: "h".into(),
+            heading: None,
             complete: true,
             announced: false,
         }
@@ -1289,6 +1329,110 @@ pub mod tests {
         assert_eq!(second, summary(0, 1, 2, 1));
     }
 
+    #[test]
+    fn sync_listed_applies_yaml_filters_per_host() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(
+            base.join(".repos.yml"),
+            "only: [u/*]
+ignore: [u/ignored]
+hosts:
+  two:
+    ignore: [u/a]
+",
+        )
+        .unwrap();
+        let settings = Settings::for_tests(&base);
+        let repos = || {
+            vec![
+                repo("u/a", &bare),
+                repo("u/ignored", &bare),
+                repo("other/dropped", &bare),
+            ]
+        };
+        let hosts = [
+            Listed {
+                host: "one".into(),
+                heading: Some("one".into()),
+                ..listed(&base.join("one"), repos())
+            },
+            Listed {
+                host: "two".into(),
+                heading: Some("two".into()),
+                ..listed(&base.join("two"), repos())
+            },
+        ];
+        let out: Vec<_> = sync_listed(&hosts, &settings, &SyncOptions::default())
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        // other/dropped is out of the global scope on both hosts, and the
+        // host block of `two` ignores u/a there and nowhere else.
+        assert_eq!(out, [summary(1, 0, 1, 0), summary(0, 0, 2, 0)]);
+        assert!(base.join("one").join("u").join("a").join(".git").is_dir());
+        assert!(!base.join("two").join("u").join("a").exists());
+    }
+
+    #[test]
+    fn prune_leaves_a_repo_outside_the_host_block_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(
+            base.join(".repos.yml"),
+            "hosts:
+  h:
+    only: [team/*]
+",
+        )
+        .unwrap();
+        init_repo(&host.join("team").join("gone"));
+        init_repo(&host.join("other").join("kept"));
+        let rules = RepoFilter::load(&base, &[], &[]).unwrap();
+        let none = HashSet::new();
+        prune(
+            &base,
+            &host,
+            &none,
+            &rules.for_host("h"),
+            &prune_opts(false, true),
+        )
+        .unwrap();
+        assert!(!host.join("team").join("gone").exists());
+        assert!(host.join("other").join("kept").exists());
+        // The block narrows this host only: elsewhere the same name is in scope.
+        assert!(matches!(
+            rules.for_host("elsewhere").decide("other/kept"),
+            Decision::Keep
+        ));
+    }
+
+    #[test]
+    fn a_broken_filter_file_stops_every_host() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = bare_remote(tmp.path());
+        let base = tmp.path().join("base");
+        let host = base.join("h");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(
+            base.join(".repos.yml"),
+            "onlyy: [u/*]
+",
+        )
+        .unwrap();
+        let settings = Settings::for_tests(&base);
+        let hosts = [listed(&host, vec![repo("u/a", &bare)])];
+        let out = sync_listed(&hosts, &settings, &SyncOptions::default());
+        assert_eq!(out.len(), 1);
+        let err = out[0].as_ref().unwrap_err().to_string();
+        assert!(err.contains(".repos.yml"), "{err}");
+        assert!(!host.exists(), "a job ran on a broken filter file");
+    }
+
     fn init_repo(p: &Path) {
         fs::create_dir_all(p).unwrap();
         git(p, &["init", "--quiet"]);
@@ -1304,7 +1448,7 @@ pub mod tests {
     }
 
     fn no_filter(base: &Path) -> RepoFilter {
-        RepoFilter::load(base, None)
+        RepoFilter::load(base, &[], &[]).unwrap()
     }
 
     #[test]
@@ -1320,7 +1464,7 @@ pub mod tests {
             &base,
             &host,
             &listed,
-            &no_filter(&base),
+            &no_filter(&base).for_host("h"),
             &prune_opts(true, false),
         )
         .unwrap();
@@ -1329,7 +1473,7 @@ pub mod tests {
             &base,
             &host,
             &listed,
-            &no_filter(&base),
+            &no_filter(&base).for_host("h"),
             &prune_opts(false, false),
         )
         .unwrap();
@@ -1371,7 +1515,14 @@ pub mod tests {
 
         let listed = HashSet::new();
         let opts = prune_opts(false, true);
-        prune(&base, &host, &listed, &no_filter(&base), &opts).unwrap();
+        prune(
+            &base,
+            &host,
+            &listed,
+            &no_filter(&base).for_host("h"),
+            &opts,
+        )
+        .unwrap();
         for p in [&dirty, &unpushed, &stashed, &local_only, &broken] {
             assert!(p.exists(), "{} must survive", p.display());
         }
@@ -1406,7 +1557,7 @@ pub mod tests {
 
         // Gone from the remote but outside the filter's scope: not ours to delete.
         let opts = SyncOptions {
-            filter: Some("u/*".into()),
+            only: vec!["u/*".into()],
             ..prune_opts(false, false)
         };
         sync_one(
@@ -1431,7 +1582,8 @@ pub mod tests {
             init_repo(r);
         }
         let listed: HashSet<PathBuf> = [repos[0].clone()].into();
-        let filter = no_filter(&base);
+        let rules = no_filter(&base);
+        let filter = rules.for_host("h");
 
         let err = prune(&base, &host, &listed, &filter, &prune_opts(false, false)).unwrap_err();
         assert!(err.to_string().contains("2 of 3"), "{err}");
@@ -1446,7 +1598,8 @@ pub mod tests {
     fn prune_stops_once_more_than_half_a_host_would_go() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("base");
-        let filter = no_filter(&base);
+        let rules = no_filter(&base);
+        let filter = rules.for_host("h");
         let setup = |host: &Path, n: usize, keep: usize| {
             let repos: Vec<_> = (0..n).map(|i| host.join("u").join(i.to_string())).collect();
             for r in &repos {
@@ -1476,7 +1629,8 @@ pub mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("base");
         fs::create_dir_all(&base).unwrap();
-        let (none, filter) = (HashSet::new(), no_filter(&base));
+        let (none, rules) = (HashSet::new(), no_filter(&base));
+        let filter = rules.for_host("h");
         let opts = prune_opts(false, true);
         prune(&base, &base.join("missing"), &none, &filter, &opts).unwrap();
         assert!(prune(&base, &base, &none, &filter, &opts).is_err());
@@ -1761,11 +1915,13 @@ pub mod tests {
         let (a, b) = (base.join("a"), base.join("b"));
         let hosts = [
             Listed {
-                label: Some(("a".into(), "a".into())),
+                host: "a".into(),
+                heading: Some("a".into()),
                 ..listed(&a, vec![repo("u/x", &bare), repo("u/y", &bare)])
             },
             Listed {
-                label: Some(("b".into(), "b".into())),
+                host: "b".into(),
+                heading: Some("b".into()),
                 ..listed(
                     &b,
                     vec![
@@ -2048,7 +2204,9 @@ mod properties {
                 .filter(|(_, _, _, listed)| *listed)
                 .map(|(_, path, _, _)| path.clone())
                 .collect();
-            let filter = RepoFilter::load(&base, filter.map(str::to_string));
+            let cli: Vec<String> = filter.into_iter().map(str::to_string).collect();
+            let rules = RepoFilter::load(&base, &cli, &[]).unwrap();
+            let filter = rules.for_host("h");
             // --force: the brake on a listing that shrank by more than half is
             // a separate concern with its own test.
             let opts = SyncOptions { prune: true, force: true, ..Default::default() };
@@ -2097,7 +2255,14 @@ mod properties {
                 }).collect()
             };
             let run = || {
-                let h = Listed { dir: host.clone(), repos: repos(), label: None, complete: true, announced: false };
+                let h = Listed {
+                    dir: host.clone(),
+                    repos: repos(),
+                    host: "h".into(),
+                    heading: None,
+                    complete: true,
+                    announced: false,
+                };
                 sync_listed(&[h], &settings, &SyncOptions::default()).remove(0).unwrap()
             };
             let total = |s: &Summary| s.cloned + s.updated + s.skipped + s.errored;

@@ -3,7 +3,7 @@
 mod test_server;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use test_server::{Response, Server};
@@ -464,13 +464,12 @@ fn several_hosts_sync_in_one_run_without_live_progress_in_pipes() {
 
 /// A bare repo on disk, reachable as a `file://` URL, is a plain git server
 /// like any other: it exercises the `any` provider end to end, offline.
-fn local_server() -> (tempfile::TempDir, String) {
-    let tmp = tempfile::tempdir().unwrap();
-    let bare = tmp.path().join("notes.git");
-    let seed = tmp.path().join("seed");
+fn bare_url(dir: &Path, name: &str) -> String {
+    let bare = dir.join(format!("{name}.git"));
+    let seed = dir.join(format!("seed-{name}"));
     fs::create_dir_all(&seed).unwrap();
     git(
-        tmp.path(),
+        dir,
         &[
             "init",
             "--quiet",
@@ -485,12 +484,197 @@ fn local_server() -> (tempfile::TempDir, String) {
     git(&seed, &["push", "--quiet", bare.to_str().unwrap(), "main"]);
 
     let path = bare.to_str().unwrap().replace('\\', "/");
-    let url = if path.starts_with('/') {
+    if path.starts_with('/') {
         format!("file://{path}")
     } else {
         format!("file:///{path}")
-    };
+    }
+}
+
+fn local_server() -> (tempfile::TempDir, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let url = bare_url(tmp.path(), "notes");
     (tmp, url)
+}
+
+/// Every clone under `root`, by directory name. The `any` provider builds a
+/// repo name from the whole URL path, which a temp directory makes
+/// unpredictable, so the leaf name is what a test can assert on.
+fn clone_names(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            if entry.file_name() == ".git" {
+                out.push(dir.file_name().unwrap().to_string_lossy().into_owned());
+            } else {
+                stack.push(entry.path());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Two plain git hosts, `one.invalid` and `two.invalid`, each serving the same
+/// two repositories, `keep` and `dropped`.
+struct TwoHosts {
+    _tmp: tempfile::TempDir,
+    config: PathBuf,
+    base: PathBuf,
+    keep: String,
+}
+
+fn two_hosts(filters: Option<&str>) -> TwoHosts {
+    let tmp = tempfile::tempdir().unwrap();
+    let keep = bare_url(tmp.path(), "keep");
+    let other = bare_url(tmp.path(), "dropped");
+    let config = tmp.path().join("config.json");
+    fs::write(
+        &config,
+        format!(
+            r#"{{"repos":{{"one.invalid":["{keep}","{other}"],
+                           "two.invalid":["{keep}","{other}"]}}}}"#
+        ),
+    )
+    .unwrap();
+    let base = tmp.path().join("base");
+    fs::create_dir_all(&base).unwrap();
+    if let Some(yaml) = filters {
+        fs::write(base.join(".repos.yml"), yaml).unwrap();
+    }
+    TwoHosts {
+        _tmp: tmp,
+        config,
+        base,
+        keep,
+    }
+}
+
+fn any_sync(config: &Path, base: &Path, extra: &[&str]) -> Output {
+    let mut args = vec!["any", "sync", "--base-dir", base.to_str().unwrap()];
+    args.extend_from_slice(extra);
+    cmd(&args)
+        .env("REPOS_MANAGER_CONFIG", config)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_host_block_restricts_that_host_only() {
+    let h = two_hosts(Some("hosts:\n  one.invalid:\n    only: ['*/keep']\n"));
+    let o = any_sync(&h.config, &h.base, &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("Done one.invalid: 1 cloned"), "{out}");
+    assert!(out.contains("Done two.invalid: 2 cloned"), "{out}");
+    assert_eq!(clone_names(&h.base.join("one.invalid")), ["keep"]);
+    assert_eq!(
+        clone_names(&h.base.join("two.invalid")),
+        ["dropped", "keep"]
+    );
+}
+
+/// A repo a host block leaves out is not that sync's business, so a prune
+/// driven by the same host must not delete it.
+#[test]
+fn a_repo_outside_a_host_block_is_never_pruned() {
+    let h = two_hosts(None);
+    let o = any_sync(&h.config, &h.base, &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(
+        clone_names(&h.base.join("one.invalid")),
+        ["dropped", "keep"]
+    );
+
+    // `dropped` is gone from the remote, and out of this host's scope.
+    fs::write(
+        &h.config,
+        format!(r#"{{"repos":{{"one.invalid":["{}"]}}}}"#, h.keep),
+    )
+    .unwrap();
+    fs::write(
+        h.base.join(".repos.yml"),
+        "hosts:\n  one.invalid:\n    only: ['*/keep']\n",
+    )
+    .unwrap();
+
+    let o = any_sync(&h.config, &h.base, &["--prune"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(!out.contains("pruned"), "{out}");
+    assert_eq!(
+        clone_names(&h.base.join("one.invalid")),
+        ["dropped", "keep"]
+    );
+}
+
+/// Two allow-lists that cannot both match leave nothing to sync, which looks
+/// exactly like an empty remote unless both sources are named.
+#[test]
+fn stacked_allow_lists_with_no_overlap_warn_about_the_empty_scope() {
+    let h = two_hosts(Some(
+        "only: ['*/keep']\nhosts:\n  one.invalid:\n    only: ['*/dropped']\n",
+    ));
+    let o = any_sync(&h.config, &h.base, &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains("No repository of one.invalid is in scope"),
+        "{out}"
+    );
+    assert!(out.contains("'hosts.one.invalid.only'"), "{out}");
+    assert!(out.contains("'only'"), "{out}");
+    assert!(out.contains("Done one.invalid: 0 cloned"), "{out}");
+    assert!(clone_names(&h.base.join("one.invalid")).is_empty());
+    // The global list alone still applies to the other host.
+    assert_eq!(clone_names(&h.base.join("two.invalid")), ["keep"]);
+}
+
+/// The 1.0 text files are documented, so they keep working on their own.
+#[test]
+fn legacy_text_files_still_filter_without_a_yaml_file() {
+    let h = two_hosts(None);
+    fs::write(h.base.join(".repos-filter"), "*/keep\n*/dropped # both\n").unwrap();
+    fs::write(h.base.join(".repos-ignore"), "*/dropped\n").unwrap();
+    let o = any_sync(&h.config, &h.base, &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("(ignored)"), "{out}");
+    assert_eq!(clone_names(&h.base.join("one.invalid")), ["keep"]);
+
+    // Once a .repos.yml sits next to them, they are announced as ignored.
+    fs::write(h.base.join(".repos.yml"), "ignore: ['*/nothing']\n").unwrap();
+    let o = any_sync(&h.config, &h.base, &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains(".repos-filter and .repos-ignore are ignored"),
+        "{out}"
+    );
+    assert_eq!(
+        clone_names(&h.base.join("one.invalid")),
+        ["dropped", "keep"]
+    );
+}
+
+/// A typo such as `onlyy:` would widen the scope in silence, and `--prune`
+/// acts on that scope, so the run has to stop instead.
+#[test]
+fn an_unknown_key_in_the_filter_file_fails_the_run() {
+    let h = two_hosts(Some("onlyy: ['*/keep']\n"));
+    let o = any_sync(&h.config, &h.base, &["--prune"]);
+    assert!(!o.status.success());
+    let out = stdout(&o);
+    assert!(out.contains(".repos.yml"), "{out}");
+    assert!(out.contains("onlyy"), "{out}");
+    assert!(clone_names(&h.base).is_empty(), "{out}");
 }
 
 #[test]

@@ -196,7 +196,7 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 │   ├── <span style="color:#3fb950">main.rs</span>              <span style="color:#8b949e"># Entry point, command dispatch</span>
 │   ├── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># clap command tree and flags</span>
 │   ├── <span style="color:#3fb950">config.rs</span>            <span style="color:#8b949e"># Settings: flags, env vars, config.json</span>
-│   ├── <span style="color:#3fb950">matcher.rs</span>           <span style="color:#8b949e"># --filter, .repos-filter, .repos-ignore</span>
+│   ├── <span style="color:#3fb950">matcher.rs</span>           <span style="color:#8b949e"># .repos.yml, --filter, --ignore</span>
 │   ├── <span style="color:#3fb950">sync.rs</span>              <span style="color:#8b949e"># Per-host lock, parallel sync, prune</span>
 │   ├── <span style="color:#3fb950">status.rs</span>            <span style="color:#8b949e"># Status scan (network-mount aware)</span>
 │   ├── <span style="color:#3fb950">update.rs</span>            <span style="color:#8b949e"># Update banner and self-update</span>
