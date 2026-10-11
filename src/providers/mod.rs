@@ -159,7 +159,7 @@ impl Provider {
             Provider::Github => github::list_repos(host),
             Provider::Gitlab => gitlab::list_repos(host),
             Provider::Forgejo => forgejo::list_repos(host),
-            Provider::Bitbucket => bitbucket::list_repos(),
+            Provider::Bitbucket => bitbucket::list_repos(host),
             Provider::Radicle => radicle::list_repos(),
             Provider::Sourcehut => sourcehut::list_repos(host),
             Provider::Onedev => onedev::list_repos(host),

@@ -79,7 +79,7 @@ fn cli_command() -> Command {
     cmd
 }
 
-pub fn list_repos() -> Result<Vec<Repo>, ListError> {
+pub fn list_repos(_host: &str) -> Result<Vec<Repo>, ListError> {
     if has_cli("bitbucket") {
         let raw = run_capture(&mut cli_command())?;
         let items: Vec<Value> = serde_json::from_str(&raw).map_err(anyhow::Error::from)?;
