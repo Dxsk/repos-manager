@@ -109,6 +109,6 @@ Symlinks are not followed.
 
 ## Security
 
-On Linux and macOS, the config directory (`~/.config/repos-manager/`) is created with mode `700` (owner-only access) and the Bitbucket API credentials file `bitbucket-creds` with mode `600`. On Windows these files inherit the ACLs of your user profile.
+On Linux and macOS, the config directory (`~/.config/repos-manager/`) is created with mode `700` (owner-only access) and the credentials files written by `login` (`bitbucket-creds`, `forgejo-creds`, `onedev-creds`) with mode `600`. On Windows these files inherit the ACLs of your user profile.
 
 Self-updates and every install script verify release archives against `SHA256SUMS` before installing anything.

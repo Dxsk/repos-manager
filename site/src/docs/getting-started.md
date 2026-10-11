@@ -9,7 +9,7 @@ order: 1
 repos-manager is a single native binary for Linux (x86_64, aarch64), macOS (x86_64, aarch64) and Windows (x86_64, aarch64). At runtime it only needs:
 
 - `git`
-- The CLI of each provider you want to sync: `gh`, `glab`, `tea`, `bitbucket` or `rad` (see the Providers page)
+- The CLI of each provider you want to sync: `gh`, `glab`, `tea`, `bitbucket`, `rad` or `hut` (see the Providers page). OneDev and plain git servers need no extra CLI
 
 ### Install git and the GitHub CLI
 

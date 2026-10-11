@@ -6,7 +6,7 @@ eleventyExcludeFromCollections: true
 
 > {{ site.description }}
 
-repos-manager is a single native binary written in Rust, for Linux, macOS and Windows (x86_64 and ARM64). It asks each forge for every repository you can access (your own, your organizations and the projects you collaborate on) and mirrors them locally as `<base_dir>/<host>/<owner>/<repo>`, cloning what is missing and fast-forwarding the rest. Dirty working copies are never touched. At runtime it only needs `git` and the official CLI of each forge you use (`gh`, `glab`, `tea`, `bitbucket`, `rad`).
+repos-manager is a single native binary written in Rust, for Linux, macOS and Windows (x86_64 and ARM64). It asks each forge for every repository you can access (your own, your organizations and the projects you collaborate on) and mirrors them locally as `<base_dir>/<host>/<owner>/<repo>`, cloning what is missing and fast-forwarding the rest. Dirty working copies are never touched. At runtime it only needs `git` and the official CLI of each forge you use (`gh`, `glab`, `tea`, `bitbucket`, `rad`, `hut`); OneDev and plain git servers need no extra CLI.
 
 Typical session:
 
