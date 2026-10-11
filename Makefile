@@ -33,7 +33,7 @@ metrics:
 # mutant, so this is slow; CI only mutates what a pull request changes.
 # Needs cargo-mutants: cargo install cargo-mutants --locked
 mutants:
-	cargo mutants --file src/sync.rs --file src/git.rs -j 2 --timeout-multiplier 5
+	cargo mutants --file src/sync/mod.rs --file src/sync/paths.rs --file src/sync/jobs.rs --file src/sync/prune.rs --file src/git.rs -j 2 --timeout-multiplier 5
 
 install: build
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/repos-manager

@@ -44,7 +44,7 @@ The root `Makefile` wraps the usual commands:
 
 ```bash
 make test                                         # everything
-cargo test sync::tests::                          # one module
+cargo test sync::                                 # one module
 cargo test -- --exact matcher::tests::exact_and_glob
 ```
 
@@ -197,7 +197,11 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 │   ├── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># clap command tree and flags</span>
 │   ├── <span style="color:#3fb950">config.rs</span>            <span style="color:#8b949e"># Settings: flags, env vars, config.json</span>
 │   ├── <span style="color:#3fb950">matcher.rs</span>           <span style="color:#8b949e"># .repos.yml, --filter, --ignore</span>
-│   ├── <span style="color:#3fb950">sync.rs</span>              <span style="color:#8b949e"># Per-host lock, parallel sync, prune</span>
+│   ├── <span style="color:#58a6ff">sync/</span>
+│   │   ├── <span style="color:#3fb950">mod.rs</span>           <span style="color:#8b949e"># Per-host lock, listing, scope, recon</span>
+│   │   ├── <span style="color:#3fb950">paths.rs</span>        <span style="color:#8b949e"># Repo paths, filesystem name rules</span>
+│   │   ├── <span style="color:#3fb950">jobs.rs</span>         <span style="color:#8b949e"># Scheduler, clone and update</span>
+│   │   └── <span style="color:#3fb950">prune.rs</span>        <span style="color:#8b949e"># Prune and its guards</span>
 │   ├── <span style="color:#3fb950">status.rs</span>            <span style="color:#8b949e"># Status scan (network-mount aware)</span>
 │   ├── <span style="color:#3fb950">update.rs</span>            <span style="color:#8b949e"># Update banner and self-update</span>
 │   ├── <span style="color:#3fb950">git.rs</span>               <span style="color:#8b949e"># git command helpers</span>
