@@ -1,6 +1,8 @@
 //! Providers list remote repos by driving their official CLI (gh, glab, tea,
-//! bitbucket, rad). Forgejo and the Bitbucket fallback call the HTTP API
-//! with credentials the CLI (or `repos-manager bitbucket login`) stored.
+//! bitbucket, rad, hut). Forgejo, Bitbucket and OneDev call the HTTP API with
+//! a token the CLI stored, or one `repos-manager <provider> login` saved. The
+//! `any` provider has no API at all: it reads URLs from the config, or asks a
+//! plain git server over SSH.
 
 mod any;
 mod bitbucket;
@@ -136,6 +138,8 @@ impl Provider {
     pub fn available(self) -> bool {
         match self {
             Provider::Bitbucket => has_cli("bitbucket") || bitbucket::has_api_creds(),
+            // tea refuses some Gogs servers, so a saved token is enough.
+            Provider::Forgejo => has_cli("tea") || forgejo::has_api_creds(),
             Provider::Onedev => onedev::has_api_creds(),
             _ => has_cli(self.cli()),
         }
