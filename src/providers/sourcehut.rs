@@ -245,4 +245,44 @@ mod tests {
             assert!(QUERY.contains(field), "{field} missing from the query");
         }
     }
+
+    // Shape from the Repository and RepositoryCursor types of https://docs.sourcehut.org/git.sr.ht/ (values are illustrative).
+    const GRAPHQL_PAGE: &str = r##"{"repositories":{"cursor":"MjU=","results":[
+        {"id":1,"rid":"b9d5bf1a-0c58-4b3d-9f06-6a3c0a1e2f11",
+         "created":"2022-03-14T09:26:53Z","updated":"2024-11-02T17:04:10Z",
+         "owner":{"canonicalName":"~dxsk"},"name":"repos-manager",
+         "description":"Sync every repository you can access","visibility":"PUBLIC",
+         "readme":null,"access":"RW"},
+        {"id":2,"rid":"0f1c6b52-7e0d-4a7e-8d5f-1b2a3c4d5e6f",
+         "created":"2023-01-05T12:00:00Z","updated":"2023-01-05T12:00:00Z",
+         "owner":{"canonicalName":"~dxsk"},"name":"dotfiles",
+         "description":null,"visibility":"PRIVATE","readme":"# dotfiles","access":"RW"}
+    ]}}"##;
+
+    #[test]
+    fn full_graphql_page_lists_repos_and_cursor() {
+        let page: Value = serde_json::from_str(GRAPHQL_PAGE).unwrap();
+        let repos = parse("git.sr.ht", results(&page));
+        let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
+        assert_eq!(names, ["~dxsk/repos-manager", "~dxsk/dotfiles"]);
+        assert_eq!(repos[0].https_url, "https://git.sr.ht/~dxsk/repos-manager");
+        assert_eq!(repos[0].ssh_url, "git@git.sr.ht:~dxsk/repos-manager");
+        assert_eq!(next_cursor(&page).as_deref(), Some("MjU="));
+    }
+
+    #[test]
+    fn full_graphql_page_inside_a_data_envelope() {
+        let wrapped = format!(r#"{{"data":{GRAPHQL_PAGE}}}"#);
+        let page: Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(results(&page).len(), 2);
+        assert_eq!(next_cursor(&page).as_deref(), Some("MjU="));
+    }
+
+    #[test]
+    fn last_graphql_page_has_a_null_cursor() {
+        let page: Value =
+            serde_json::from_str(r#"{"repositories":{"cursor":null,"results":[]}}"#).unwrap();
+        assert!(results(&page).is_empty());
+        assert_eq!(next_cursor(&page), None);
+    }
 }

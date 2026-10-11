@@ -486,4 +486,32 @@ mod tests {
     fn login_is_a_no_op() {
         login().unwrap();
     }
+
+    // Layout from src/commands/info and greeting() in src/lib/Gitolite/Rc.pm of https://github.com/sitaramc/gitolite (permissions, a tab, the repo).
+    #[test]
+    fn gitolite_3_info_output_lists_only_real_repos() {
+        let out = "hello alice, this is git@forge running gitolite3 v3.6.13-8-gd3b2a1f on git 2.43.0\n\
+                   \n\
+                   \u{20}R W C\tusers/alice/[\\w.-]+\n\
+                   \u{20}R W C\tusers/alice/CREATOR/..*\n\
+                   \u{20}R W\ttesting\n\
+                   \u{20}R\tpublic/docs\n\
+                   \u{20}\u{20}\u{20}W\tdropbox\n\
+                   \n\
+                   Welcome to the forge\n";
+        assert_eq!(
+            gitolite_names(out),
+            ["testing", "public/docs", "dropbox"].map(String::from)
+        );
+    }
+
+    // Soft Serve prints each visible repository with cmd.Println(r.Name()), see pkg/ssh/cmd/list.go in https://github.com/charmbracelet/soft-serve
+    #[test]
+    fn soft_serve_list_prints_bare_names() {
+        let out = "dotfiles\nsoft-serve\nteam-project\n";
+        assert_eq!(
+            soft_serve_names(out),
+            ["dotfiles", "soft-serve", "team-project"].map(String::from)
+        );
+    }
 }

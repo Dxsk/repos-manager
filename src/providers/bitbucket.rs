@@ -560,4 +560,48 @@ mod tests {
         assert!(list_cloud(&server.url, &cloud("u", "p")).is_err());
         assert!(list_server(&server.url, &bearer("t")).is_err());
     }
+
+    // Example response of GET /rest/api/1.0/repos in https://docs.atlassian.com/bitbucket-server/rest/7.7.0/bitbucket-rest.html
+    const DC_REPOS_PAGE: &str = r#"{"size":1,"limit":25,"isLastPage":true,"values":[{
+        "slug":"my-repo","id":1,"name":"My repo","description":"My repo description",
+        "hierarchyId":"e3c939f9ef4a7fae272e","scmId":"git","state":"AVAILABLE",
+        "statusMessage":"Available","forkable":true,
+        "project":{"key":"PRJ","id":1,"name":"My Cool Project",
+            "description":"The description for my cool project.","public":true,
+            "type":"NORMAL","links":{"self":[{"href":"http://link/to/project"}]}},
+        "public":true,
+        "links":{"clone":[{"href":"ssh://git@<baseURL>/PRJ/my-repo.git","name":"ssh"},
+                          {"href":"https://<baseURL>/scm/PRJ/my-repo.git","name":"http"}],
+                 "self":[{"href":"http://link/to/repository"}]}}],"start":0}"#;
+
+    #[test]
+    fn documented_data_center_repository_is_parsed() {
+        let page: Value = serde_json::from_str(DC_REPOS_PAGE).unwrap();
+        let values = page["values"].as_array().unwrap();
+        let repos = parse_server(values);
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].full_name, "prj/my-repo");
+        assert_eq!(repos[0].https_url, "https://<baseURL>/scm/PRJ/my-repo.git");
+        assert_eq!(repos[0].ssh_url, "ssh://git@<baseURL>/PRJ/my-repo.git");
+    }
+
+    #[test]
+    fn documented_data_center_pages_follow_the_paging_fields() {
+        // The paging envelope is the one of the "Paged APIs" section of the same document.
+        let first = DC_REPOS_PAGE.replace(
+            r#""isLastPage":true"#,
+            r#""isLastPage":false,"filter":null,"nextPageStart":25"#,
+        );
+        let server = Server::start(move |target| {
+            if target.contains("start=25") {
+                Response::json(DC_REPOS_PAGE)
+            } else {
+                Response::json(&first)
+            }
+        });
+        let listing = list_server(&server.url, &bearer("t")).unwrap();
+        assert_eq!(listing.repos.len(), 2);
+        assert!(!listing.partial);
+        assert!(server.requests()[1].contains("start=25"));
+    }
 }

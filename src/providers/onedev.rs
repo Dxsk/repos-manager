@@ -365,4 +365,48 @@ mod tests {
         let err = list_from_api(&failing.url, "h", "me", "t").unwrap_err();
         assert!(err.to_string().contains("/~api/projects"), "{err:#}");
     }
+
+    // Captured from the public GET https://code.onedev.io/~api/projects?offset=0&count=100, answered without credentials.
+    const REAL_PROJECTS: &str = r#"[
+        {"id":270,"parentId":null,"forkedFromId":null,"name":"onedev","key":null,
+         "path":"onedev","description":null,"createDate":"2019-12-14T00:21:05.000+00:00",
+         "codeManagement":false,"wikiManagement":false,"packManagement":true,
+         "issueManagement":false,"timeTracking":false,"serviceDeskEmailAddress":null,
+         "gitPackConfig":{"windowMemory":null,"packSizeLimit":null,"threads":null,"window":null},
+         "codeIndexingSetting":{"analysisFiles":null,"requireLoginForAutoIndexing":null}},
+        {"id":160,"parentId":270,"forkedFromId":null,"name":"server","key":"OD",
+         "path":"onedev/server","description":"The Unified and Autonomous Development Platform",
+         "createDate":"2019-12-14T00:21:05.000+00:00","codeManagement":true,
+         "wikiManagement":false,"packManagement":true,"issueManagement":true,
+         "timeTracking":false,"serviceDeskEmailAddress":null,
+         "gitPackConfig":{"windowMemory":null,"packSizeLimit":null,"threads":null,"window":null},
+         "codeIndexingSetting":{"analysisFiles":"-**/src/main/java/org/** -**/web/asset/**","requireLoginForAutoIndexing":null}},
+        {"id":1050,"parentId":270,"forkedFromId":null,"name":"server-ee","key":null,
+         "path":"onedev/server-ee","description":null,
+         "createDate":"2024-01-21T09:56:59.586+00:00","codeManagement":true,
+         "wikiManagement":false,"packManagement":false,"issueManagement":false,
+         "timeTracking":false,"serviceDeskEmailAddress":null,
+         "gitPackConfig":{"windowMemory":null,"packSizeLimit":null,"threads":null,"window":null},
+         "codeIndexingSetting":{"analysisFiles":null,"requireLoginForAutoIndexing":null}}
+    ]"#;
+
+    #[test]
+    fn full_project_objects_skip_the_code_less_parent() {
+        let items: Vec<Value> = serde_json::from_str(REAL_PROJECTS).unwrap();
+        let repos = parse("code.onedev.io", &items);
+        let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
+        assert_eq!(names, ["onedev/server", "onedev/server-ee"]);
+    }
+
+    #[test]
+    fn full_project_objects_through_the_http_listing() {
+        let server = Server::start(|_| Response::json(REAL_PROJECTS));
+        let listing = list_from_api(&server.url, "code.onedev.io", "me", "secret").unwrap();
+        assert_eq!(listing.repos.len(), 2);
+        assert_eq!(
+            listing.repos[0].https_url,
+            "https://code.onedev.io/onedev/server.git"
+        );
+        assert!(!listing.partial);
+    }
 }
