@@ -2,7 +2,7 @@
 # Transitional stub, kept for a while after 1.0. 0.x (Bash) installs read
 # VERSION from this file on GitHub main to show their update banner, and
 # git-clone installs execute it after `repos-manager update` pulls.
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 cat >&2 <<EOF
 repos-manager ${VERSION} is a native binary and replaces the 0.x Bash script.

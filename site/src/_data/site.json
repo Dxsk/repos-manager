@@ -4,6 +4,6 @@
   "repo": "https://github.com/Dxsk/repos-manager",
   "upstream": "https://forge.infrasouveraine.fr/dxsk/repos-manager",
   "description": "One native CLI to clone, update and check every Git repository you can access on GitHub, GitLab, Forgejo, Gitea, Gogs, Bitbucket, Radicle, Sourcehut, OneDev and plain git servers.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "Dxsk"
 }
