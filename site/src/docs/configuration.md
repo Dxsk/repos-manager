@@ -44,7 +44,7 @@ This creates `~/.config/repos-manager/config.json`. The path is the same on ever
 | `protocol` | Clone protocol (`ssh` or `https`) | `ssh` |
 | `check_updates` | Check for a newer release and show a banner | `true` |
 | `scan_network_mounts` | Let `status` traverse FUSE, NFS or SMB mounts under `base_dir` (see warning below) | `false` |
-| `gitlab_statistics` | Ask GitLab for repository sizes. The full project serializer makes the listing heavier than `simple=true`; set `false` to turn it off, sizes then stay unknown | `true` |
+| `gitlab_statistics` | Ask GitLab for repository sizes. The full project serializer costs about 6 times the bytes and twice the time; set `false` to turn it off, sizes then stay unknown | `true` |
 | `confirm_sync` | When a sync asks before cloning: `auto`, `always` or `never` (see below) | `auto` |
 | `confirm_new_repos` | New clones, counted across the whole run, that make `auto` ask | `5` |
 | `confirm_download_gb` | Gigabytes to download, counted across the whole run, that make `auto` ask | `1` |
@@ -97,7 +97,14 @@ Set `scan_network_mounts: true` only if you really do host working copies on a r
 
 ### GitLab repository sizes
 
-GitLab only reports a repository size when the listing uses its full project serializer (`statistics=true`), which makes the payload heavier than the `simple=true` listing used before. That cost has not been measured against a real instance. On a very large GitLab, set `"gitlab_statistics": false` to go back to the light listing: every GitLab repository then has an unknown size. Projects where you are below the Reporter role have an unknown size either way.
+GitLab only reports a repository size when the listing uses its full project serializer (`statistics=true`), which makes the payload heavier than the `simple=true` listing used before. Measured on gitlab.com with 38 member projects on 2026-10-11:
+
+| Listing | Payload | Fields per project | Wall clock, median of 3 |
+|---|---|---|---|
+| `simple=true` | 34 KB | 20 | 1.1 s |
+| `statistics=true` | 205 KB | 123 | 2.1 s |
+
+So about 6 times the bytes and twice the wall clock, for one request per 100 projects either way. On a very large GitLab, set `"gitlab_statistics": false` to go back to the light listing: every GitLab repository then has an unknown size and the recon summary shows `?`. Projects where you are below the Reporter role have an unknown size either way.
 
 ### Multiple hosts per provider
 

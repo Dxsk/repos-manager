@@ -45,7 +45,9 @@ Total: 42 repos - 39 clean, 1 dirty, 1 ahead, 1 behind, 0 diverged
 | Radicle | [`rad`](https://radicle.xyz/guides/user) | |
 | Plain git server | none | Any server with no API: URLs from the config, or listed over SSH (gitolite, Soft Serve) |
 
-GitHub, GitLab and Forgejo are the providers the project is used through day to day, and their listing is covered by offline tests. Sourcehut, OneDev, Bitbucket Data Center and the SSH discovery modes of the plain git server (`gitolite`, `soft-serve`, `find:<root>`) are best effort: implemented against the published API documentation, covered by offline tests only, and never run against a live instance. If one misbehaves, an issue with the raw payload the server returned and the server version is what makes a fix possible. Details in the [provider reference](site/src/docs/providers.md#provider-status).
+**Not every provider is equally proven.** GitHub, GitLab, Forgejo and the config URLs of the plain git server are **stable**: their listing has been run against the live API, offline tests cover the parsing.
+
+Six surfaces are **alpha**: Bitbucket Cloud, Bitbucket Data Center, Radicle, Sourcehut, OneDev, and the SSH discovery modes of the plain git server (`gitolite`, `soft-serve`, `find:<root>`). They are implemented against the published API documentation and covered by offline tests only, and no live server of that kind has ever answered a request from `repos-manager`. They may work on the first try, or list nothing. If one misbehaves, an issue with the raw payload the server returned and the server version is what makes a fix possible, and it becomes a test fixture. Per provider detail in the [provider reference](site/src/docs/providers.md#provider-status).
 
 ## Installation
 

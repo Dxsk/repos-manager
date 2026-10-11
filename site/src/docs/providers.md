@@ -6,26 +6,31 @@ order: 3
 
 ## Provider status
 
-| Provider | Built from | Exercised against |
-|----------|------------|-------------------|
-| GitHub | `gh` and its API output | Used day to day; listing covered by offline tests |
-| GitLab | `glab` and its API output | Used day to day; listing covered by offline tests |
-| Forgejo / Gitea / Gogs | `tea` and the Gitea API | Used day to day; listing covered by offline tests |
-| Bitbucket Cloud | The Bitbucket Cloud REST API | Offline tests, plus a local HTTP server for paging |
-| Bitbucket Data Center | The published Data Center REST API | Offline tests and a local HTTP server only. Never run against a live instance |
-| Radicle | `rad` | Offline tests of `rad ls --json` parsing and command construction |
-| Sourcehut | `hut` and the published GraphQL API | Offline tests of payload parsing and command construction only. Never run against a live instance |
-| OneDev | The published REST API | Offline tests and a local HTTP server only. Never run against a live instance, though the parser is pinned to a real answer captured from the public `code.onedev.io` |
-| Plain git servers (`any`), config URLs | The `repos` config | Offline tests, plus clones from local bare repositories end to end |
-| Plain git servers (`any`), SSH discovery: `gitolite`, `soft-serve`, `find:<root>` | The documented output of each tool | Offline tests of the output parsing and command construction only. Never run against a live server |
+Two labels, used everywhere in this page:
 
-### Best effort surfaces
+- **Stable**: its listing has been run against the live API, and offline tests cover the parsing.
+- **Alpha**: implemented from the published API documentation and covered by offline tests only. No live server of that kind has ever answered a request from `repos-manager`. It may work on the first try, or it may list nothing.
 
-Sourcehut, OneDev, Bitbucket Data Center and the three SSH discovery modes of the `any` provider (`gitolite`, `soft-serve`, `find:<root>`) are best effort. They are implemented against the published API documentation and covered by offline tests only. No live instance of any of them has ever answered a request from `repos-manager`. The one exception worth knowing is OneDev, whose listing parser is pinned to a genuine `/~api/projects` answer captured from the public `code.onedev.io` instance, which serves that endpoint without credentials: the payload shape is real, the authenticated path around it is not.
+| Provider | Label | Built from | Run against a live server |
+|----------|-------|------------|---------------------------|
+| GitHub | Stable | `gh` and its API output | Yes: listing and sizes verified on a real account, 2026-10-11 |
+| GitLab | Stable | `glab` and its API output | Yes: listing, sizes and `gitlab_statistics: false` verified on gitlab.com, 2026-10-11 |
+| Forgejo / Gitea / Gogs | Stable | `tea` and the Gitea API | Yes: the path the project is developed against day to day |
+| Plain git servers (`any`), config URLs | Stable | The `repos` config | Yes: clones and updates from local repositories, end to end in the test suite |
+| Bitbucket Cloud | Alpha | The Bitbucket Cloud REST API | No. The Atlassian API token credential is new, and nothing has authenticated with it for real |
+| Bitbucket Data Center | Alpha | The published Data Center REST API | No |
+| Radicle | Alpha | `rad` | No |
+| Sourcehut | Alpha | `hut` and the published GraphQL API | No |
+| OneDev | Alpha | The published REST API | No, though the parser is pinned to a real answer captured from the public `code.onedev.io` |
+| Plain git servers (`any`), SSH discovery: `gitolite`, `soft-serve`, `find:<root>` | Alpha | The documented output of each tool | No |
 
-GitHub, GitLab and Forgejo are the paths the project is used through day to day. Their listing is covered by offline tests in the same way, which is not a guarantee against every server version or configuration.
+### What Alpha means for you
 
-If one of these surfaces fails or lists nothing, please [open an issue](https://github.com/Dxsk/repos-manager/issues) with:
+Six surfaces are Alpha: Bitbucket Cloud, Bitbucket Data Center, Radicle, Sourcehut, OneDev, and the three SSH discovery modes of the `any` provider. They are written against the published API documentation, their payload parsing and command construction are covered by offline tests, and that is the whole of it.
+
+Nothing about them is careless, and they are not experiments in the code: the same guards apply as everywhere else, a listing that lost entries disables `--prune` for that host, and a provider with no credentials is skipped rather than failed. What is missing is the one thing documentation cannot replace, a real server answering.
+
+If an Alpha provider fails or lists nothing, please [open an issue](https://github.com/Dxsk/repos-manager/issues) with:
 
 - the raw payload (or command output) the server returned, with tokens and private names removed
 - the server version
@@ -37,6 +42,8 @@ Most providers are driven through their official CLI, which must be in your `PAT
 ---
 
 ## GitHub
+
+**Stable.** Listing and sizes verified against the live API.
 
 **CLI:** [`gh`](https://cli.github.com/) ([docs](https://cli.github.com/manual/))
 
@@ -59,6 +66,8 @@ For GitHub Enterprise, run `gh auth login --hostname <host>` and add the host to
 
 ## GitLab
 
+**Stable.** Listing, sizes and the `gitlab_statistics` escape hatch verified against gitlab.com.
+
 **CLI:** [`glab`](https://gitlab.com/gitlab-org/cli) ([docs](https://gitlab.com/gitlab-org/cli/-/blob/main/README.md))
 
 ```bash
@@ -75,6 +84,8 @@ repos-manager gitlab sync --host gitlab.company.com
 Lists every project you are a member of (`projects?membership=true`), with pagination for large instances. Groups and subgroups are mirrored as nested directories. Works with GitLab.com and self-hosted.
 
 ## Forgejo / Gitea / Gogs
+
+**Stable.** The path the project is developed against day to day.
 
 **CLI:** [`tea`](https://gitea.com/gitea/tea) ([Forgejo docs](https://forgejo.org/docs/latest/)), or a token saved by `repos-manager forgejo login`
 
@@ -141,6 +152,8 @@ Gogs also ignores `page` and `limit` on the repository endpoints and answers the
 
 ## Bitbucket
 
+**Alpha**, both Cloud and Data Center. See [Provider status](#provider-status). The Atlassian API token credential is new and has never authenticated against a live instance.
+
 **CLI:** [`bitbucket`](https://crates.io/crates/bitbucket-cli) or API fallback ([docs](https://developer.atlassian.com/cloud/bitbucket/rest/intro/))
 
 **Breaking change for existing users:** Atlassian removed app passwords on 2026-07-28, so an app password saved by an older version no longer works. Bitbucket Cloud now needs an **Atlassian API token**, sent as HTTP Basic auth with your **account email** as the user. Log in again.
@@ -187,6 +200,8 @@ Repositories land in `<project key lowercased>/<repo slug>`, and personal reposi
 
 ## Radicle
 
+**Alpha.** See [Provider status](#provider-status). Never run against a live Radicle node.
+
 **CLI:** [`rad`](https://radicle.xyz/guides/user) ([docs](https://radicle.xyz/guides/user))
 
 Radicle is a sovereign peer-to-peer code forge. repos-manager lists the repos known to your local Radicle node (`rad ls --json`) and clones them under `<base_dir>/radicle/`.
@@ -201,6 +216,8 @@ repos-manager radicle sync
 ```
 
 ## Sourcehut
+
+**Alpha.** See [Provider status](#provider-status). Never run against a live sr.ht instance.
 
 **CLI:** [`hut`](https://sr.ht/~xenrox/hut)
 
@@ -236,6 +253,8 @@ repos-manager sourcehut sync --filter '~user/*'
 Clone URLs carry no `.git` suffix: sr.ht does not serve one.
 
 ## OneDev
+
+**Alpha.** See [Provider status](#provider-status). Never run against a live instance, though the listing parser is pinned to a real `code.onedev.io` answer.
 
 **CLI:** none. repos-manager talks to the OneDev REST API with an access token.
 
@@ -287,6 +306,8 @@ OneDev serves git over its own SSH daemon, on port **6611** by default. That por
 **Known limitation:** an instance served under a sub-path (`https://example.org/onedev/`) is not supported, because a configured host is a bare host.
 
 ## Plain git servers (`any`)
+
+Config URLs are **Stable**. The SSH discovery modes (`gitolite`, `soft-serve`, `find:<root>`) are **Alpha**: see [Provider status](#provider-status).
 
 **CLI:** none, only `git` and `ssh`.
 
