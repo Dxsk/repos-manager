@@ -58,7 +58,7 @@ For each repository:
 `--prune` removes local repos under the host directory that are no longer listed by the remote. It never deletes:
 
 - a repo with uncommitted or untracked changes, unpushed commits or a stash;
-- a repo an `ignore` list catches, or one no `only` list allows (see [Filtering](/docs/filtering/));
+- a repo an `ignore` list catches, or one no `only` list allows (see [Filtering](https://repos-manager.dxscloud.fr/docs/filtering/));
 - anything outside the base directory.
 
 When more than half of a host's local repos would go, the listing is treated as incomplete and prune stops: check with `--dry-run`, then add `--force`.
@@ -107,7 +107,7 @@ repos-manager sync --all
 
 `--plan` always prints: under the thresholds, under `-q`, and when there is nothing to do, since a summary of zeros answers the question you asked. It never prompts. It is not `--dry-run`: `--dry-run` walks the list and says "would clone / would update" for every repository, `--plan` prints the aggregate summary and nothing else.
 
-`--write-ignore` writes `<base_dir>/.repos.yml` and stops, printing the path it wrote. Every repository is commented out, so the file as generated changes nothing about what gets synced: uncommenting a line is how you drop a repository. It refuses to overwrite an existing `.repos.yml` without `--force`, and `--force` carries the rules already in the file over into the new one, so a rewrite can only ever narrow the scope. See [Filtering](/docs/filtering/) for the generated file in detail.
+`--write-ignore` writes `<base_dir>/.repos.yml` and stops, printing the path it wrote. Every repository is commented out, so the file as generated changes nothing about what gets synced: uncommenting a line is how you drop a repository. It refuses to overwrite an existing `.repos.yml` without `--force`, and `--force` carries the rules already in the file over into the new one, so a rewrite can only ever narrow the scope. See [Filtering](https://repos-manager.dxscloud.fr/docs/filtering/) for the generated file in detail.
 
 ### status
 
