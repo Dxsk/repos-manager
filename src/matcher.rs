@@ -1,5 +1,4 @@
-//! Repo name filtering: `<base_dir>/.repos.yml`, the legacy `.repos-filter`
-//! and `.repos-ignore` text files, and the `--filter` / `--ignore` flags.
+//! Repo name filtering: `.repos.yml`, the legacy text files and the CLI flags.
 
 use std::collections::HashMap;
 use std::fs;
@@ -37,7 +36,6 @@ pub fn match_pattern(pattern: &str, name: &str) -> bool {
     false
 }
 
-/// Read patterns from a file, stripping `#` comments and blank lines.
 pub fn load_patterns(path: &Path) -> Vec<String> {
     let Ok(content) = fs::read_to_string(path) else {
         return Vec::new();
@@ -50,10 +48,9 @@ pub fn load_patterns(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A key written with nothing under it is YAML null, and `serde(default)` does
-/// not accept an explicit null: `--write-ignore` emits exactly that, an
-/// `ignore:` whose every entry is commented out, so a list has to read null as
-/// empty or the tool could not load the file it just wrote.
+/// A key with nothing under it is an explicit YAML null, which `serde(default)`
+/// rejects. `--write-ignore` emits exactly that (every entry commented out), so
+/// null must read as empty or the tool could not load its own file.
 fn nullable_list<'de, D>(de: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -84,8 +81,7 @@ struct FileRules {
     ignore: Vec<String>,
 }
 
-/// One allow-list, named after the key it came from so an empty scope can be
-/// traced back to the layers that caused it.
+/// One allow-list, named after its key to trace an empty scope.
 #[derive(Debug)]
 struct Layer {
     source: String,
@@ -100,7 +96,6 @@ impl Layer {
         }
     }
 
-    /// An allow-list is an OR-list: one matching pattern is enough.
     fn matches(&self, name: &str) -> bool {
         self.patterns.iter().any(|p| match_pattern(p, name))
     }
@@ -119,7 +114,6 @@ pub struct RepoFilter {
     /// the file carries over its rules and not the flags of one run.
     cli_ignore: Vec<String>,
     global: Option<Layer>,
-    /// The global deny-list of the file.
     ignore: Vec<String>,
     /// Keyed by lowercased host name: hostnames are case-insensitive, and so
     /// is the Windows filesystem.
@@ -144,9 +138,7 @@ pub struct Rules<'a> {
 
 pub enum Decision {
     Keep,
-    /// Silently dropped (no allow-list matched).
     Drop,
-    /// Explicitly ignored, reported as skipped.
     Ignored,
 }
 
@@ -224,10 +216,8 @@ impl RepoFilter {
             .extend(load_patterns(&base_dir.join(LEGACY_IGNORE)));
     }
 
-    /// One view per host, so the same rules drive its sync and its prune.
     pub fn for_host(&self, host: &str) -> HostFilter<'_> {
         let rules = self.hosts.get(&host.to_lowercase());
-        // Evaluation order: --filter, then the host block, then the global one.
         let only = [
             self.cli.as_ref(),
             rules.and_then(|r| r.only.as_ref()),
@@ -245,7 +235,6 @@ impl RepoFilter {
         }
     }
 
-    /// The global rules of the file, for the generator that rewrites it.
     pub fn global_rules(&self) -> Rules<'_> {
         Rules {
             only: self.global.as_ref().map_or(&[], |l| l.patterns.as_slice()),
@@ -253,7 +242,6 @@ impl RepoFilter {
         }
     }
 
-    /// One host block's rules, empty when the file holds no block for it.
     pub fn host_rules(&self, host: &str) -> Rules<'_> {
         let Some(rules) = self.hosts.get(&host.to_lowercase()) else {
             return Rules::default();
@@ -276,7 +264,6 @@ impl HostFilter<'_> {
         Decision::Keep
     }
 
-    /// The allow-lists in force, named as the keys they come from.
     pub fn only_sources(&self) -> Vec<&str> {
         self.only.iter().map(|l| l.source.as_str()).collect()
     }

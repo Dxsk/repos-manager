@@ -41,7 +41,6 @@ fn is_partial_clone(name: &std::ffi::OsStr) -> bool {
     name.starts_with('.') && name.ends_with(".partial")
 }
 
-/// Find git working copies under `root` without descending into `.git` itself.
 pub fn find_repos(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut it = WalkDir::new(root).follow_links(false).into_iter();
@@ -60,16 +59,14 @@ pub fn find_repos(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// When the target filesystem calls two different repo names one directory.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Fs {
     /// Windows refuses some names outright (`aux`, a trailing dot).
     windows: bool,
     /// NTFS and APFS fold case, ext4 does not.
     case_insensitive: bool,
-    /// APFS and HFS+ compare Unicode-normalized, so a precomposed `é` (NFC)
-    /// and a decomposed one (NFD) are the same directory there, while NTFS
-    /// and ext4 compare code points and see two.
+    /// APFS and HFS+ compare Unicode-normalized: NFC and NFD `é` are one directory
+    /// there, two on NTFS and ext4.
     normalizing: bool,
 }
 
@@ -82,7 +79,6 @@ impl Fs {
         }
     }
 
-    /// The directory a name claims. Two names collide when their keys match.
     /// Lowercasing can decompose (`İ` becomes `i` plus a combining dot), so
     /// normalizing again afterwards keeps the key canonical.
     fn key(&self, name: &str) -> String {
@@ -104,15 +100,13 @@ impl Fs {
 
 /// Distinct repos must land in distinct, non-nested directories as the
 /// filesystem sees them, or one clone silently stands in for another. Returns
-/// the losers by index. On a collision the repo already cloned on disk wins,
-/// so a new remote repo never takes over an existing clone.
+/// the losers by index; the repo already on disk wins.
 pub(super) fn path_conflicts(
     repos: &[(String, &Path, String)],
     target: Fs,
     origin: impl Fn(&Path) -> Option<String>,
 ) -> HashMap<usize, String> {
     let mut losers = HashMap::new();
-    // Repos grouped by the directory they would share.
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, (name, _, _)) in repos.iter().enumerate() {
         if target.windows && git::invalid_on_windows(name) {

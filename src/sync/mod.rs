@@ -24,9 +24,7 @@ use prune::{prunable, prune};
 
 #[derive(Debug, Clone, Default)]
 pub struct SyncOptions {
-    /// `--filter`: one OR-list, like any other allow-list layer.
     pub only: Vec<String>,
-    /// `--ignore`, added to the deny-lists of `.repos.yml`.
     pub ignore: Vec<String>,
     pub prune: bool,
     pub force: bool,
@@ -100,10 +98,8 @@ impl Drop for HostLock {
 struct Listed {
     dir: PathBuf,
     repos: Vec<Repo>,
-    /// The host these repos came from, which selects its filter rules. Several
-    /// providers may share it, the first one listed names the directory.
+    /// Selects the filter rules. Providers may share it, the first one names the directory.
     host: String,
-    /// Set when several hosts sync together, so their output is separated.
     heading: Option<String>,
     /// False when a provider sharing this directory failed or was skipped:
     /// its repos are missing from `repos`, so pruning would delete them.
@@ -117,12 +113,9 @@ struct Group<'a> {
     members: Vec<(Provider, &'a str)>,
 }
 
-/// Hosts list concurrently, then all their jobs share one queue so `parallel`
-/// bounds the total number of git processes.
 /// The host directory, not the (provider, host) pair, is what the lock and
 /// prune act on, so targets sharing one are listed together under one lock.
-/// Hostnames are case-insensitive, and so is the Windows filesystem. The same
-/// pair twice is one target; the same host under two providers is two.
+/// Hostnames are case-insensitive, and so is the Windows filesystem.
 fn group_targets<'a>(targets: &'a [(Provider, String)], base: &Path) -> Vec<Group<'a>> {
     let mut groups: Vec<Group> = Vec::new();
     for (provider, host) in targets {
@@ -142,9 +135,8 @@ fn group_targets<'a>(targets: &'a [(Provider, String)], base: &Path) -> Vec<Grou
     groups
 }
 
-/// Providers sharing a host directory list into it together, so a project
-/// both of them report is one repository. The first listing wins, which keeps
-/// the order providers were configured in.
+/// Providers sharing a host directory list into it together: a project both
+/// report is one repository, and the first listing wins.
 fn merge_unique(into: &mut Vec<Repo>, listed: Vec<Repo>) {
     for repo in listed {
         if !into.iter().any(|x| x.full_name == repo.full_name) {
@@ -250,8 +242,7 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
     ok
 }
 
-/// What one host keeps after filtering: every listed path (which prune must
-/// never touch), the repos still in scope and how many the filter dropped.
+/// Every listed path (which prune must never touch), the repos in scope and the dropped count.
 type Scope<'a> = (HashSet<PathBuf>, Vec<(&'a Repo, PathBuf)>, usize);
 
 fn in_scope<'a>(h: &'a Listed, filter: &HostFilter<'_>) -> Scope<'a> {
@@ -291,9 +282,6 @@ fn warn_empty_scope(host: &str, filter: &HostFilter<'_>) {
     ));
 }
 
-/// One host's jobs and its row in the recon, built from the repos the filter
-/// kept. Returns every listed path (which prune must never touch) and how
-/// many repos were left out, on top of the row.
 fn collect_host(
     index: usize,
     h: &Listed,
@@ -355,10 +343,8 @@ fn collect_host(
     (listed, skipped, row)
 }
 
-/// `--plan` and `--write-ignore`: both answer with the reconnaissance and
-/// stop, so nothing is cloned, updated or pruned, and nothing is written but
-/// the file that was asked for. Both print whatever `-q` says, since printing
-/// is the whole point of the flag.
+/// `--plan` and `--write-ignore` print whatever `-q` says, since printing is
+/// the whole point of the flag.
 fn recon_only(
     plan: &Plan,
     filter: &RepoFilter,
@@ -381,10 +367,8 @@ fn recon_only(
     Vec::new()
 }
 
-/// The reconnaissance hook, at the only point where the scope, the local state
-/// and the new repos are known for every host and nothing has been cloned yet:
-/// the flags that stop there, then the one confirmation of the run. `Some`
-/// means the run goes no further, and an empty result that it stopped cleanly.
+/// Runs once the scope is known for every host and before any clone. `Some`
+/// means the run goes no further; an empty result that it stopped cleanly.
 fn recon(
     plan: &Plan,
     filter: &RepoFilter,
@@ -394,15 +378,12 @@ fn recon(
     if opts.plan || opts.write_ignore {
         return Some(recon_only(plan, filter, settings, opts));
     }
-    // -y and --dry-run want the summary without the question.
     let skip_prompt = opts.assume_yes || opts.dry_run;
     let approved = plan::approved(plan, &settings.confirm, skip_prompt, &settings.base_dir);
     (!approved).then(Vec::new)
 }
 
-/// Everything after listing: filter, recon, clone/update, prune, report.
-/// An empty result means the user declined: nothing ran, and that is not an
-/// error.
+/// An empty result means the user declined: nothing ran, and that is not an error.
 fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec<Result<Summary>> {
     // A broken filter file must stop every host: it would otherwise run with
     // a wider scope than the user wrote, and --prune acts on that scope.
@@ -412,7 +393,6 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
     };
     let filters: Vec<HostFilter> = hosts.iter().map(|h| filter.for_host(&h.host)).collect();
     let mut jobs = Vec::new();
-    // Per host: every listed path (never pruned) and repos skipped by the filter.
     let mut plans: Vec<(HashSet<PathBuf>, usize)> = Vec::new();
     let mut plan = Plan {
         prune: opts.prune,
@@ -498,7 +478,6 @@ pub mod tests {
         assert!(ok, "git {args:?} failed");
     }
 
-    /// Bare remote with one commit on `main`.
     pub fn bare_remote(tmp: &Path) -> PathBuf {
         let bare = tmp.join("remote.git");
         let seed = tmp.join("seed");

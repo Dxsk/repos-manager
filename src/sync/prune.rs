@@ -12,8 +12,6 @@ use crate::git;
 use crate::matcher::{Decision, HostFilter};
 use crate::output;
 
-/// Local repos `--prune` would act on: no longer listed, and in the scope of
-/// this host's filter.
 fn prune_candidates<'a>(
     host_dir: &Path,
     local: &'a [PathBuf],
@@ -27,10 +25,8 @@ fn prune_candidates<'a>(
         .collect()
 }
 
-/// How many repos `--prune` would delete, for the summary printed before the
-/// confirmation. Local-only work is not checked here: that is a git call per
-/// candidate, and prune refuses to delete it anyway, so this is deliberately
-/// an upper bound rather than a slow recon.
+/// For the summary before the confirmation. Local-only work is not checked
+/// (a git call per candidate, and prune refuses it anyway): an upper bound.
 pub(super) fn prunable(
     host_dir: &Path,
     listed: &HashSet<PathBuf>,
@@ -395,10 +391,8 @@ mod properties {
     use crate::sync::tests::{bare_remote, git};
     use proptest::prelude::*;
 
-    /// What a local clone holds beyond what the remote has.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Local {
-        /// A clean clone: pruning it loses nothing.
         Nothing,
         Untracked,
         Staged,
@@ -417,7 +411,6 @@ mod properties {
         }
     }
 
-    /// Build a clone in the requested state under `path`.
     fn plant(path: &Path, state: Local, bare: &Path) {
         if state == Local::Unreadable {
             fs::create_dir_all(path.join(".git")).unwrap();

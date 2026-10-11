@@ -125,17 +125,15 @@ fn clone_into(dir: &Path, url: &str) -> Result<Option<String>> {
 const RENAME_ATTEMPTS: u32 = 5;
 
 /// How long to wait before renaming again, or `None` to give up. Antivirus
-/// scanners briefly hold freshly written files open on Windows, which makes a
-/// rename right after a clone fail with access denied. Nowhere else needs it,
-/// and once something occupies the destination retrying can only fail again.
-/// `windows` is a parameter so both policies are testable on either platform.
+/// scanners briefly hold fresh files open on Windows, so a rename right after a
+/// clone fails with access denied. Nowhere else needs it, and an occupied
+/// destination can only fail again. `windows` is a parameter to test both policies.
 fn rename_backoff(attempt: u32, to: &Path, windows: bool) -> Option<Duration> {
     (windows && attempt < RENAME_ATTEMPTS && !to.exists())
         .then(|| Duration::from_millis(100 * u64::from(attempt + 1)))
 }
 
 fn rename_dir(from: &Path, to: &Path) -> Result<()> {
-    // The range bounds the retries, so no counter can leave this spinning.
     for attempt in 0..=RENAME_ATTEMPTS {
         let Err(e) = fs::rename(from, to) else {
             return Ok(());
@@ -146,7 +144,6 @@ fn rename_dir(from: &Path, to: &Path) -> Result<()> {
         output::debug(&format!("rename {}: {e}, retrying", from.display()));
         thread::sleep(wait);
     }
-    // Unreachable: the last attempt gets no backoff and bails above.
     bail!("cannot move {} into place", from.display())
 }
 
@@ -159,20 +156,15 @@ pub(super) struct Job {
     pub(super) name: String,
 }
 
-/// Jobs per host, taken from sshd's default `MaxStartups` (`10:30:100`): once
-/// 10 connections are still authenticating, sshd refuses new ones at random.
-/// A job starts only as another ends, so fewer than 10 of ours are ever open
-/// when a new one arrives. That count is server-wide though, and every other
-/// client adds to it: this bounds our share, it does not rule out a refusal.
+/// Jobs per host, from sshd's default `MaxStartups` (`10:30:100`): once 10
+/// connections are authenticating, sshd refuses new ones at random. This bounds
+/// our share of a server-wide count, it does not rule out a refusal.
 const PER_HOST: usize = 10;
 
 /// Run `work` on at most `parallel` threads, never more than `cap` per group.
 /// A free worker serves the group with the fewest running, then the one whose
-/// next item is heaviest: spreading spares any single server, and heaviest
-/// first shortens the tail, since a big job started last sets the makespan.
-/// LPT's 4/3 bound does not carry over: it assumes known durations, identical
-/// machines and no per-group cap, while the repo size only stands in for the
-/// duration here. A heuristic motivated by LPT, not a guarantee.
+/// next item is heaviest: spreading spares any single server, and a big job
+/// started last sets the makespan. A heuristic modelled on LPT, with no bound.
 fn schedule<T: Send, R: Send>(
     items: Vec<T>,
     parallel: usize,
@@ -554,13 +546,11 @@ mod tests {
         fs::create_dir(&taken).unwrap();
 
         assert!(rename_backoff(0, &free, true).is_some());
-        // Nothing but Windows needs this.
         assert!(rename_backoff(0, &free, false).is_none());
         // A destination already in use will not free itself.
         assert!(rename_backoff(0, &taken, true).is_none());
         assert!(rename_backoff(RENAME_ATTEMPTS - 1, &free, true).is_some());
         assert!(rename_backoff(RENAME_ATTEMPTS, &free, true).is_none());
-        // Each wait is longer than the last.
         let waits: Vec<_> = (0..RENAME_ATTEMPTS)
             .map(|a| rename_backoff(a, &free, true).unwrap())
             .collect();

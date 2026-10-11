@@ -1,10 +1,4 @@
-//! Reconnaissance: what a sync is about to do, said once before the first
-//! clone, plus the single confirmation that follows when the run is big.
-//!
-//! The sizes come from the forge APIs, which report the size of the
-//! repository on the server and not what the transfer will cost, so every
-//! total says "about". A size the provider does not report is counted as
-//! unknown and never estimated.
+//! What a sync is about to do, said once before the first clone, plus the confirmation.
 
 use std::fs;
 use std::io::{BufRead, IsTerminal, Write};
@@ -15,39 +9,31 @@ use anyhow::{Context, Result, bail};
 use crate::matcher::{CONFIG_FILE, RepoFilter, Rules};
 use crate::output;
 
-/// Pretend both streams are terminals. For the end-to-end tests only, which
-/// have no tty: it is not part of the documented interface.
+/// Pretend both streams are terminals, for the tty-less end-to-end tests only.
 const FAKE_TTY: &str = "REPOS_MANAGER_FAKE_TTY";
 
-/// A repository the filter kept for a host.
 #[derive(Debug, Clone)]
 pub struct ScopeRepo {
     pub name: String,
     pub size_kb: Option<u64>,
-    /// Its directory already holds a clone, so it is an update, not a download.
     pub cloned: bool,
 }
 
-/// One host's line in the summary.
 #[derive(Debug, Clone, Default)]
 pub struct HostRow {
     pub host: String,
-    /// Everything in scope for this host, cloned or not.
     pub repos: Vec<ScopeRepo>,
-    /// Local repos `--prune` would consider deleting, set only when `--prune`
-    /// was asked and this host's listing is complete.
+    /// Set only with `--prune` and a complete listing.
     pub prunable: Option<usize>,
     /// The listing lost entries, so `--prune` is off for this host.
     pub incomplete: bool,
 }
 
 impl HostRow {
-    /// What the filter kept for this host.
     pub fn in_scope(&self) -> usize {
         self.repos.len()
     }
 
-    /// The repos a sync would download.
     fn to_clone(&self) -> impl Iterator<Item = &ScopeRepo> {
         self.repos.iter().filter(|r| !r.cloned)
     }
@@ -60,7 +46,6 @@ impl HostRow {
         self.repos.iter().filter(|r| r.cloned).count()
     }
 
-    /// Total size of the new repos whose size the provider reported.
     fn known_kb(&self) -> u64 {
         self.to_clone().filter_map(|r| r.size_kb).sum()
     }
@@ -70,11 +55,9 @@ impl HostRow {
     }
 }
 
-/// What the whole run would do, every host included.
 #[derive(Debug, Clone, Default)]
 pub struct Plan {
     pub hosts: Vec<HostRow>,
-    /// `--prune` was asked for: the rows then say what it would delete.
     pub prune: bool,
 }
 
@@ -100,16 +83,13 @@ impl Plan {
     }
 }
 
-/// When a sync stops to ask. This is a preference of the machine, so it lives
-/// in config.json next to `parallel`, not in the workspace's `.repos.yml`.
+/// A preference of the machine: lives in config.json, not the workspace's `.repos.yml`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ConfirmSync {
-    /// Ask only when the run crosses a threshold.
     #[default]
     Auto,
-    /// Ask as soon as there is anything to do.
     Always,
-    /// Never ask. A big run is still summarized, so the information is not lost.
+    /// Never ask. A big run is still summarized.
     Never,
 }
 
@@ -133,8 +113,6 @@ pub fn gb_to_kb(gb: f64) -> u64 {
     (gb.max(0.0) * KB_PER_GB) as u64
 }
 
-/// The confirmation preferences: `confirm_sync`, `confirm_new_repos` and
-/// `confirm_download_gb`.
 #[derive(Debug, Clone, Copy)]
 pub struct Confirm {
     pub mode: ConfirmSync,
@@ -152,25 +130,20 @@ impl Default for Confirm {
     }
 }
 
-/// What the run should do about its plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
     /// Say nothing: a daily sync has to look exactly as it always has.
     Silent,
-    /// Print the summary and carry on.
     Tell,
-    /// Print the summary and wait for an answer.
     Confirm,
 }
 
-/// Counted over the whole run, not per host. An unknown volume never hides a
-/// large sync: the count rule applies whatever the sizes say.
+/// Over the whole run, not per host. Unknown sizes never hide a large sync: the count rule still applies.
 fn over_threshold(plan: &Plan, c: &Confirm) -> bool {
     plan.has_work() && (plan.clones() >= c.new_repos || plan.known_kb() >= c.download_kb)
 }
 
-/// Pure, so the whole table can be tested without a terminal. `skip_prompt`
-/// covers `-y` and `--dry-run`: both want the summary without the question.
+/// Pure, so it is testable without a terminal. `skip_prompt` covers `-y` and `--dry-run`.
 pub fn decide(plan: &Plan, c: &Confirm, interactive: bool, skip_prompt: bool) -> Ask {
     let worth_saying = match c.mode {
         ConfirmSync::Always => plan.has_work(),
@@ -195,7 +168,6 @@ fn interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
-/// A size as a person would write it, from the kibibytes the APIs report.
 pub fn human_kb(kb: u64) -> String {
     const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
     let mut value = kb as f64;
@@ -245,7 +217,6 @@ fn scope_line(h: &HostRow) -> String {
     line
 }
 
-/// The two largest new repos with a known size: what the volume is made of.
 fn biggest_new(h: &HostRow) -> Option<String> {
     let mut known: Vec<(&str, u64)> = h
         .to_clone()
@@ -263,7 +234,6 @@ fn biggest_new(h: &HostRow) -> Option<String> {
     Some(format!("biggest new: {}", named.join(", ")))
 }
 
-/// What `--prune` would do to this host, before anything is deleted.
 fn prune_note(h: &HostRow, prune: bool) -> Option<String> {
     if !prune {
         return None;
@@ -282,8 +252,8 @@ fn prune_note(h: &HostRow, prune: bool) -> Option<String> {
     }
 }
 
-/// "about" because the APIs report a repository size on the server, not the
-/// size of the transfer.
+/// "about": the APIs report a server side repository size, not the transfer size.
+/// A size the provider does not report is counted as unknown, never estimated.
 fn total_line(plan: &Plan) -> String {
     let volume = match (plan.known_kb(), plan.unknown()) {
         (0, 0) => String::new(),
@@ -298,8 +268,6 @@ fn total_line(plan: &Plan) -> String {
     )
 }
 
-/// The summary, as text: deciding and rendering stay apart so both can be
-/// tested, and so step 4 can render the same plan elsewhere.
 pub fn render(plan: &Plan) -> String {
     let width = plan
         .hosts
@@ -323,7 +291,6 @@ pub fn render(plan: &Plan) -> String {
     lines.join("\n")
 }
 
-/// How to sync less, for the run that was just declined.
 pub fn narrowing_hint(base_dir: &Path) -> String {
     format!(
         "Nothing was cloned. Narrow the scope with --filter, --ignore or {}",
@@ -331,8 +298,7 @@ pub fn narrowing_hint(base_dir: &Path) -> String {
     )
 }
 
-/// The summary and the one question of the whole run. The reader is injected
-/// so the declined path can be tested without a terminal.
+/// The reader is injected so the declined path is testable without a terminal.
 pub fn confirm(plan: &Plan, input: &mut impl BufRead) -> bool {
     print!("\n{}\nProceed? [Y/n] ", render(plan));
     let _ = std::io::stdout().flush();
@@ -348,14 +314,12 @@ pub fn confirm(plan: &Plan, input: &mut impl BufRead) -> bool {
     )
 }
 
-/// Decide, print, ask. `false` means the user said no and nothing must run.
+/// `false` means the user said no and nothing must run.
 pub fn approved(plan: &Plan, c: &Confirm, skip_prompt: bool, base_dir: &Path) -> bool {
     match decide(plan, c, interactive(), skip_prompt) {
         Ask::Silent => true,
         Ask::Tell => {
-            // An unasked-for summary is an info message, so -q hides it. The
-            // question below is never hidden: nobody can answer what they
-            // cannot see.
+            // -q hides an unasked-for summary, never the question below.
             if !output::is_quiet() {
                 println!("\n{}\n", render(plan));
             }
@@ -402,8 +366,7 @@ fn rule_lines(patterns: &[String], key: &str, indent: usize) -> Vec<String> {
     lines
 }
 
-/// One host: the rules it already has, then its catalogue of commented
-/// entries under that same `ignore` key, biggest repository first.
+/// The rules already in force, then the commented catalogue under the same `ignore` key, biggest first.
 fn host_block(row: &HostRow, rules: Rules<'_>) -> Vec<String> {
     let mut lines = vec![format!("  {}:", host_key(&row.host))];
     lines.extend(rule_lines(rules.only, "only", 4));
@@ -429,7 +392,6 @@ fn host_block(row: &HostRow, rules: Rules<'_>) -> Vec<String> {
             )
         })
         .collect();
-    // One column for the sizes, widened by the longest name of the block.
     const SIZE_COLUMN: usize = 24;
     let width = entries
         .iter()
@@ -445,10 +407,8 @@ fn host_block(row: &HostRow, rules: Rules<'_>) -> Vec<String> {
     lines
 }
 
-/// The file `--write-ignore` writes: every repository in scope, all commented
-/// out, under the rules already in force. Pure, so the content is tested
-/// without a filesystem. It emits `ignore` lists only, never an `only` list it
-/// made up, so no generated shape can empty the scope by accident.
+/// The `--write-ignore` file: every repository in scope, commented out. It emits
+/// `ignore` lists only, never an invented `only`, so it cannot empty the scope.
 pub fn ignore_file(plan: &Plan, filter: &RepoFilter, today: &str) -> String {
     let mut lines = vec![
         format!("# Written by repos-manager on {today}."),
@@ -476,7 +436,6 @@ pub fn ignore_file(plan: &Plan, filter: &RepoFilter, today: &str) -> String {
     lines.join("\n")
 }
 
-/// Write the generated file, and say where it went.
 pub fn write_ignore_file(base_dir: &Path, content: &str, force: bool) -> Result<PathBuf> {
     let path = base_dir.join(CONFIG_FILE);
     if path.exists() && !force {
@@ -485,9 +444,7 @@ pub fn write_ignore_file(base_dir: &Path, content: &str, force: bool) -> Result<
             path.display()
         );
     }
-    // The same guard as prune, for the same reason: base_dir comes from the
-    // config or a flag, and nothing of ours is written outside what it
-    // resolves to.
+    // Same guard as prune: base_dir comes from the config or a flag.
     let base = base_dir
         .canonicalize()
         .with_context(|| format!("cannot resolve {}", base_dir.display()))?;
@@ -499,7 +456,6 @@ pub fn write_ignore_file(base_dir: &Path, content: &str, force: bool) -> Result<
     Ok(path)
 }
 
-/// Today in UTC, for the header of a generated file.
 pub fn today() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -507,9 +463,8 @@ pub fn today() -> String {
     civil_date(days as i64)
 }
 
-/// Days since the epoch as `YYYY-MM-DD`. The project has no date dependency
-/// and this header is the only place that wants one: Howard Hinnant's
-/// civil_from_days, whose eras start on March 1st so a leap day falls last.
+/// Days since the epoch as `YYYY-MM-DD`, without a date dependency: Howard
+/// Hinnant's civil_from_days.
 fn civil_date(days: i64) -> String {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -552,7 +507,6 @@ mod tests {
         }
     }
 
-    /// The two hosts of the feature's target output, with real figures.
     fn two_hosts() -> Plan {
         let mut small: Vec<ScopeRepo> = (0..14)
             .map(|i| new(&format!("team/s{i}"), Some(54_000)))
