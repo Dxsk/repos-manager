@@ -13,15 +13,15 @@ order: 3
 | Forgejo / Gitea / Gogs | `tea` and the Gitea API | Used day to day; listing covered by offline tests |
 | Bitbucket Cloud | The Bitbucket Cloud REST API | Offline tests, plus a local HTTP server for paging |
 | Bitbucket Data Center | The published Data Center REST API | Offline tests and a local HTTP server only. Never run against a live instance |
-| Radicle | `rad` | Offline tests |
+| Radicle | `rad` | Offline tests of `rad ls --json` parsing and command construction |
 | Sourcehut | `hut` and the published GraphQL API | Offline tests of payload parsing and command construction only. Never run against a live instance |
-| OneDev | The published REST API | Offline tests and a local HTTP server only. Never run against a live instance |
-| Plain git servers (`any`), config URLs | The `repos` config | Offline tests |
+| OneDev | The published REST API | Offline tests and a local HTTP server only. Never run against a live instance, though the parser is pinned to a real answer captured from the public `code.onedev.io` |
+| Plain git servers (`any`), config URLs | The `repos` config | Offline tests, plus clones from local bare repositories end to end |
 | Plain git servers (`any`), SSH discovery: `gitolite`, `soft-serve`, `find:<root>` | The documented output of each tool | Offline tests of the output parsing and command construction only. Never run against a live server |
 
 ### Best effort surfaces
 
-Sourcehut, OneDev, Bitbucket Data Center and the three SSH discovery modes of the `any` provider (`gitolite`, `soft-serve`, `find:<root>`) are best effort. They are implemented against the published API documentation and covered by offline tests only. No live instance of any of them has ever answered a request from `repos-manager`.
+Sourcehut, OneDev, Bitbucket Data Center and the three SSH discovery modes of the `any` provider (`gitolite`, `soft-serve`, `find:<root>`) are best effort. They are implemented against the published API documentation and covered by offline tests only. No live instance of any of them has ever answered a request from `repos-manager`. The one exception worth knowing is OneDev, whose listing parser is pinned to a genuine `/~api/projects` answer captured from the public `code.onedev.io` instance, which serves that endpoint without credentials: the payload shape is real, the authenticated path around it is not.
 
 GitHub, GitLab and Forgejo are the paths the project is used through day to day. Their listing is covered by offline tests in the same way, which is not a guarantee against every server version or configuration.
 
