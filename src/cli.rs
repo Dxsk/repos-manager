@@ -26,13 +26,21 @@ pub enum Command {
     Github(ProviderCmd),
     /// GitLab (uses the glab CLI)
     Gitlab(ProviderCmd),
-    /// Forgejo / Gitea (tea login, API listing)
-    #[command(alias = "gitea")]
+    /// Forgejo / Gitea / Gogs (tea or a saved token, API listing)
+    #[command(alias = "gitea", alias = "gogs")]
     Forgejo(ProviderCmd),
     /// Bitbucket (uses the bitbucket CLI or the API)
     Bitbucket(ProviderCmd),
     /// Radicle (uses the rad CLI)
     Radicle(ProviderCmd),
+    /// Sourcehut (uses the hut CLI)
+    #[command(alias = "srht")]
+    Sourcehut(ProviderCmd),
+    /// OneDev (self-hosted, API token)
+    Onedev(ProviderCmd),
+    /// Plain git servers: URLs from the config, or listed over SSH
+    #[command(alias = "git")]
+    Any(ProviderCmd),
     /// Authenticate (all detected providers if none specified)
     Login { provider: Option<ProviderArg> },
     /// Sync all configured providers
@@ -74,10 +82,15 @@ pub enum ProviderAction {
 pub enum ProviderArg {
     Github,
     Gitlab,
-    #[value(alias = "gitea")]
+    #[value(alias = "gitea", alias = "gogs")]
     Forgejo,
     Bitbucket,
     Radicle,
+    #[value(alias = "srht")]
+    Sourcehut,
+    Onedev,
+    #[value(alias = "git")]
+    Any,
 }
 
 impl From<ProviderArg> for Provider {
@@ -88,6 +101,9 @@ impl From<ProviderArg> for Provider {
             ProviderArg::Forgejo => Provider::Forgejo,
             ProviderArg::Bitbucket => Provider::Bitbucket,
             ProviderArg::Radicle => Provider::Radicle,
+            ProviderArg::Sourcehut => Provider::Sourcehut,
+            ProviderArg::Onedev => Provider::Onedev,
+            ProviderArg::Any => Provider::Any,
         }
     }
 }
@@ -233,6 +249,9 @@ mod tests {
             ProviderArg::Forgejo,
             ProviderArg::Bitbucket,
             ProviderArg::Radicle,
+            ProviderArg::Sourcehut,
+            ProviderArg::Onedev,
+            ProviderArg::Any,
         ];
         let mapped: Vec<Provider> = all.into_iter().map(Into::into).collect();
         assert_eq!(mapped, Provider::ALL);

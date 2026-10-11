@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -18,12 +18,33 @@ pub fn timeout(name: &str, default: u64) -> Duration {
 /// Like `Command::output`, but the child is killed once `limit` elapses so a
 /// stuck job can never stall a whole sync.
 pub fn output(cmd: &mut Command, limit: Duration) -> Result<Output> {
+    run(cmd, None, limit)
+}
+
+/// Same, with `input` fed to the child's stdin. Some CLIs read their payload
+/// from stdin only (`hut graphql`), and they still must not outlive `limit`.
+pub fn output_with_input(cmd: &mut Command, input: &[u8], limit: Duration) -> Result<Output> {
+    run(cmd, Some(input.to_vec()), limit)
+}
+
+fn run(cmd: &mut Command, input: Option<Vec<u8>>, limit: Duration) -> Result<Output> {
+    let stdin = match input {
+        Some(_) => Stdio::piped(),
+        None => Stdio::null(),
+    };
     let mut child = cmd
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("cannot run {:?}", cmd.get_program()))?;
+    // Written from a thread, and the pipe dropped to signal EOF: a payload
+    // bigger than the pipe buffer would otherwise block before we drain.
+    if let (Some(input), Some(mut pipe)) = (input, child.stdin.take()) {
+        thread::spawn(move || {
+            let _ = pipe.write_all(&input);
+        });
+    }
     // Drain both pipes while waiting, or a chatty child blocks on a full pipe.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
         thread::spawn(move || {
@@ -87,6 +108,27 @@ mod tests {
         let err = output(&mut cmd, Duration::from_millis(500)).unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn stdin_is_fed_and_closed() {
+        let mut cmd = Command::new("git");
+        cmd.args(["hash-object", "--stdin"]);
+        let out = output_with_input(&mut cmd, b"hello", Duration::from_secs(30)).unwrap();
+        assert!(out.status.success(), "{:?}", out);
+        // git only answers once stdin reaches EOF.
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0"
+        );
+    }
+
+    #[test]
+    fn a_command_reading_stdin_still_times_out() {
+        let mut cmd = Command::new("git");
+        cmd.args(["-c", "alias.wait=!sleep 30", "wait"]);
+        let err = output_with_input(&mut cmd, b"x", Duration::from_millis(500)).unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err}");
     }
 
     #[test]

@@ -4,14 +4,16 @@ pkgname=repos-manager-bin
 _pkgname=repos-manager
 pkgver=@VERSION@
 pkgrel=1
-pkgdesc='Clone and update every Git repo you can access on GitHub, GitLab, Forgejo, Bitbucket and Radicle (prebuilt static binary)'
+pkgdesc='Clone and update every Git repo you can access on GitHub, GitLab, Forgejo, Bitbucket, Sourcehut, OneDev, Radicle and plain git servers (prebuilt static binary)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/Dxsk/repos-manager'
 license=('MIT')
 depends=('git')
 optdepends=('github-cli: GitHub provider'
             'glab: GitLab provider'
-            'tea: Forgejo and Gitea login')
+            'tea: Forgejo, Gitea and Gogs login'
+            'hut: Sourcehut provider'
+            'openssh: plain git server discovery')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
 _base="$url/releases/download/v$pkgver"

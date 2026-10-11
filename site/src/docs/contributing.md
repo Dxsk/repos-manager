@@ -147,6 +147,8 @@ In `src/providers/mod.rs`:
 2. Add a `YourProvider` variant to the `Provider` enum and to `Provider::ALL`
 3. Fill in its arms in `name()`, `from_name()`, `cli()`, `default_host()`, `login()` and `list_repos()`
 
+`default_host()` returns an empty string for a provider that only exists self-hosted, like OneDev or `any`: it then has no default host, and nothing is synced until the user lists an instance in the config.
+
 In `src/cli.rs`:
 
 4. Add a `YourProvider(ProviderCmd)` variant to `Command` (its doc comment becomes the help text)
@@ -205,9 +207,12 @@ Update `readme.md`, `site/src/docs/providers.md`, the default hosts table in `si
 │       ├── <span style="color:#3fb950">mod.rs</span>           <span style="color:#8b949e"># Provider enum, shared helpers</span>
 │       ├── <span style="color:#3fb950">github.rs</span>        <span style="color:#8b949e"># GitHub (gh)</span>
 │       ├── <span style="color:#3fb950">gitlab.rs</span>        <span style="color:#8b949e"># GitLab (glab)</span>
-│       ├── <span style="color:#3fb950">forgejo.rs</span>       <span style="color:#8b949e"># Forgejo/Gitea (tea config + REST API)</span>
+│       ├── <span style="color:#3fb950">forgejo.rs</span>       <span style="color:#8b949e"># Forgejo/Gitea/Gogs (token + REST API)</span>
 │       ├── <span style="color:#3fb950">bitbucket.rs</span>     <span style="color:#8b949e"># Bitbucket (CLI or REST API)</span>
-│       └── <span style="color:#3fb950">radicle.rs</span>       <span style="color:#8b949e"># Radicle (rad)</span>
+│       ├── <span style="color:#3fb950">radicle.rs</span>       <span style="color:#8b949e"># Radicle (rad)</span>
+│       ├── <span style="color:#3fb950">sourcehut.rs</span>     <span style="color:#8b949e"># Sourcehut (hut graphql)</span>
+│       ├── <span style="color:#3fb950">onedev.rs</span>        <span style="color:#8b949e"># OneDev (REST API, saved token)</span>
+│       └── <span style="color:#3fb950">any.rs</span>           <span style="color:#8b949e"># Plain git servers (config URLs, SSH discovery)</span>
 ├── <span style="color:#58a6ff">tests/</span>
 │   └── <span style="color:#3fb950">cli.rs</span>               <span style="color:#8b949e"># End-to-end CLI tests</span>
 ├── <span style="color:#58a6ff">installers/</span>              <span style="color:#8b949e"># install.sh, install.ps1, NSIS installer</span>

@@ -3,7 +3,7 @@ layout: layouts/base.njk
 title: repos-manager
 seoTitle: "repos-manager: sync every Git repo across all your forges"
 date: git Last Modified
-description: "Clone, update and check every Git repository you can access on GitHub, GitLab, Forgejo, Gitea, Bitbucket and Radicle with one native CLI for Linux, macOS and Windows."
+description: "Clone, update and check every Git repository you can access on GitHub, GitLab, Forgejo, Gitea, Gogs, Bitbucket, Radicle, Sourcehut, OneDev and plain git servers with one native CLI for Linux, macOS and Windows."
 ---
 
 <section class="hero">
@@ -177,7 +177,7 @@ description: "Clone, update and check every Git repository you can access on Git
 <section class="providers textured" id="providers">
   <div class="container">
     <h2 class="section-title">Every provider, one tool</h2>
-    <p class="subtitle">Sync repositories from 5 Git forges, including several self-hosted instances per forge</p>
+    <p class="subtitle">Sync repositories from 8 providers, including several self-hosted instances per forge</p>
 
     <div class="provider-grid animate-stagger">
       <div class="provider-card">
@@ -199,7 +199,7 @@ description: "Clone, update and check every Git repository you can access on Git
       <div class="provider-card">
         <div class="provider-titlebar"><span class="dot" style="background:var(--accent-purple)"></span> forgejo</div>
         <div class="provider-body">
-          <h3>Forgejo / Gitea</h3>
+          <h3>Forgejo / Gitea / Gogs</h3>
           <p class="cli">tea login add</p>
           <span class="badge">READY</span>
         </div>
@@ -217,6 +217,30 @@ description: "Clone, update and check every Git repository you can access on Git
         <div class="provider-body">
           <h3>Radicle</h3>
           <p class="cli">rad auth</p>
+          <span class="badge badge-beta">BETA</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-green)"></span> git.sr.ht</div>
+        <div class="provider-body">
+          <h3>Sourcehut</h3>
+          <p class="cli">hut init</p>
+          <span class="badge badge-beta">BETA</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-orange)"></span> onedev</div>
+        <div class="provider-body">
+          <h3>OneDev</h3>
+          <p class="cli">repos-manager onedev login</p>
+          <span class="badge badge-beta">BETA</span>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-titlebar"><span class="dot" style="background:var(--accent-purple)"></span> plain git</div>
+        <div class="provider-body">
+          <h3>Any git server</h3>
+          <p class="cli">repos-manager any sync</p>
           <span class="badge badge-beta">BETA</span>
         </div>
       </div>
@@ -341,7 +365,7 @@ description: "Clone, update and check every Git repository you can access on Git
       <div class="pillar" style="--pillar:var(--accent-purple)">
         <span class="pillar-icon"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
         <h3>Small forges welcome</h3>
-        <p>GitHub and GitLab, but also Forgejo, Gitea, Bitbucket and Radicle, and as many self-hosted instances as you run, each in its own folder.</p>
+        <p>GitHub and GitLab, but also Forgejo, Gitea, Gogs, Bitbucket, Radicle, Sourcehut, OneDev and plain git servers with no API at all, and as many self-hosted instances as you run, each in its own folder.</p>
       </div>
     </div>
 

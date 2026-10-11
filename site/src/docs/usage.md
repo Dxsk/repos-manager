@@ -18,7 +18,7 @@ order: 4
 | `completions <shell>` | Print a shell completion script |
 | `version` | Print the version |
 
-Providers are `github`, `gitlab`, `forgejo` (alias `gitea`), `bitbucket` and `radicle`.
+Providers are `github`, `gitlab`, `forgejo` (aliases `gitea`, `gogs`), `bitbucket`, `radicle`, `sourcehut` (alias `srht`), `onedev` and `any` (alias `git`).
 
 ### login
 
@@ -49,7 +49,7 @@ For each repository:
 - present and clean: `git fetch --all --prune`, then a fast-forward of the remote default branch if it is checked out. Another branch or a detached HEAD is only fetched, so a sync never moves the branch you work on;
 - present with uncommitted changes: it is skipped and reported as `dirty`.
 
-`sync --all` skips providers whose CLI is not installed, and an error on one host never stops the others. `--host` targets a single provider and is rejected with `sync --all`: use `repos-manager <provider> sync --host <host>` instead.
+`sync --all` skips providers it cannot use, that is those with neither their CLI installed nor saved credentials, and an error on one host never stops the others. `--host` targets a single provider and is rejected with `sync --all`: use `repos-manager <provider> sync --host <host>` instead.
 
 `--prune` removes local repos under the host directory that are no longer listed by the remote. It never deletes:
 

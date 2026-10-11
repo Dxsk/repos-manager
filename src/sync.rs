@@ -416,7 +416,7 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
                         .iter()
                         .map(|(provider, host)| {
                             output::info(&format!("Fetching repository list from {host}..."));
-                            (*host, provider.list_repos(host))
+                            (*host, provider.list_repos(host, settings))
                         })
                         .collect();
                     Ok((lock, lists))
