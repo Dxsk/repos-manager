@@ -164,7 +164,7 @@ fn save_creds(host: &str, entry: Creds) -> Result<()> {
     }
     output::success(&format!(
         "Credentials for {host} saved to {}",
-        path.display()
+        output::path(&path)
     ));
     Ok(())
 }

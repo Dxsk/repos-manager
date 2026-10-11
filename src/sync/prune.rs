@@ -53,7 +53,7 @@ pub fn prune(
     if !real_host.starts_with(&real_base) || real_host == real_base {
         bail!(
             "prune aborted: {} is outside the base directory",
-            host_dir.display()
+            output::path(host_dir)
         );
     }
 
@@ -73,11 +73,7 @@ pub fn prune(
 
     let mut pruned = 0;
     for repo in candidates {
-        let rel = repo
-            .strip_prefix(base)
-            .unwrap_or(repo)
-            .display()
-            .to_string();
+        let rel = output::path(repo.strip_prefix(base).unwrap_or(repo));
         if let Some(reason) = unsaved_work(repo) {
             output::warn(&format!("{rel} (not pruned: {reason})"));
             continue;

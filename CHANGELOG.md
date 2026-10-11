@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- `--plan`, `--write-ignore` and `--dry-run` no longer create a host directory and a lock file for a host they only report on
+- Paths are printed with one separator. A `base_dir` written with forward slashes in the config file used to show as `C:/dir\file` once joined
 - A listing that lost entries was reported as complete, so `--prune` read the gap as a deleted remote and removed the clone. A provider now says when entries are missing, and that host is left alone
 - A listing could never end on a server that ignores pagination: Gogs answers with the whole list whatever `page` says. A listing now stops when a page repeats the previous one, and warns
 - A sync could hang forever on a dead connection or a prompt nobody could answer. SSH runs in batch mode with keepalives, and every git command and listing has a hard timeout (`REPOS_MANAGER_GIT_TIMEOUT`, `REPOS_MANAGER_LIST_TIMEOUT`)

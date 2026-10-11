@@ -149,7 +149,7 @@ fn layer(path: &Path, source: &str, patterns: Option<Vec<String>>) -> Option<Lay
     if patterns.is_empty() {
         output::warn(&format!(
             "{}: {source} is empty, it is not used as an allow-list",
-            path.display()
+            output::path(path)
         ));
         return None;
     }
@@ -170,7 +170,9 @@ impl RepoFilter {
             Ok(text) => filter.read_config(base_dir, &path, &text)?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => filter.read_legacy(base_dir),
             // Falling back to "no filter" here would hand --prune the whole host.
-            Err(e) => return Err(anyhow!(e).context(format!("cannot read {}", path.display()))),
+            Err(e) => {
+                return Err(anyhow!(e).context(format!("cannot read {}", output::path(&path))));
+            }
         }
         Ok(filter)
     }
@@ -184,11 +186,11 @@ impl RepoFilter {
         {
             output::warn(&format!(
                 "{} is in use, {LEGACY_ONLY} and {LEGACY_IGNORE} are ignored",
-                path.display()
+                output::path(path)
             ));
         }
         let config = serde_yaml_ng::from_str::<Option<FileConfig>>(text)
-            .map_err(|e| anyhow!("invalid {}: {e}", path.display()))?
+            .map_err(|e| anyhow!("invalid {}: {e}", output::path(path)))?
             .unwrap_or_default();
         self.global = layer(path, "only", config.only);
         self.ignore.extend(config.ignore);

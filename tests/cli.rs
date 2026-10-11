@@ -961,6 +961,37 @@ fn dry_run_and_yes_summarize_without_asking() {
     assert_eq!(clone_names(&f.base()).len(), 6, "{out}");
 }
 
+/// A run that only reports must not leave a host directory and a lock file
+/// behind for a host it never cloned into.
+#[test]
+fn a_reporting_run_leaves_the_base_dir_alone() {
+    let entries = |base: &Path| {
+        let mut names: Vec<String> = fs::read_dir(base)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+
+    for flag in ["--plan", "--dry-run"] {
+        let f = big_forge();
+        let o = prompted(f.sync_cmd(&[flag]), "");
+        assert!(o.status.success(), "{flag}: {}", stderr(&o));
+        assert!(
+            entries(&f.base()).is_empty(),
+            "{flag} left {:?}",
+            entries(&f.base())
+        );
+    }
+
+    // --write-ignore writes the one file it was asked for, and nothing else.
+    let f = big_forge();
+    let o = prompted(f.sync_cmd(&["--write-ignore"]), "");
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(entries(&f.base()), [".repos.yml"]);
+}
+
 /// Plain git servers report no size at all, and one unreadable URL makes the
 /// listing short: the summary has to own up to both before asking.
 #[test]

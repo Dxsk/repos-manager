@@ -73,7 +73,7 @@ impl HostLock {
         match file.try_lock() {
             Ok(()) => {}
             Err(TryLockError::WouldBlock) => {
-                bail!("another sync is already running on {}", dir.display())
+                bail!("another sync is already running on {}", output::path(dir))
             }
             Err(TryLockError::Error(e)) => return Err(e.into()),
         }
@@ -149,12 +149,16 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
     let groups = group_targets(targets, &settings.base_dir);
     let multi = groups.len() > 1;
 
+    // A run that only reports takes no lock and does not create the host
+    // directory just to say what it would hold.
+    let read_only = opts.plan || opts.write_ignore || opts.dry_run;
+
     let listings: Vec<_> = thread::scope(|s| {
         let handles: Vec<_> = groups
             .iter()
             .map(|Group { dir, members, .. }| {
                 s.spawn(move || -> Result<_> {
-                    let lock = HostLock::acquire(dir)?;
+                    let lock = (!read_only).then(|| HostLock::acquire(dir)).transpose()?;
                     let lists: Vec<_> = members
                         .iter()
                         .map(|(provider, host)| {
@@ -187,7 +191,7 @@ pub fn sync_hosts(targets: &[(Provider, String)], settings: &Settings, opts: &Sy
         };
         let lists = match res {
             Ok((lock, lists)) => {
-                locks.push(lock);
+                locks.extend(lock);
                 lists
             }
             Err(e) => {
@@ -359,7 +363,7 @@ fn recon_only(
         match plan::write_ignore_file(&settings.base_dir, &content, opts.force) {
             Ok(path) => println!(
                 "Wrote {}\nUncomment a repository to stop syncing it, then run the sync again.",
-                path.display()
+                output::path(&path)
             ),
             Err(e) => return vec![Err(e)],
         }

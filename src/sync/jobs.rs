@@ -141,10 +141,10 @@ fn rename_dir(from: &Path, to: &Path) -> Result<()> {
         let Some(wait) = rename_backoff(attempt, to, cfg!(windows)) else {
             bail!("cannot move clone into place: {e}");
         };
-        output::debug(&format!("rename {}: {e}, retrying", from.display()));
+        output::debug(&format!("rename {}: {e}, retrying", output::path(from)));
         thread::sleep(wait);
     }
-    bail!("cannot move {} into place", from.display())
+    bail!("cannot move {} into place", output::path(from))
 }
 
 pub(super) struct Job {

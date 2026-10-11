@@ -294,7 +294,7 @@ pub fn render(plan: &Plan) -> String {
 pub fn narrowing_hint(base_dir: &Path) -> String {
     format!(
         "Nothing was cloned. Narrow the scope with --filter, --ignore or {}",
-        base_dir.join(CONFIG_FILE).display()
+        output::path(base_dir.join(CONFIG_FILE))
     )
 }
 
@@ -441,18 +441,21 @@ pub fn write_ignore_file(base_dir: &Path, content: &str, force: bool) -> Result<
     if path.exists() && !force {
         bail!(
             "{} already exists, add --force to overwrite it",
-            path.display()
+            output::path(&path)
         );
     }
     // Same guard as prune: base_dir comes from the config or a flag.
     let base = base_dir
         .canonicalize()
-        .with_context(|| format!("cannot resolve {}", base_dir.display()))?;
+        .with_context(|| format!("cannot resolve {}", output::path(base_dir)))?;
     let parent = path.parent().unwrap_or(base_dir).canonicalize()?;
     if !parent.starts_with(&base) {
-        bail!("aborted: {} is outside the base directory", path.display());
+        bail!(
+            "aborted: {} is outside the base directory",
+            output::path(&path)
+        );
     }
-    fs::write(&path, content).with_context(|| format!("cannot write {}", path.display()))?;
+    fs::write(&path, content).with_context(|| format!("cannot write {}", output::path(&path)))?;
     Ok(path)
 }
 

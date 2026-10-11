@@ -80,7 +80,7 @@ fn api_login() -> Result<()> {
     }
     output::success(&format!(
         "Credentials for {host} saved to {}",
-        path.display()
+        output::path(&path)
     ));
     Ok(())
 }

@@ -1,10 +1,24 @@
 use std::io::{IsTerminal, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 static QUIET: AtomicBool = AtomicBool::new(false);
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static COLOR: OnceLock<bool> = OnceLock::new();
+
+/// A path as the platform writes it. A `base_dir` given with forward slashes
+/// in the config file otherwise prints joined as `C:/dir\file`.
+pub fn path(p: impl AsRef<Path>) -> String {
+    let s = p.as_ref().display().to_string();
+    // Windows accepts both separators, so `/` there is never part of a name.
+    // On unix a backslash is a legal character in a file name, so leave it.
+    if cfg!(windows) {
+        s.replace('/', "\\")
+    } else {
+        s
+    }
+}
 
 pub fn set_quiet(v: bool) {
     QUIET.store(v, Ordering::Relaxed);
@@ -176,6 +190,21 @@ fn status_line(st: &State, total: usize, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shown_path_uses_one_separator() {
+        // A base dir written with forward slashes, joined by the platform.
+        let joined = Path::new("C:/dir/base").join(".repos.yml");
+        if cfg!(windows) {
+            assert_eq!(path("C:/dir/base"), r"C:\dir\base");
+            assert_eq!(path(joined), r"C:\dir\base\.repos.yml");
+        } else {
+            assert_eq!(path("/dir/base"), "/dir/base");
+            assert_eq!(path(joined), "C:/dir/base/.repos.yml");
+            // A backslash is a legal character in a unix file name.
+            assert_eq!(path(r"/dir/a\b"), r"/dir/a\b");
+        }
+    }
 
     #[test]
     fn progress_counts_finished_jobs() {

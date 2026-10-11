@@ -127,9 +127,9 @@ impl Settings {
         let env_nonempty = |key: &str| env(key).filter(|v| !v.is_empty());
         let file: FileConfig = if path.is_file() {
             let raw = fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?;
+                .with_context(|| format!("cannot read {}", output::path(path)))?;
             serde_json::from_str(&raw)
-                .with_context(|| format!("invalid config file {}", path.display()))?
+                .with_context(|| format!("invalid config file {}", output::path(path)))?
         } else {
             FileConfig::default()
         };
@@ -221,11 +221,15 @@ impl Settings {
         if !self.base_dir.is_absolute() {
             bail!(
                 "base directory must be an absolute path: {}",
-                self.base_dir.display()
+                output::path(&self.base_dir)
             );
         }
-        fs::create_dir_all(&self.base_dir)
-            .with_context(|| format!("cannot create base directory {}", self.base_dir.display()))
+        fs::create_dir_all(&self.base_dir).with_context(|| {
+            format!(
+                "cannot create base directory {}",
+                output::path(&self.base_dir)
+            )
+        })
     }
 }
 
@@ -255,7 +259,7 @@ pub fn init_config() -> Result<()> {
 
 fn init_config_at(path: &Path) -> Result<()> {
     if path.exists() {
-        output::warn(&format!("Config already exists: {}", path.display()));
+        output::warn(&format!("Config already exists: {}", output::path(path)));
         return Ok(());
     }
     if let Some(dir) = path.parent() {
@@ -267,7 +271,7 @@ fn init_config_at(path: &Path) -> Result<()> {
         }
     }
     fs::write(path, DEFAULT_CONFIG)?;
-    output::success(&format!("Config created: {}", path.display()));
+    output::success(&format!("Config created: {}", output::path(path)));
     Ok(())
 }
 

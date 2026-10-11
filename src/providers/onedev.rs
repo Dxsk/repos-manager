@@ -117,7 +117,7 @@ pub fn login() -> Result<()> {
     save_creds(&path, &host, &base, &user, token)?;
     output::success(&format!(
         "Credentials for {host} saved to {}",
-        path.display()
+        output::path(&path)
     ));
     Ok(())
 }

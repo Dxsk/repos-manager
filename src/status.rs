@@ -59,7 +59,10 @@ fn excluded_mounts(settings: &Settings) -> Vec<PathBuf> {
         .map(|s| network_mount_points(&s, &settings.base_dir))
         .unwrap_or_default();
     for m in &mounts {
-        output::debug(&format!("status: pruning network mount {}", m.display()));
+        output::debug(&format!(
+            "status: pruning network mount {}",
+            output::path(m)
+        ));
     }
     mounts
 }
@@ -101,7 +104,7 @@ pub struct Counts {
 
 pub fn status_all(settings: &Settings) {
     let base = &settings.base_dir;
-    output::info(&format!("Scanning repos in {}...", base.display()));
+    output::info(&format!("Scanning repos in {}...", output::path(base)));
     output::blank();
 
     let show_progress = std::io::stderr().is_terminal() && !output::is_quiet();
@@ -155,11 +158,7 @@ fn scan(base: &Path, skip_mounts: &[PathBuf], show_progress: bool) -> Counts {
         let Some(repo) = entry.path().parent().filter(|p| git::is_clone(p)) else {
             continue;
         };
-        let rel = repo
-            .strip_prefix(base)
-            .unwrap_or(repo)
-            .display()
-            .to_string();
+        let rel = output::path(repo.strip_prefix(base).unwrap_or(repo));
         total += 1;
 
         if show_progress {
