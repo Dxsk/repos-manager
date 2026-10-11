@@ -86,10 +86,21 @@ pub fn prune(
         }
         pruned += 1;
     }
-    if pruned > 0 {
-        output::warn(&format!("Pruned {pruned} repositories"));
+    if let Some(msg) = pruned_summary(pruned, opts.dry_run) {
+        output::warn(&msg);
     }
     Ok(())
+}
+
+/// A dry run deletes nothing, so it must not report having pruned.
+fn pruned_summary(count: usize, dry_run: bool) -> Option<String> {
+    let verb = if dry_run { "Would prune" } else { "Pruned" };
+    let plural = if count == 1 {
+        "repository"
+    } else {
+        "repositories"
+    };
+    (count > 0).then(|| format!("{verb} {count} {plural}"))
 }
 
 /// Work that exists only in this clone. A repo git cannot read counts as
@@ -330,6 +341,18 @@ mod tests {
 
         prune(&base, &host, &listed, &filter, &prune_opts(false, true)).unwrap();
         assert!(repos[0].exists() && !repos[1].exists() && !repos[2].exists());
+    }
+
+    #[test]
+    fn a_dry_run_never_reports_having_pruned() {
+        assert_eq!(pruned_summary(0, true), None);
+        assert_eq!(pruned_summary(0, false), None);
+        assert_eq!(
+            pruned_summary(2, true).unwrap(),
+            "Would prune 2 repositories"
+        );
+        assert_eq!(pruned_summary(2, false).unwrap(), "Pruned 2 repositories");
+        assert_eq!(pruned_summary(1, false).unwrap(), "Pruned 1 repository");
     }
 
     #[test]

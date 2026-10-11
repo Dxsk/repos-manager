@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `--prune --dry-run` ended on `Pruned 2 repositories` although it had deleted nothing. It says `Would prune` now, and counts one repository in the singular
+
 ## 1.1.0 (2026-10-12)
 
 ### Added
