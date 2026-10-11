@@ -44,7 +44,7 @@ BUDGETS = {
 # Already over budget when this check landed (2026-10-10). Lower a number when
 # you split one of these up; never raise one.
 BASELINE = {
-    "src/sync.rs::sync_listed": {"cognitive": 16},
+    "src/sync.rs::sync_listed": {"cognitive": 15},
     "src/status.rs::scan": {"cognitive": 23},
 }
 

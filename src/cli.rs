@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
 use crate::providers::Provider;
@@ -121,7 +121,10 @@ pub struct CommonFlags {
     pub quiet: bool,
 }
 
+/// `--force` serves both `--prune` and `--write-ignore`, and still means
+/// nothing on its own.
 #[derive(Debug, Clone, Default, Args)]
+#[command(group = ArgGroup::new("forceable").multiple(true).args(["prune", "write_ignore"]))]
 pub struct SyncArgs {
     /// Sync only repos matching a pattern, repeatable (e.g. owner/* or owner/project)
     #[arg(long, value_name = "PATTERN")]
@@ -135,12 +138,18 @@ pub struct SyncArgs {
     /// Remove local repos that no longer exist on the remote
     #[arg(long)]
     pub prune: bool,
-    /// With --prune, go ahead even when most local repos would be removed
-    #[arg(long, requires = "prune")]
+    /// With --prune, go ahead even when most local repos would be removed; with --write-ignore, overwrite an existing file
+    #[arg(long, requires = "forceable")]
     pub force: bool,
     /// Show what would be done without making changes
     #[arg(long)]
     pub dry_run: bool,
+    /// Print what the sync would do and stop there, without cloning anything
+    #[arg(long)]
+    pub plan: bool,
+    /// Write <base-dir>/.repos.yml listing every repo in scope, commented out, then stop
+    #[arg(long)]
+    pub write_ignore: bool,
     /// Do not ask before cloning, however much there is to download
     #[arg(short, long)]
     pub yes: bool,
@@ -244,6 +253,19 @@ mod tests {
         assert!(parse(&["github", "sync", "--nope"]).is_err());
         assert!(parse(&["github", "sync", "--parallel", "0"]).is_err());
         assert!(parse(&["github", "sync", "--force"]).is_err());
+    }
+
+    #[test]
+    fn force_serves_prune_and_write_ignore_but_never_alone() {
+        assert!(parse(&["github", "sync", "--force"]).is_err());
+        assert!(parse(&["github", "sync", "--prune", "--force"]).is_ok());
+        assert!(parse(&["github", "sync", "--write-ignore", "--force"]).is_ok());
+
+        let cli = parse(&["sync", "--all", "--plan", "--write-ignore"]).unwrap();
+        let Some(Command::Sync(a)) = cli.command else {
+            panic!("wrong parse");
+        };
+        assert!(a.sync.plan && a.sync.write_ignore);
     }
 
     #[test]

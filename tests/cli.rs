@@ -1047,3 +1047,157 @@ fn confirm_sync_always_asks_for_anything_to_do() {
     assert!(o.status.success(), "{}", stderr(&o));
     assert_eq!(clone_names(&f.base()), ["repo0"]);
 }
+
+fn named(entries: &[(&str, Option<u64>)]) -> Vec<(String, Option<u64>)> {
+    entries
+        .iter()
+        .map(|(name, size_kb)| ((*name).to_string(), *size_kb))
+        .collect()
+}
+
+/// `--plan` is reconnaissance only: it prints the summary and stops before the
+/// first clone, whatever the thresholds say.
+#[test]
+fn plan_prints_the_summary_and_clones_nothing() {
+    let f = big_forge();
+    let o = prompted(f.sync_cmd(&["--plan"]), "");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains("6 in scope, 0 cloned, 6 new (1.1 GB)"),
+        "{out}"
+    );
+    assert!(
+        out.contains("6 clones, 0 updates, about 1.1 GB to download."),
+        "{out}"
+    );
+    assert!(!out.contains("Proceed?"), "{out}");
+    assert!(clone_names(&f.base()).is_empty(), "{out}");
+
+    // A run too small to be announced on its own is printed all the same, and
+    // so it is under -q: the flag asked for it.
+    let small = forge_listing(200, &listing(1, Some(1024)));
+    let o = small.sync(&["--plan", "-q"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.contains("1 in scope, 0 cloned, 1 new (1.0 MB)"),
+        "{out}"
+    );
+    assert!(out.contains("1 clone, 0 updates, about 1.0 MB"), "{out}");
+    assert!(clone_names(&small.base()).is_empty(), "{out}");
+}
+
+/// A summary of zeros is a valid answer to an explicit question.
+#[test]
+fn plan_answers_even_when_there_is_nothing_to_do() {
+    let f = forge_listing(200, &[]);
+    let o = f.sync(&["--plan"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("0 in scope, 0 cloned, 0 new"), "{out}");
+    assert!(out.contains("0 clones, 0 updates."), "{out}");
+}
+
+/// `-q` hides the messages nobody asked for, the summary included.
+#[test]
+fn quiet_hides_a_summary_that_was_not_asked_for() {
+    let f = big_forge();
+    let o = f.sync(&["-q"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(!out.contains("in scope"), "{out}");
+    assert!(!out.contains("to download"), "{out}");
+    assert_eq!(clone_names(&f.base()).len(), 6, "{out}");
+}
+
+/// The generated file lists everything in scope with every entry commented
+/// out, and a sync run against it afterwards still clones all of it.
+#[test]
+fn write_ignore_writes_a_catalogue_that_changes_nothing() {
+    let f = forge_listing(
+        200,
+        &named(&[
+            ("me/small", Some(12)),
+            ("me/mystery", None),
+            ("me/big", Some(921_600)),
+        ]),
+    );
+    let o = f.sync(&["--plan", "--write-ignore"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let path = f.base().join(".repos.yml");
+    let out = stdout(&o);
+    assert!(out.contains("3 in scope, 0 cloned, 3 new"), "{out}");
+    assert!(
+        out.contains(&format!("Wrote {}", path.display())),
+        "{out}\n{}",
+        path.display()
+    );
+    assert!(clone_names(&f.base()).is_empty(), "{out}");
+
+    let text = fs::read_to_string(&path).unwrap();
+    // A host with a port is a key holding a colon, so it has to be quoted.
+    assert!(text.contains(&format!("  '{}':", f.host)), "{text}");
+    for line in text.lines().filter(|l| l.contains("- ")) {
+        assert!(
+            line.trim_start().starts_with("# - "),
+            "not commented out: {line}\n{text}"
+        );
+    }
+    let entries: Vec<&str> = text
+        .lines()
+        .filter(|l| l.trim_start().starts_with("# - "))
+        .collect();
+    assert_eq!(entries.len(), 3, "{text}");
+    assert!(
+        entries[0].contains("'me/big'") && entries[0].ends_with("# 900 MB"),
+        "{text}"
+    );
+    assert!(
+        entries[1].contains("'me/small'") && entries[1].ends_with("# 12 KB"),
+        "{text}"
+    );
+    // An unknown size is a question mark, and sorts last.
+    assert!(
+        entries[2].contains("'me/mystery'") && entries[2].ends_with("# ?"),
+        "{text}"
+    );
+
+    // The file as it was written changes nothing about what gets synced.
+    let o = f.sync(&[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(clone_names(&f.base()).len(), 3, "{}", stdout(&o));
+}
+
+/// A rewrite must not drop the rules in force: an `only` that vanished would
+/// widen the scope, which is what this file exists to prevent.
+#[test]
+fn write_ignore_refuses_to_overwrite_and_force_keeps_the_rules() {
+    let f = forge_listing(
+        200,
+        &named(&[("me/big", Some(2048)), ("me/other", Some(1024))]),
+    );
+    let base = f.base();
+    fs::create_dir_all(&base).unwrap();
+    let path = base.join(".repos.yml");
+    fs::write(&path, "only: ['me/big']\n").unwrap();
+
+    let o = f.sync(&["--write-ignore"]);
+    assert!(!o.status.success());
+    let out = stdout(&o);
+    assert!(out.contains(".repos.yml already exists"), "{out}");
+    assert!(out.contains("--force"), "{out}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "only: ['me/big']\n");
+
+    let o = f.sync(&["--write-ignore", "--force"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("only:\n  - 'me/big'\n"), "{text}");
+    assert!(text.contains("# - 'me/big'"), "{text}");
+    // me/other was never in scope, so it is not in the catalogue either.
+    assert!(!text.contains("me/other"), "{text}");
+
+    let o = f.sync(&[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(clone_names(&base), ["big"], "{}", stdout(&o));
+}

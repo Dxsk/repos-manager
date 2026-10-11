@@ -57,6 +57,8 @@ fn apply_sync(settings: &mut Settings, args: &SyncArgs) -> SyncOptions {
         force: args.force,
         dry_run: args.dry_run,
         assume_yes: args.yes,
+        plan: args.plan,
+        write_ignore: args.write_ignore,
     }
 }
 
@@ -217,6 +219,8 @@ mod tests {
             https: true,
             prune: true,
             dry_run: true,
+            plan: true,
+            write_ignore: true,
             parallel: Some(7),
             common: CommonFlags {
                 base_dir: Some(PathBuf::from("/from/flag")),
@@ -230,7 +234,7 @@ mod tests {
         assert_eq!(settings.parallel, 7);
         assert_eq!(opts.only, ["o/*", "p/*"]);
         assert_eq!(opts.ignore, ["o/old"]);
-        assert!(opts.prune && opts.dry_run);
+        assert!(opts.prune && opts.dry_run && opts.plan && opts.write_ignore);
     }
 
     #[test]
@@ -241,6 +245,6 @@ mod tests {
         assert!(!settings.use_https);
         assert_eq!(settings.parallel, 4);
         assert!(opts.only.is_empty() && opts.ignore.is_empty());
-        assert!(!opts.prune && !opts.dry_run);
+        assert!(!opts.prune && !opts.dry_run && !opts.plan && !opts.write_ignore);
     }
 }

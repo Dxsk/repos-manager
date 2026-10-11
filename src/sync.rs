@@ -28,6 +28,10 @@ pub struct SyncOptions {
     pub dry_run: bool,
     /// `-y`: print the recon summary but never ask.
     pub assume_yes: bool,
+    /// `--plan`: print the recon summary and stop before the first clone.
+    pub plan: bool,
+    /// `--write-ignore`: write `<base_dir>/.repos.yml` and stop.
+    pub write_ignore: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -581,14 +585,11 @@ fn collect_host(
         }
         // One answer for the recon, the dry run and the job weight alike.
         let on_disk = git::is_clone(&path);
-        if on_disk {
-            row.cloned += 1;
-        } else {
-            row.new.push(plan::NewRepo {
-                name: full_name.clone(),
-                size_kb: repo.size_kb,
-            });
-        }
+        row.repos.push(plan::ScopeRepo {
+            name: full_name.clone(),
+            size_kb: repo.size_kb,
+            cloned: on_disk,
+        });
         if opts.dry_run {
             let verb = if on_disk { "update" } else { "clone" };
             output::info(&format!("  [dry-run] would {verb} {full_name}"));
@@ -614,6 +615,51 @@ fn collect_host(
     // summary says so instead of promising a count.
     row.prunable = (opts.prune && h.complete).then(|| prunable(&h.dir, &listed, filter));
     (listed, skipped, row)
+}
+
+/// `--plan` and `--write-ignore`: both answer with the reconnaissance and
+/// stop, so nothing is cloned, updated or pruned, and nothing is written but
+/// the file that was asked for. Both print whatever `-q` says, since printing
+/// is the whole point of the flag.
+fn recon_only(
+    plan: &Plan,
+    filter: &RepoFilter,
+    settings: &Settings,
+    opts: &SyncOptions,
+) -> Vec<Result<Summary>> {
+    if opts.plan {
+        println!("\n{}\n", plan::render(plan));
+    }
+    if opts.write_ignore {
+        let content = plan::ignore_file(plan, filter, &plan::today());
+        match plan::write_ignore_file(&settings.base_dir, &content, opts.force) {
+            Ok(path) => println!(
+                "Wrote {}\nUncomment a repository to stop syncing it, then run the sync again.",
+                path.display()
+            ),
+            Err(e) => return vec![Err(e)],
+        }
+    }
+    Vec::new()
+}
+
+/// The reconnaissance hook, at the only point where the scope, the local state
+/// and the new repos are known for every host and nothing has been cloned yet:
+/// the flags that stop there, then the one confirmation of the run. `Some`
+/// means the run goes no further, and an empty result that it stopped cleanly.
+fn recon(
+    plan: &Plan,
+    filter: &RepoFilter,
+    settings: &Settings,
+    opts: &SyncOptions,
+) -> Option<Vec<Result<Summary>>> {
+    if opts.plan || opts.write_ignore {
+        return Some(recon_only(plan, filter, settings, opts));
+    }
+    // -y and --dry-run want the summary without the question.
+    let skip_prompt = opts.assume_yes || opts.dry_run;
+    let approved = plan::approved(plan, &settings.confirm, skip_prompt, &settings.base_dir);
+    (!approved).then(Vec::new)
 }
 
 /// Everything after listing: filter, recon, clone/update, prune, report.
@@ -648,11 +694,8 @@ fn sync_listed(hosts: &[Listed], settings: &Settings, opts: &SyncOptions) -> Vec
         plans.push((listed, skipped));
     }
 
-    // The recon: here the scope, the local state and the new repos are known
-    // for every host, and nothing has been cloned yet. One question per run.
-    let skip_prompt = opts.assume_yes || opts.dry_run;
-    if !plan::approved(&plan, &settings.confirm, skip_prompt, &settings.base_dir) {
-        return Vec::new();
+    if let Some(stopped) = recon(&plan, &filter, settings, opts) {
+        return stopped;
     }
 
     let multi = hosts.len() > 1;

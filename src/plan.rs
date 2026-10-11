@@ -6,27 +6,34 @@
 //! total says "about". A size the provider does not report is counted as
 //! unknown and never estimated.
 
+use std::fs;
 use std::io::{BufRead, IsTerminal, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+
+use crate::matcher::{CONFIG_FILE, RepoFilter, Rules};
+use crate::output;
 
 /// Pretend both streams are terminals. For the end-to-end tests only, which
 /// have no tty: it is not part of the documented interface.
 const FAKE_TTY: &str = "REPOS_MANAGER_FAKE_TTY";
 
-/// A repository the sync would clone.
+/// A repository the filter kept for a host.
 #[derive(Debug, Clone)]
-pub struct NewRepo {
+pub struct ScopeRepo {
     pub name: String,
     pub size_kb: Option<u64>,
+    /// Its directory already holds a clone, so it is an update, not a download.
+    pub cloned: bool,
 }
 
 /// One host's line in the summary.
 #[derive(Debug, Clone, Default)]
 pub struct HostRow {
     pub host: String,
-    /// Repos in scope whose directory already holds a clone: the updates.
-    pub cloned: usize,
-    pub new: Vec<NewRepo>,
+    /// Everything in scope for this host, cloned or not.
+    pub repos: Vec<ScopeRepo>,
     /// Local repos `--prune` would consider deleting, set only when `--prune`
     /// was asked and this host's listing is complete.
     pub prunable: Option<usize>,
@@ -37,16 +44,29 @@ pub struct HostRow {
 impl HostRow {
     /// What the filter kept for this host.
     pub fn in_scope(&self) -> usize {
-        self.cloned + self.new.len()
+        self.repos.len()
+    }
+
+    /// The repos a sync would download.
+    fn to_clone(&self) -> impl Iterator<Item = &ScopeRepo> {
+        self.repos.iter().filter(|r| !r.cloned)
+    }
+
+    fn clones(&self) -> usize {
+        self.to_clone().count()
+    }
+
+    fn updates(&self) -> usize {
+        self.repos.iter().filter(|r| r.cloned).count()
     }
 
     /// Total size of the new repos whose size the provider reported.
     fn known_kb(&self) -> u64 {
-        self.new.iter().filter_map(|r| r.size_kb).sum()
+        self.to_clone().filter_map(|r| r.size_kb).sum()
     }
 
     fn unknown(&self) -> usize {
-        self.new.iter().filter(|r| r.size_kb.is_none()).count()
+        self.to_clone().filter(|r| r.size_kb.is_none()).count()
     }
 }
 
@@ -60,11 +80,11 @@ pub struct Plan {
 
 impl Plan {
     pub fn clones(&self) -> usize {
-        self.hosts.iter().map(|h| h.new.len()).sum()
+        self.hosts.iter().map(HostRow::clones).sum()
     }
 
     pub fn updates(&self) -> usize {
-        self.hosts.iter().map(|h| h.cloned).sum()
+        self.hosts.iter().map(HostRow::updates).sum()
     }
 
     fn known_kb(&self) -> u64 {
@@ -203,7 +223,7 @@ fn count(n: usize, word: &str) -> String {
 /// The volume of the new repos only: an update transfers little.
 fn volume(h: &HostRow) -> Option<String> {
     let unknown = h.unknown();
-    match (h.new.len(), h.new.len() - unknown) {
+    match (h.clones(), h.clones() - unknown) {
         (0, _) => None,
         // Not one new repo reported a size, and a figure here would be a guess.
         (_, 0) => Some("?".to_string()),
@@ -216,8 +236,8 @@ fn scope_line(h: &HostRow) -> String {
     let mut line = format!(
         "{} in scope, {} cloned, {} new",
         h.in_scope(),
-        h.cloned,
-        h.new.len()
+        h.updates(),
+        h.clones()
     );
     if let Some(volume) = volume(h) {
         line.push_str(&format!(" ({volume})"));
@@ -228,8 +248,7 @@ fn scope_line(h: &HostRow) -> String {
 /// The two largest new repos with a known size: what the volume is made of.
 fn biggest_new(h: &HostRow) -> Option<String> {
     let mut known: Vec<(&str, u64)> = h
-        .new
-        .iter()
+        .to_clone()
         .filter_map(|r| r.size_kb.map(|kb| (r.name.as_str(), kb)))
         .collect();
     if known.is_empty() {
@@ -308,7 +327,7 @@ pub fn render(plan: &Plan) -> String {
 pub fn narrowing_hint(base_dir: &Path) -> String {
     format!(
         "Nothing was cloned. Narrow the scope with --filter, --ignore or {}",
-        base_dir.join(".repos.yml").display()
+        base_dir.join(CONFIG_FILE).display()
     )
 }
 
@@ -334,7 +353,12 @@ pub fn approved(plan: &Plan, c: &Confirm, skip_prompt: bool, base_dir: &Path) ->
     match decide(plan, c, interactive(), skip_prompt) {
         Ask::Silent => true,
         Ask::Tell => {
-            println!("\n{}\n", render(plan));
+            // An unasked-for summary is an info message, so -q hides it. The
+            // question below is never hidden: nobody can answer what they
+            // cannot see.
+            if !output::is_quiet() {
+                println!("\n{}\n", render(plan));
+            }
             true
         }
         Ask::Confirm => {
@@ -347,29 +371,190 @@ pub fn approved(plan: &Plan, c: &Confirm, skip_prompt: bool, base_dir: &Path) ->
     }
 }
 
+/// Single quotes, with an inner `'` doubled. Not cosmetic: a Sourcehut name
+/// starts with `~` and a glob can start with `*`, and neither is valid as a
+/// bare YAML scalar.
+fn quoted(pattern: &str) -> String {
+    format!("'{}'", pattern.replace('\'', "''"))
+}
+
+/// A host is a mapping key, and one with a port holds a `:`.
+fn host_key(host: &str) -> String {
+    if host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_'))
+    {
+        host.to_string()
+    } else {
+        quoted(host)
+    }
+}
+
+/// A rule list as it already stands, uncommented. Nothing for an empty list:
+/// an `only: []` is dropped on load, so writing one back would widen the scope.
+fn rule_lines(patterns: &[String], key: &str, indent: usize) -> Vec<String> {
+    if patterns.is_empty() {
+        return Vec::new();
+    }
+    let pad = " ".repeat(indent);
+    let mut lines = vec![format!("{pad}{key}:")];
+    lines.extend(patterns.iter().map(|p| format!("{pad}  - {}", quoted(p))));
+    lines
+}
+
+/// One host: the rules it already has, then its catalogue of commented
+/// entries under that same `ignore` key, biggest repository first.
+fn host_block(row: &HostRow, rules: Rules<'_>) -> Vec<String> {
+    let mut lines = vec![format!("  {}:", host_key(&row.host))];
+    lines.extend(rule_lines(rules.only, "only", 4));
+    lines.push("    ignore:".to_string());
+    lines.extend(
+        rules
+            .ignore
+            .iter()
+            .map(|p| format!("      - {}", quoted(p))),
+    );
+
+    let mut repos: Vec<&ScopeRepo> = row.repos.iter().collect();
+    // Reverse over the Option sorts the biggest first and the unknown last.
+    repos.sort_by(|a, b| {
+        (std::cmp::Reverse(a.size_kb), &a.name).cmp(&(std::cmp::Reverse(b.size_kb), &b.name))
+    });
+    let entries: Vec<(String, String)> = repos
+        .iter()
+        .map(|r| {
+            (
+                quoted(&r.name),
+                r.size_kb.map_or_else(|| "?".to_string(), human_kb),
+            )
+        })
+        .collect();
+    // One column for the sizes, widened by the longest name of the block.
+    const SIZE_COLUMN: usize = 24;
+    let width = entries
+        .iter()
+        .map(|(p, _)| p.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(SIZE_COLUMN);
+    lines.extend(
+        entries
+            .iter()
+            .map(|(pattern, size)| format!("      # - {pattern:<width$} # {size}")),
+    );
+    lines
+}
+
+/// The file `--write-ignore` writes: every repository in scope, all commented
+/// out, under the rules already in force. Pure, so the content is tested
+/// without a filesystem. It emits `ignore` lists only, never an `only` list it
+/// made up, so no generated shape can empty the scope by accident.
+pub fn ignore_file(plan: &Plan, filter: &RepoFilter, today: &str) -> String {
+    let mut lines = vec![
+        format!("# Written by repos-manager on {today}."),
+        "# Uncomment a repository to stop syncing it. Sizes are what the forge reports."
+            .to_string(),
+    ];
+    let global = filter.global_rules();
+    let carried = [
+        rule_lines(global.only, "only", 0),
+        rule_lines(global.ignore, "ignore", 0),
+    ]
+    .concat();
+    if !carried.is_empty() {
+        lines.push(String::new());
+        lines.extend(carried);
+    }
+    if !plan.hosts.is_empty() {
+        lines.push(String::new());
+        lines.push("hosts:".to_string());
+        for row in &plan.hosts {
+            lines.extend(host_block(row, filter.host_rules(&row.host)));
+        }
+    }
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+/// Write the generated file, and say where it went.
+pub fn write_ignore_file(base_dir: &Path, content: &str, force: bool) -> Result<PathBuf> {
+    let path = base_dir.join(CONFIG_FILE);
+    if path.exists() && !force {
+        bail!(
+            "{} already exists, add --force to overwrite it",
+            path.display()
+        );
+    }
+    // The same guard as prune, for the same reason: base_dir comes from the
+    // config or a flag, and nothing of ours is written outside what it
+    // resolves to.
+    let base = base_dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", base_dir.display()))?;
+    let parent = path.parent().unwrap_or(base_dir).canonicalize()?;
+    if !parent.starts_with(&base) {
+        bail!("aborted: {} is outside the base directory", path.display());
+    }
+    fs::write(&path, content).with_context(|| format!("cannot write {}", path.display()))?;
+    Ok(path)
+}
+
+/// Today in UTC, for the header of a generated file.
+pub fn today() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400);
+    civil_date(days as i64)
+}
+
+/// Days since the epoch as `YYYY-MM-DD`. The project has no date dependency
+/// and this header is the only place that wants one: Howard Hinnant's
+/// civil_from_days, whose eras start on March 1st so a leap day falls last.
+fn civil_date(days: i64) -> String {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn new(name: &str, size_kb: Option<u64>) -> NewRepo {
-        NewRepo {
+    fn new(name: &str, size_kb: Option<u64>) -> ScopeRepo {
+        ScopeRepo {
             name: name.to_string(),
             size_kb,
+            cloned: false,
         }
     }
 
-    fn row(host: &str, cloned: usize, new: Vec<NewRepo>) -> HostRow {
+    /// `cloned` repos stand in for the updates: only their count shows in the
+    /// summary, while the generated file lists them like any other.
+    fn row(host: &str, cloned: usize, to_clone: Vec<ScopeRepo>) -> HostRow {
+        let mut repos: Vec<ScopeRepo> = (0..cloned)
+            .map(|i| ScopeRepo {
+                cloned: true,
+                ..new(&format!("on-disk/c{i}"), Some(1))
+            })
+            .collect();
+        repos.extend(to_clone);
         HostRow {
             host: host.to_string(),
-            cloned,
-            new,
+            repos,
             ..Default::default()
         }
     }
 
     /// The two hosts of the feature's target output, with real figures.
     fn two_hosts() -> Plan {
-        let mut small: Vec<NewRepo> = (0..14)
+        let mut small: Vec<ScopeRepo> = (0..14)
             .map(|i| new(&format!("team/s{i}"), Some(54_000)))
             .collect();
         small.push(new("team/monorepo", Some(3_250_586)));
@@ -571,6 +756,147 @@ git.example.org  3 in scope, 1 cloned, 2 new (?)
         assert_eq!(ConfirmSync::default(), ConfirmSync::Auto);
         assert_eq!(Confirm::default().new_repos, 5);
         assert_eq!(Confirm::default().download_kb, 1024 * 1024);
+    }
+
+    fn rules(dir: &Path, yaml: Option<&str>) -> RepoFilter {
+        if let Some(text) = yaml {
+            fs::write(dir.join(CONFIG_FILE), text).unwrap();
+        }
+        RepoFilter::load(dir, &[], &[]).unwrap()
+    }
+
+    #[test]
+    fn the_generated_file_comments_out_every_repository_biggest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = Plan {
+            hosts: vec![
+                row(
+                    "github.com",
+                    1,
+                    vec![
+                        new("Dxsk/notes", None),
+                        new("Dxsk/assets", Some(921_600)),
+                        new("Dxsk/monorepo", Some(3_250_586)),
+                    ],
+                ),
+                row("git.sr.ht", 0, vec![new("~dxsk/dotfiles", Some(12_288))]),
+            ],
+            prune: false,
+        };
+        assert_eq!(
+            ignore_file(&plan, &rules(dir.path(), None), "2026-10-11"),
+            "\
+# Written by repos-manager on 2026-10-11.
+# Uncomment a repository to stop syncing it. Sizes are what the forge reports.
+
+hosts:
+  github.com:
+    ignore:
+      # - 'Dxsk/monorepo'          # 3.1 GB
+      # - 'Dxsk/assets'            # 900 MB
+      # - 'on-disk/c0'             # 1 KB
+      # - 'Dxsk/notes'             # ?
+  git.sr.ht:
+    ignore:
+      # - '~dxsk/dotfiles'         # 12 MB
+"
+        );
+    }
+
+    /// Dropping the rules in force would widen the scope, which is the one
+    /// thing this file exists to prevent.
+    #[test]
+    fn a_rewrite_carries_over_the_rules_already_in_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = "\
+only: [Dxsk/*]
+ignore: ['test-org/*']
+hosts:
+  gitlab.corp:
+    only: [team/*]
+    ignore: [team/archive]
+";
+        let plan = Plan {
+            hosts: vec![row(
+                "gitlab.corp",
+                0,
+                vec![new("team/app", Some(2048)), new("team/o'hara", Some(512))],
+            )],
+            prune: false,
+        };
+        assert_eq!(
+            ignore_file(&plan, &rules(dir.path(), Some(existing)), "2026-10-11"),
+            "\
+# Written by repos-manager on 2026-10-11.
+# Uncomment a repository to stop syncing it. Sizes are what the forge reports.
+
+only:
+  - 'Dxsk/*'
+ignore:
+  - 'test-org/*'
+
+hosts:
+  gitlab.corp:
+    only:
+      - 'team/*'
+    ignore:
+      - 'team/archive'
+      # - 'team/app'               # 2.0 MB
+      # - 'team/o''hara'           # 512 KB
+"
+        );
+    }
+
+    #[test]
+    fn patterns_and_host_keys_are_quoted_where_yaml_needs_it() {
+        assert_eq!(quoted("~dxsk/dotfiles"), "'~dxsk/dotfiles'");
+        assert_eq!(quoted("*/tmp-*"), "'*/tmp-*'");
+        assert_eq!(quoted("o'hara/repo"), "'o''hara/repo'");
+        assert_eq!(host_key("github.com"), "github.com");
+        assert_eq!(host_key("git_example-org.net"), "git_example-org.net");
+        assert_eq!(host_key("git.example.org:3000"), "'git.example.org:3000'");
+    }
+
+    /// A run with nothing to do is a valid answer, and `hosts:` with nothing
+    /// under it would not load.
+    #[test]
+    fn nothing_in_the_plan_writes_no_hosts_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = ignore_file(&Plan::default(), &rules(dir.path(), None), "2026-10-11");
+        assert!(!out.contains("hosts:"), "{out}");
+        assert!(out.ends_with("forge reports.\n"), "{out}");
+    }
+
+    #[test]
+    fn the_file_is_never_overwritten_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_ignore_file(dir.path(), "first\n", false).unwrap();
+        assert_eq!(path, dir.path().join(CONFIG_FILE));
+
+        let err = write_ignore_file(dir.path(), "second\n", false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(CONFIG_FILE), "{err}");
+        assert!(err.contains("--force"), "{err}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "first\n");
+
+        write_ignore_file(dir.path(), "second\n", true).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second\n");
+    }
+
+    #[test]
+    fn the_header_carries_a_civil_date() {
+        let cases = [
+            (0, "1970-01-01"),
+            (10_956, "1999-12-31"),
+            (11_016, "2000-02-29"),
+            (20_737, "2026-10-11"),
+            (47_541, "2100-03-01"),
+        ];
+        for (days, expected) in cases {
+            assert_eq!(civil_date(days), expected, "{days}");
+        }
+        assert_eq!(today().len(), "2026-10-11".len());
     }
 
     #[test]

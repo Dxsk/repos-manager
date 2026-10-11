@@ -42,6 +42,8 @@ repos-manager github sync --filter 'Dxsk/*'  # Only Dxsk's repos
 repos-manager sync --all --ignore 'Dxsk/old-*'  # Everything but these
 repos-manager sync --all --prune             # Remove deleted remote repos
 repos-manager sync --all --dry-run           # Preview without changes
+repos-manager sync --all --plan              # Recon summary only, clone nothing
+repos-manager sync --all --write-ignore      # Write .repos.yml to pick from
 repos-manager sync --all --yes               # No confirmation, whatever the size
 ```
 
@@ -87,6 +89,25 @@ The question is asked once per run, `sync --all` included, and only when stdin a
 A host whose listing came back short already has `--prune` disabled for it, and the summary says so on that host's line, before the question rather than after the run.
 
 See the Configuration page, Sync confirmation, for `confirm_sync` and its thresholds.
+
+#### Planning a big sync
+
+Two flags make that summary a workflow of its own. Neither clones, updates or prunes anything, and both exit with a success code.
+
+```bash
+# 1. Reconnaissance: print the summary, then stop
+repos-manager sync --all --plan
+
+# 2. Write a file holding every repo in scope, all commented out
+repos-manager sync --all --write-ignore
+
+# 3. Uncomment what you do not want in <base_dir>/.repos.yml, then
+repos-manager sync --all
+```
+
+`--plan` always prints: under the thresholds, under `-q`, and when there is nothing to do, since a summary of zeros answers the question you asked. It never prompts. It is not `--dry-run`: `--dry-run` walks the list and says "would clone / would update" for every repository, `--plan` prints the aggregate summary and nothing else.
+
+`--write-ignore` writes `<base_dir>/.repos.yml` and stops, printing the path it wrote. Every repository is commented out, so the file as generated changes nothing about what gets synced: uncommenting a line is how you drop a repository. It refuses to overwrite an existing `.repos.yml` without `--force`, and `--force` carries the rules already in the file over into the new one, so a rewrite can only ever narrow the scope. See [Filtering](/docs/filtering/) for the generated file in detail.
 
 ### status
 

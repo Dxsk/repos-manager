@@ -85,6 +85,55 @@ repos-manager sync --all --ignore 'Dxsk/old-*' --ignore 'test-org/*'
 
 Quote patterns containing `*` so your shell does not expand them.
 
+## Let repos-manager write it
+
+`--write-ignore` generates `.repos.yml` from what a sync would actually do, so you pick from a real list instead of guessing names:
+
+```bash
+repos-manager sync --all --write-ignore
+```
+
+It writes the file, prints the path and stops. Nothing is cloned, updated or pruned.
+
+```yaml
+# Written by repos-manager on 2026-10-11.
+# Uncomment a repository to stop syncing it. Sizes are what the forge reports.
+
+hosts:
+  github.com:
+    ignore:
+      # - 'Dxsk/monorepo'          # 3.1 GB
+      # - 'Dxsk/assets'            # 900 MB
+      # - 'Dxsk/notes'             # ?
+  git.sr.ht:
+    ignore:
+      # - '~dxsk/dotfiles'         # 12 MB
+```
+
+How to read it:
+
+- one block per host, each repository **in scope** on its own commented line, biggest first;
+- the trailing comment is the size the forge reports, `?` when it reports none, and those come last;
+- sizes are what the server holds, not what a clone transfers, so treat them as an order of magnitude;
+- names are quoted because a Sourcehut name starts with `~` and a glob can start with `*`, neither of which is a valid bare YAML scalar.
+
+**Uncomment what you do not want**, then sync. The file as generated changes nothing: every entry is commented, so delivering it untouched syncs exactly what you synced before. The generator only ever emits `ignore` lists, never an `only` list, so no file it writes can empty your scope by accident.
+
+It refuses to overwrite an existing `.repos.yml`:
+
+```
+<base_dir>/.repos.yml already exists, add --force to overwrite it
+```
+
+With `--force`, the rules already in the file are carried over into the new one, uncommented, above the catalogue. A rewrite can therefore only ever narrow what you sync, never widen it, which matters because dropping an `only:` list would silently pull every repository of a host back into scope, `--prune` included.
+
+Pair it with `--plan` to see the summary first:
+
+```bash
+repos-manager sync --all --plan            # how much there is, per host
+repos-manager sync --all --write-ignore    # the list to pick from
+```
+
 ## When something is wrong with the file
 
 `.repos.yml` drives `--prune`, so a file repos-manager cannot trust stops the run instead of falling back to "no filter":

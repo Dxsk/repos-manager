@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::output;
 
-const CONFIG_FILE: &str = ".repos.yml";
+pub const CONFIG_FILE: &str = ".repos.yml";
 const LEGACY_ONLY: &str = ".repos-filter";
 const LEGACY_IGNORE: &str = ".repos-ignore";
 
@@ -50,6 +50,17 @@ pub fn load_patterns(path: &Path) -> Vec<String> {
         .collect()
 }
 
+/// A key written with nothing under it is YAML null, and `serde(default)` does
+/// not accept an explicit null: `--write-ignore` emits exactly that, an
+/// `ignore:` whose every entry is commented out, so a list has to read null as
+/// empty or the tool could not load the file it just wrote.
+fn nullable_list<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<String>>::deserialize(de)?.unwrap_or_default())
+}
+
 /// `.repos.yml`. Unknown keys are refused rather than ignored: a typo such as
 /// `onlyy:` would silently widen the scope, which is what deletes
 /// repositories under `--prune`.
@@ -58,7 +69,7 @@ pub fn load_patterns(path: &Path) -> Vec<String> {
 struct FileConfig {
     #[serde(default)]
     only: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_list")]
     ignore: Vec<String>,
     #[serde(default)]
     hosts: HashMap<String, FileRules>,
@@ -69,7 +80,7 @@ struct FileConfig {
 struct FileRules {
     #[serde(default)]
     only: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_list")]
     ignore: Vec<String>,
 }
 
@@ -104,8 +115,11 @@ struct HostRules {
 #[derive(Debug)]
 pub struct RepoFilter {
     cli: Option<Layer>,
+    /// `--ignore`, kept apart from the file's own deny-list so a rewrite of
+    /// the file carries over its rules and not the flags of one run.
+    cli_ignore: Vec<String>,
     global: Option<Layer>,
-    /// `--ignore` plus the global deny-list.
+    /// The global deny-list of the file.
     ignore: Vec<String>,
     /// Keyed by lowercased host name: hostnames are case-insensitive, and so
     /// is the Windows filesystem.
@@ -118,6 +132,14 @@ pub struct RepoFilter {
 pub struct HostFilter<'a> {
     only: Vec<&'a Layer>,
     ignore: Vec<&'a str>,
+}
+
+/// What one layer of the file holds, as `--write-ignore` has to write it back:
+/// a rewrite that dropped an `only` list would widen the scope.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Rules<'a> {
+    pub only: &'a [String],
+    pub ignore: &'a [String],
 }
 
 pub enum Decision {
@@ -146,8 +168,9 @@ impl RepoFilter {
     pub fn load(base_dir: &Path, cli_only: &[String], cli_ignore: &[String]) -> Result<Self> {
         let mut filter = Self {
             cli: (!cli_only.is_empty()).then(|| Layer::new("--filter", cli_only.to_vec())),
+            cli_ignore: cli_ignore.to_vec(),
             global: None,
-            ignore: cli_ignore.to_vec(),
+            ignore: Vec::new(),
             hosts: HashMap::new(),
         };
         let path = base_dir.join(CONFIG_FILE);
@@ -213,11 +236,31 @@ impl RepoFilter {
         HostFilter {
             only: only.into_iter().flatten().collect(),
             ignore: self
-                .ignore
+                .cli_ignore
                 .iter()
+                .chain(&self.ignore)
                 .chain(rules.into_iter().flat_map(|r| &r.ignore))
                 .map(String::as_str)
                 .collect(),
+        }
+    }
+
+    /// The global rules of the file, for the generator that rewrites it.
+    pub fn global_rules(&self) -> Rules<'_> {
+        Rules {
+            only: self.global.as_ref().map_or(&[], |l| l.patterns.as_slice()),
+            ignore: &self.ignore,
+        }
+    }
+
+    /// One host block's rules, empty when the file holds no block for it.
+    pub fn host_rules(&self, host: &str) -> Rules<'_> {
+        let Some(rules) = self.hosts.get(&host.to_lowercase()) else {
+            return Rules::default();
+        };
+        Rules {
+            only: rules.only.as_ref().map_or(&[], |l| l.patterns.as_slice()),
+            ignore: &rules.ignore,
         }
     }
 }
@@ -435,6 +478,82 @@ mod tests {
         write(dir.path(), CONFIG_FILE, "only: [a/*\n");
         let e = RepoFilter::load(dir.path(), &[], &[]).unwrap_err();
         assert!(format!("{e:#}").contains(CONFIG_FILE), "{e:#}");
+    }
+
+    /// `--write-ignore` emits an `ignore:` whose every entry is commented out,
+    /// which YAML reads as an explicit null.
+    #[test]
+    fn a_key_with_nothing_under_it_is_an_empty_list() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "ignore:\nhosts:\n  github.com:\n    ignore:\n",
+        );
+        let f = load(dir.path());
+        assert!(matches!(
+            f.for_host("github.com").decide("a/b"),
+            Decision::Keep
+        ));
+        assert!(f.global_rules().ignore.is_empty());
+        assert!(f.host_rules("github.com").ignore.is_empty());
+    }
+
+    /// The first guarantee of a generated file: delivered as it was written,
+    /// it changes nothing about what gets synced.
+    #[test]
+    fn a_generated_file_keeps_every_repository_it_lists() {
+        use crate::plan::{HostRow, Plan, ScopeRepo};
+
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            CONFIG_FILE,
+            "only: ['Dxsk/*', '~dxsk/*']\nignore: [Dxsk/old]\nhosts:\n  git.sr.ht:\n    ignore: ['~dxsk/secret']\n",
+        );
+        let host = |host: &str, names: &[&str]| HostRow {
+            host: host.to_string(),
+            repos: names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| ScopeRepo {
+                    name: (*name).to_string(),
+                    size_kb: (i > 0).then_some(1024 * i as u64),
+                    cloned: i == 1,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let plan = Plan {
+            hosts: vec![
+                host("github.com", &["Dxsk/a", "Dxsk/b", "Dxsk/o'hara"]),
+                host("git.sr.ht", &["~dxsk/dotfiles"]),
+            ],
+            prune: false,
+        };
+
+        let generated = crate::plan::ignore_file(&plan, &load(dir.path()), "2026-10-11");
+        write(dir.path(), CONFIG_FILE, &generated);
+        let f = load(dir.path());
+        for row in &plan.hosts {
+            let h = f.for_host(&row.host);
+            for repo in &row.repos {
+                assert!(
+                    matches!(h.decide(&repo.name), Decision::Keep),
+                    "{} dropped by\n{generated}",
+                    repo.name
+                );
+            }
+        }
+        // And the rules it carried over are still in force.
+        assert!(matches!(
+            f.for_host("github.com").decide("other/x"),
+            Decision::Drop
+        ));
+        assert!(matches!(
+            f.for_host("git.sr.ht").decide("~dxsk/secret"),
+            Decision::Ignored
+        ));
     }
 
     #[test]

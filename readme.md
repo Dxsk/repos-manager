@@ -265,8 +265,10 @@ Aliases: `gitea` and `gogs` for `forgejo`, `srht` for `sourcehut`, `git` for `an
 | `--base-dir <path>` | Base directory for repos (default: `~/Documents`) |
 | `--https` | Use HTTPS clone URLs instead of SSH |
 | `--prune` | Remove local repos that no longer exist on the remote |
-| `--force` | With `--prune`, go ahead even when most local repos would be removed |
+| `--force` | With `--prune`, go ahead even when most local repos would be removed; with `--write-ignore`, overwrite an existing file |
 | `--dry-run` | Show what would be done without changing anything |
+| `--plan` | Print the recon summary and stop, cloning nothing |
+| `--write-ignore` | Write `<base-dir>/.repos.yml` listing every repo in scope, commented out, then stop |
 | `-y`, `--yes` | Clone without asking, however much there is to download |
 | `--host <host>` | Target a self-hosted instance (provider sync only) |
 | `--parallel <n>` | Number of parallel jobs (default: 4) |
@@ -286,7 +288,13 @@ repos-manager github sync --filter Dxsk/repos-manager
 repos-manager sync --all --filter 'Dxsk/*' --filter 'other-org/tooling'
 repos-manager sync --all --ignore 'Dxsk/old-*'
 
-# A big first sync, with no question asked
+# A big first sync: look at it, pick what to leave out, then run it
+repos-manager sync --all --plan
+repos-manager sync --all --write-ignore
+# uncomment in <base-dir>/.repos.yml what you do not want, then
+repos-manager sync --all
+
+# Or clone everything without being asked
 repos-manager sync --all --yes
 
 # Preview, then clean up repos deleted on the remote
@@ -341,6 +349,36 @@ Proceed? [Y/n]
 - A host whose listing came back short already has `--prune` disabled, and the summary says so before the question rather than after the run.
 
 Thresholds and prompting are set per machine with `confirm_sync`, `confirm_new_repos` and `confirm_download_gb` in the config file.
+
+### Planning a big sync
+
+Two flags turn that summary into a workflow, and neither clones anything:
+
+```sh
+# 1. Reconnaissance only: the same summary, then it stops
+repos-manager sync --all --plan
+
+# 2. A file holding every repo in scope, biggest first, all commented out
+repos-manager sync --all --write-ignore
+```
+
+`--plan` always prints, even under the thresholds, even under `-q` and even when there is nothing to do, and it never asks a question. It is not `--dry-run`: `--dry-run` lists every repository as "would clone / would update", `--plan` prints the aggregate summary only.
+
+`--write-ignore` writes `<base-dir>/.repos.yml` and stops. Every entry is commented out, so the file as written changes nothing: **uncomment the repositories you do not want**, then sync.
+
+```yaml
+# Written by repos-manager on 2026-10-11.
+# Uncomment a repository to stop syncing it. Sizes are what the forge reports.
+
+hosts:
+  github.com:
+    ignore:
+      # - 'Dxsk/monorepo'          # 3.1 GB
+      # - 'Dxsk/assets'            # 900 MB
+      # - 'Dxsk/notes'             # ?
+```
+
+It refuses to overwrite an existing `.repos.yml` unless you add `--force`, and a rewrite carries the rules already in the file over into the new one, uncommented above the catalogue, so a rewrite can never widen what you sync. See [`.repos.yml`](#filtering) for the file itself.
 
 ## Configuration
 
@@ -511,6 +549,8 @@ Patterns are the same everywhere: `*` and `?` wildcards, `owner/*` also matches 
 So a `hosts:` block can only narrow what the global lists allow, never widen it, and it can never pull a repository into `--prune`'s reach. When two stacked allow-lists have nothing in common, the host ends up with nothing in scope and repos-manager says which lists caused it instead of leaving it looking like an empty remote. An `only: []` is ignored with a warning rather than emptying the scope.
 
 Since this file drives `--prune`, a typo in it is an error, not a shrug: an unknown key, malformed YAML or an unreadable file stops the run before any host is synced.
+
+**Let repos-manager write it.** `repos-manager sync --all --write-ignore` generates this file from what a sync would actually do: every repository in scope, per host, biggest first, each one commented out with the size the forge reports next to it (`?` when it reports none, and those come last). Uncomment what you do not want. The generator only ever emits `ignore` lists, never an `only` list, so nothing it writes can empty your scope by accident.
 
 **Legacy text files.** `.repos-filter` (allow-list) and `.repos-ignore` (deny-list), one pattern per line with `#` comments, still work exactly as in 1.0 as long as there is no `.repos.yml`. Once that file exists it takes over and the text files are ignored, with a warning.
 
