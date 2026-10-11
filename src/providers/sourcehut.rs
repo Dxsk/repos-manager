@@ -65,15 +65,27 @@ fn repo(host: &str, item: &Value) -> Option<Repo> {
     })
 }
 
+/// `hut` prints what gqlclient decoded out of the response's `data` field, so
+/// the payload starts at `repositories`. An envelope is unwrapped anyway: a
+/// shape change there would otherwise list zero repos without a word.
+fn payload(page: &Value) -> &Value {
+    match page.get("data") {
+        Some(inner) if inner.is_object() => inner,
+        _ => page,
+    }
+}
+
 fn results(page: &Value) -> &[Value] {
-    page.pointer("/repositories/results")
+    payload(page)
+        .pointer("/repositories/results")
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_default()
 }
 
 fn next_cursor(page: &Value) -> Option<String> {
-    page.pointer("/repositories/cursor")
+    payload(page)
+        .pointer("/repositories/cursor")
         .and_then(Value::as_str)
         .filter(|c| !c.is_empty())
         .map(str::to_string)
@@ -146,6 +158,14 @@ mod tests {
             repos[0].https_url,
             "https://git.example.org/~dxsk/repos-manager"
         );
+    }
+
+    #[test]
+    fn a_data_envelope_is_unwrapped() {
+        let raw = format!(r#"{{"data":{}}}"#, PAGE);
+        let page: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parse("git.sr.ht", results(&page)).len(), 3);
+        assert_eq!(next_cursor(&page).as_deref(), Some("MjAyNS0xMC0xMVQw"));
     }
 
     #[test]
