@@ -6,7 +6,10 @@
 `make release V=1.2.0` runs this. Call it directly where make is not
 available, which is every Windows checkout.
 
-Nothing is pushed: check the result, then `git push --follow-tags`.
+Nothing is pushed: check the result, then push the branch, main and the tag in
+ONE command, as the final line tells you. The forge mirrors to GitHub on every
+push, so a tag that travels alone leaves main behind until the next scheduled
+sync, and GitHub builds the release while the site still serves the old version.
 """
 
 from __future__ import annotations
@@ -121,7 +124,10 @@ def main() -> None:
         f"  git -c user.name={name} -c user.email={email} tag -s {tag} -m {tag}",
     )
 
-    print(f"\ncommitted and tagged {tag}. Now run: git push --follow-tags")
+    # One push, so the mirror carries the branch and the tag together.
+    branch = git_out("rev-parse", "--abbrev-ref", "HEAD") or "dev"
+    print(f"\ncommitted and tagged {tag}. Now run, as a single push:")
+    print(f"  git push origin {branch} {branch}:main {tag}")
 
 
 if __name__ == "__main__":

@@ -671,8 +671,10 @@ Both releases include `SHA256SUMS` and `SHA256SUMS-binaries`. The install script
 3. Push to the forge:
 
    ```sh
-   git push --follow-tags
+   git push origin dev dev:main v1.1.0
    ```
+
+   One push, three refs. The forge mirrors to GitHub on every push, so a tag that travels on its own leaves `main` behind until the next scheduled sync: GitHub builds the release from the tag while the site still serves the previous version.
 
 The tag starts the Forgejo release, and the push mirror carries `main` and the tag to GitHub, which builds the full release. There is no automatic version bump: the version only changes through the release script.
 
